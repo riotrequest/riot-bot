@@ -1,0 +1,239 @@
+import { useEffect, useRef, useState } from 'react'
+import type { AvatarView, ChatMessageView, ConversationDetail, RiotBridge } from '../../shared/types'
+import { actionStatus, completedStatus, copyMarkdown, fileChange, isLongForm, stickToBottom } from '../../core/progress'
+import { BotAvatar } from './avatar'
+import { Markdown } from './markdown'
+
+export function ChatTranscript(props: {
+  detail: ConversationDetail
+  running: boolean
+  statusLabel: string
+  showToolDetails: boolean
+  avatar: AvatarView | null
+  api: RiotBridge
+  onUndo: (id: string) => void
+  onError: (message: string) => void
+  onOpenSettings?: () => void
+}) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const end = useRef<HTMLDivElement>(null)
+  const stick = useRef(true)
+  const [away, setAway] = useState(false)
+  const turns = groupTurns(props.detail.messages)
+  const last = props.detail.messages.at(-1)
+  const tail = `${props.detail.messages.length}:${last?.content.length ?? 0}:${props.running}`
+
+  useEffect(() => {
+    if (!stick.current) return
+    end.current?.scrollIntoView({ block: 'end' })
+  }, [tail])
+
+  function onScroll(): void {
+    const node = scroller.current
+    if (!node) return
+    const near = stickToBottom(node)
+    stick.current = near
+    setAway(!near)
+  }
+
+  function jump(): void {
+    stick.current = true
+    setAway(false)
+    end.current?.scrollIntoView({ block: 'end' })
+  }
+
+  return (
+    <div className="transcript" ref={scroller} onScroll={onScroll}>
+      {turns.map((turn, index) => (
+        <TurnView
+          key={turn.user?.id ?? turn.rest[0]?.id ?? index}
+          turn={turn}
+          latest={index === turns.length - 1}
+          outcome={index === turns.length - 1 ? props.detail.run?.status ?? 'completed' : 'completed'}
+          running={props.running && index === turns.length - 1}
+          statusLabel={props.statusLabel}
+          showToolDetails={props.showToolDetails}
+          avatar={props.avatar}
+          api={props.api}
+          onUndo={props.onUndo}
+          onError={props.onError}
+          onOpenSettings={props.onOpenSettings}
+        />
+      ))}
+      {away && (
+        <button type="button" className="jump" onClick={jump}>
+          Jump to latest
+        </button>
+      )}
+      <div ref={end} />
+    </div>
+  )
+}
+
+interface Turn {
+  user: ChatMessageView | null
+  rest: ChatMessageView[]
+}
+
+function groupTurns(messages: ChatMessageView[]): Turn[] {
+  const turns: Turn[] = []
+  for (const message of messages) {
+    if (message.role === 'user' || turns.length === 0) {
+      const turn: Turn = { user: message.role === 'user' ? message : null, rest: [] }
+      if (message.role !== 'user') turn.rest.push(message)
+      turns.push(turn)
+    } else {
+      turns[turns.length - 1].rest.push(message)
+    }
+  }
+  return turns
+}
+
+function TurnView(props: {
+  turn: Turn
+  latest: boolean
+  outcome: 'completed' | 'failed' | 'paused' | 'stopped' | 'interrupted' | 'running'
+  running: boolean
+  statusLabel: string
+  showToolDetails: boolean
+  avatar: AvatarView | null
+  api: RiotBridge
+  onUndo: (id: string) => void
+  onError: (message: string) => void
+  onOpenSettings?: () => void
+}) {
+  const prose = props.turn.rest.filter((message) => message.role === 'assistant' && message.content.trim())
+  const tools = props.turn.rest.filter((message) => message.role === 'tool' && message.toolName !== 'react')
+  const files = props.turn.rest.filter((message) => fileChange(message.toolName, message.content))
+  const notices = props.turn.rest.filter((message) => message.role === 'notice')
+  const status = props.running ? props.statusLabel || 'Working…' : actionStatus(tools.length, props.outcome === 'running' ? 'completed' : props.outcome)
+  const interrupted = notices.some((notice) => notice.content.startsWith('Interrupted.'))
+  const long = prose.some((message) => isLongForm(message.content))
+
+  async function copy(): Promise<void> {
+    try {
+      await props.api.copyText(copyMarkdown(prose.map((message) => message.content)))
+    } catch (reason) {
+      props.onError(reason instanceof Error ? reason.message : 'Could not copy that message.')
+    }
+  }
+
+  return (
+    <>
+      {props.turn.user && (
+        <div className="bubble-wrap user">
+          <article className="bubble user">
+            <p>{props.turn.user.content}</p>
+          </article>
+          <ReactionList message={props.turn.user} api={props.api} onError={props.onError} />
+        </div>
+      )}
+      {(prose.length > 0 || tools.length > 0 || files.length > 0 || notices.length > 0 || (props.latest && props.running)) && (
+        <div className="assistant-group">
+          {props.avatar && <BotAvatar avatar={props.avatar} size={32} />}
+          <div className="assistant-body">
+            {props.running && <p className="status-line">{status}</p>}
+            {prose.map((message) => (
+              <article key={message.id} className={long ? 'bubble assistant document' : 'bubble assistant compact'}>
+                <Markdown
+                  text={message.content}
+                  compact={!isLongForm(message.content)}
+                  onOpenLink={(url) => {
+                    void props.api.openExternal(url).catch((reason: unknown) => props.onError(reason instanceof Error ? reason.message : 'That link could not be opened.'))
+                  }}
+                />
+                {interrupted && message.id === prose.at(-1)?.id && <p className="interrupted">Interrupted</p>}
+              </article>
+            ))}
+            {files.map((message) => {
+              const change = fileChange(message.toolName, message.content)
+              if (!change) return null
+              return (
+                <div key={message.id} className="file-change">
+                  <p>{message.toolName === 'write_file' ? 'File change ready to undo.' : 'Edit ready to undo.'}</p>
+                  <button type="button" onClick={() => props.onUndo(change.editId)}>
+                    Undo this edit
+                  </button>
+                </div>
+              )
+            })}
+            {notices.map((message) => (
+              <div key={message.id} className={message.content.startsWith('Interrupted.') || message.content.includes('empty reply') ? 'banner warn' : 'notice'}>
+                <p>{message.content}</p>
+                {props.onOpenSettings && message.content.includes('Open Settings') && (
+                  <button type="button" onClick={props.onOpenSettings}>
+                    Open Settings
+                  </button>
+                )}
+                {message.content.includes('Take over the browser') && <BrowserRecovery api={props.api} onError={props.onError} />}
+              </div>
+            ))}
+            {!props.running && tools.length > 0 && (
+              <details className="tool" open={props.showToolDetails}>
+                <summary>{props.latest ? actionStatus(tools.length, props.outcome === 'running' ? 'completed' : props.outcome) : completedStatus(tools.length)}</summary>
+                {tools.map((message) => (
+                  <div key={message.id} className="tool-detail">
+                    <strong>{message.toolName}</strong>
+                    {message.toolStartedAt != null && (
+                      <p className="help">
+                        {new Date(message.toolStartedAt).toLocaleTimeString()}
+                        {message.toolEndedAt != null ? ` – ${new Date(message.toolEndedAt).toLocaleTimeString()}` : ''}
+                      </p>
+                    )}
+                    {message.toolError && <p className="warn-text">{message.toolError}</p>}
+                    <pre>{message.content}</pre>
+                  </div>
+                ))}
+              </details>
+            )}
+            {prose.length > 0 && (
+              <button type="button" className="quiet" onClick={() => void copy()}>
+                Copy
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function BrowserRecovery({ api, onError }: { api: RiotBridge; onError: (message: string) => void }) {
+  const [note, setNote] = useState('')
+  const act = (work: Promise<string>): void => {
+    void work.then(setNote).catch((error: unknown) => onError(error instanceof Error ? error.message : 'The browser could not be updated.'))
+  }
+  return (
+    <div>
+      <div className="row">
+        <button type="button" onClick={() => act(api.takeoverBrowser())}>Take over browser</button>
+        <button type="button" onClick={() => act(api.resumeBrowser())}>Resume browser</button>
+      </div>
+      {note && <p role="status">{note}</p>}
+    </div>
+  )
+}
+
+function ReactionList(props: { message: ChatMessageView; api: RiotBridge; onError: (message: string) => void }) {
+  const reactions = props.message.reactions ?? []
+  if (reactions.length === 0) return null
+  return (
+    <div className="reactions">
+      {reactions.map((reaction) => (
+        <button
+          key={reaction.id}
+          type="button"
+          className="reaction"
+          aria-label={`${reaction.label}. Remove reaction`}
+          onClick={() => {
+            void props.api.removeReaction(reaction.id).catch((reason: unknown) => props.onError(reason instanceof Error ? reason.message : 'Could not remove that reaction.'))
+          }}
+        >
+          <span role="img" aria-label={reaction.label}>
+            {reaction.emoji}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}

@@ -1,0 +1,58 @@
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { AppEvent, ProviderId, PublicSettings, RiotBridge } from '../shared/types'
+
+const api: RiotBridge = {
+  getSnapshot: () => ipcRenderer.invoke('app:getSnapshot'),
+  createBot: (draft) => ipcRenderer.invoke('bots:create', draft),
+  selectBot: (id) => ipcRenderer.invoke('bots:select', id),
+  updateBot: (patch) => ipcRenderer.invoke('bots:update', patch),
+  openWorkspace: () => ipcRenderer.invoke('bots:openWorkspace'),
+  setAvatar: (input) => ipcRenderer.invoke('bots:avatar', input),
+  removeReaction: (id) => ipcRenderer.invoke('reactions:remove', id),
+  updatePreferences: (patch) => ipcRenderer.invoke('preferences:update', patch),
+  createConversation: () => ipcRenderer.invoke('conversations:create'),
+  deleteConversation: (id) => ipcRenderer.invoke('conversations:delete', id),
+  openConversation: (id) => ipcRenderer.invoke('conversations:open', id),
+  searchHistory: (query) => ipcRenderer.invoke('history:search', query),
+  openBrowser: () => ipcRenderer.invoke('browser:open'),
+  closeBrowser: () => ipcRenderer.invoke('browser:close'),
+  takeoverBrowser: () => ipcRenderer.invoke('browser:takeover'),
+  resumeBrowser: () => ipcRenderer.invoke('browser:resume'),
+  installBrowser: () => ipcRenderer.invoke('browser:install'),
+  openExternal: (url) => ipcRenderer.invoke('links:open', url),
+  sendMessage: (conversationId, text) => ipcRenderer.invoke('messages:send', conversationId, text),
+  stop: () => ipcRenderer.invoke('run:stop'),
+  listMemories: (query) => ipcRenderer.invoke('memories:list', query),
+  updateMemory: (id, content) => ipcRenderer.invoke('memories:update', id, content),
+  deleteMemory: (id) => ipcRenderer.invoke('memories:delete', id),
+  pinMemory: (id, pinned) => ipcRenderer.invoke('memories:pin', id, pinned),
+  listSkills: () => ipcRenderer.invoke('skills:list'),
+  listSkillVersions: (id) => ipcRenderer.invoke('skills:versions', id),
+  saveSkill: (draft) => ipcRenderer.invoke('skills:save', draft),
+  updateSkill: (id, draft) => ipcRenderer.invoke('skills:update', id, draft),
+  setSkillEnabled: (id, enabled) => ipcRenderer.invoke('skills:enabled', id, enabled),
+  deleteSkill: (id) => ipcRenderer.invoke('skills:delete', id),
+  restoreSkillVersion: (id, version) => ipcRenderer.invoke('skills:restore', id, version),
+  exportSkills: (ids) => ipcRenderer.invoke('skills:export', ids),
+  previewSkillImport: (markdown) => ipcRenderer.invoke('skills:previewImport', markdown),
+  importSkill: (markdown) => ipcRenderer.invoke('skills:import', markdown),
+  resolveSkillProposal: (id, action, draft) => ipcRenderer.invoke('skills:resolveProposal', id, action, draft),
+  planProviderCheck: () => ipcRenderer.invoke('provider:planCheck'),
+  runProviderCheck: () => ipcRenderer.invoke('provider:runCheck'),
+  listActivity: (scope) => ipcRenderer.invoke('activity:list', scope),
+  getUsage: () => ipcRenderer.invoke('usage:get'),
+  updateSettings: (patch: Partial<PublicSettings>) => ipcRenderer.invoke('settings:update', patch),
+  setCredential: (provider: ProviderId, secret: string) => ipcRenderer.invoke('credentials:set', provider, secret),
+  clearCredential: (provider: ProviderId) => ipcRenderer.invoke('credentials:clear', provider),
+  pickWorkspace: () => ipcRenderer.invoke('workspace:pick'),
+  resolveApproval: (id, approved) => ipcRenderer.invoke('approvals:resolve', id, approved),
+  undoEdit: (id) => ipcRenderer.invoke('edits:undo', id),
+  copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
+  onEvent: (handler) => {
+    const listener = (_event: IpcRendererEvent, payload: AppEvent): void => handler(payload)
+    ipcRenderer.on('app:event', listener)
+    return () => ipcRenderer.removeListener('app:event', listener)
+  }
+}
+
+contextBridge.exposeInMainWorld('riot', api)

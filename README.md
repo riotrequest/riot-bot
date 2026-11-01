@@ -1,0 +1,228 @@
+# Riot Bot
+
+Riot Bot is a personal Windows desktop assistant. Each bot has one ongoing conversation, its own memories, skills, workspace, and browser profile. The app does not call a model when it is idle, opened, or restarted.
+
+## Review fixes — November 1, 2026
+
+Tool arguments are checked against their definitions before any action in a batch runs. Missing file contents, malformed JSON, unknown tools, and tool requests cut off by the reply limit pause the task without executing the batch. Turning tools off is enforced in the main process, including while a terminal command waits for approval.
+
+Incomplete provider streams fail instead of reporting success. Partial replies are kept, and a failed request is not automatically retried after text has streamed. Provider checks require observed streaming and an actual cancellation before marking those steps passed. Task deadlines abort in-flight requests; Stop also cancels a model-catalog lookup. Closing waits for replies, provider checks, and bot setup before closing the database.
+
+Private-address checks now cover compressed and expanded IPv6 spellings and IPv4-mapped IPv6. Browser references expire across snapshots, navigation, and takeover, and are checked again after approval. Generic form buttons require confirmation. Closed tabs are removed from the live tab list.
+
+History, memory, and skill search filter by bot before applying the result limit. Another bot's matching records cannot crowd out this bot's recall. File replacement refuses binary or non-UTF-8 files, enforces the write limit in bytes, and rejects Windows alternate data streams. Undo compares the exact bytes. Bot setup does not borrow prices from a different model.
+
+`npm run check` runs TypeScript checks, tests, and a production build. Vitest was updated to 5.0.5. The production dependency audit has no reported advisories; the remaining 15 moderate advisories are in packaging development dependencies. The existing installer in `release` has not been rebuilt for these changes.
+
+## Setup
+
+Requires Node.js 22.13 or newer in the 22.x line, 24.x, or 26 and newer for development and tests. The packaged app includes its own runtime.
+
+```powershell
+cd riot-bot
+npm install
+npm run dev
+```
+
+The first launch of this version keeps the existing database. Chats, memories, skills, and settings stay with the bot that owns them. A one-time backup from the earlier migration is `riot-bot.sqlite.v2.bak` beside the database and is not overwritten. Workspace files are not moved.
+
+Data lives in `%APPDATA%\riot-bot\`:
+
+- `riot-bot.sqlite` — bots, conversations, messages, reactions, memories, skills, tasks, and usage
+- `avatars\` — uploaded bot images, stored as PNG thumbnails named by bot id
+- `browser-profiles\<bot id>\` — that bot’s Chromium cookies and site storage
+- `playwright-browsers\` — the Chromium download, after you choose Install Chromium
+- `credentials.bin.json` — API keys encrypted with Windows
+- `riot-bot.log` — redacted operational log
+
+New workspaces are created under your home folder in `RiotBot\workspaces\`. Choosing an existing folder uses that folder as it is. Browser profiles are not inside the workspace and are not your Chrome or Edge profile.
+
+To remove the browser without touching chats, quit the app and delete `playwright-browsers` and `browser-profiles`. Deleting a profile removes that bot’s signed-in site storage. Do not delete the database to uninstall Chromium.
+
+## Bots and chats
+
+The sidebar is **New Bot** and a vertical list of bots. Each row shows the avatar and display name. The selected bot has a marker. Click a bot to open its ongoing conversation. The selected bot is remembered after a restart.
+
+**New Bot** creates another assistant with exactly one ongoing conversation. The purpose is required. Leave the name blank to let one setup request suggest a name and initial instructions, or type a name and skip that request. The setup request is labeled `bot_setup`, has no tools, and follows the same spending limits. If no model is configured, or the reply is not usable, the bot is still created with a name taken from the purpose.
+
+There is no New Chat button. Compaction, memory, and history search stay automatic. A bot that already had several chats keeps every message. The most recently active chat becomes the ongoing conversation. The others stay in the bot menu under **Earlier conversations**, and search there stays on that bot. Those chats are read-only. New messages go to the ongoing conversation. Nothing is merged or deleted.
+
+The bot menu holds rename, purpose, instructions, avatar, **Open Workspace**, earlier conversations, Settings, and the browser controls. There is no delete control beside the bot name.
+
+Switching bots keeps the unsent draft for each bot during the session. A running task, its approval, and its browser stay with the bot that started them. Memory, skills, workspace, history, and the browser profile stay separate.
+
+The app-wide daily spending ceiling applies to every bot. A bot’s own daily limit can only make that ceiling tighter. Credentials stay in the app-level store.
+
+## Chat
+
+Short replies stay compact. Longer answers use Markdown: paragraphs, headings, lists, quotes, tables, and code. A finished article is the article itself. A word count is added only when you ask for one. An `http` or `https` link opens in your own browser after a public-address check. It is not loaded in the app window. Images in model Markdown are not loaded.
+
+Casual acknowledgements can be a short reply, an emoji reaction on the message, or both. The reaction is chosen in the same model turn. A reaction does not replace an answer to a question. **Copy** copies the assistant’s Markdown, without the avatar, tool log, or status line.
+
+Tool activity is one status line, such as “Checking memory…”, “Searching the web…”, or “Reading a page…”. When the turn is finished, the details say whether that run completed, failed, paused, or was interrupted, and how many actions finished. A finished tool does not by itself mean the request succeeded. Approvals, errors, file undo, and skill previews stay visible. A pause is shown once, in the chat. If the pause says Open Settings, that button is on the same notice. **Show tool details by default** is off until you turn it on in Settings. The full record remains in Activity, for this bot or for all bots.
+
+The transcript follows new text only while you are near the bottom. Otherwise it leaves a **Jump to latest** control.
+
+The bot’s workspace path is part of its profile. Ask “what is your workspace location” and it can answer from that profile without searching files.
+
+## Avatars
+
+Every bot has an avatar in the bot list, the chat header, and once beside each assistant reply. A new bot gets a built-in icon. You can pick another icon or emoji and a background color, or upload a PNG, JPEG, GIF, or WebP. Uploads are checked, decoded, and stored as a small PNG. SVG, HTML, and remote image addresses are not used. A missing image falls back to a built-in icon. Choosing an avatar does not call a model.
+
+## Credentials
+
+Open **Settings**.
+
+1. Choose **OpenAI** or **OpenRouter**.
+2. Paste the model ID from that provider. Riot Bot does not ship a model list and does not assume every model supports tools, streaming, or the same context size.
+3. Paste an API key and choose **Save key**, or leave a new key in the box and choose **Save settings**.
+4. Choose **Save settings**.
+
+A ChatGPT Plus, Codex, or Cursor subscription does not supply this key. The key is shared by every bot. Keys stay in the main process. The window only learns whether a key is saved. On this machine Windows credential protection is available, so a saved key survives restart. If that protection is unavailable, the key is kept in memory for the session and forgotten on quit.
+
+OpenAI requests go to `https://api.openai.com/v1/chat/completions`. OpenRouter requests go to `https://openrouter.ai/api/v1/chat/completions`.
+
+## What you can ask it to do
+
+File tools stay inside the selected bot’s workspace. File creation and editing stay off until **Allow Riot Bot to create and edit files in this folder** is checked. Each app-made edit can be undone from the chat if the file has not changed since. The workspace is not an operating-system sandbox.
+
+A terminal command is shown with its working folder and time limit, and it runs only after you approve that exact command. The workspace folder does not contain the shell.
+
+`fetch_url` is still the lightweight tool for a straightforward public page. The browser is for JavaScript pages, search, and interaction.
+
+Say `remember this: …` to save that wording without a model call. A guess is saved when you explicitly ask to remember it, and you can correct or delete it afterward. Obvious secret patterns are blocked. That check does not catch every secret.
+
+A memory is a fact or preference. A skill is a procedure. Say `Save this workflow as a skill.` or `Update that skill with the correction we just discovered.` to save or update one. After a substantial task, Riot Bot may show a preview with **Save**, **Edit**, and **Dismiss**. Nothing about later chats changes until you save it. Skills cannot grant permissions, raise a budget, or override the app rules. The **Skills** screen lists, edits, disables, deletes, and restores versions. Markdown export and import are text only: import shows a preview first, adds the skill disabled, and does not run code or install anything. The catalog added to a request is at most eight short descriptions, and about 400 estimated tokens.
+
+## Browser
+
+Each bot’s browser data is under `%APPDATA%\riot-bot\browser-profiles\<bot id>`. Bundled Chromium uses that profile directly. Installed Chrome and Edge use separate `chrome` and `msedge` subfolders there; your personal browser profile is not opened. Cookies and site storage persist across restarts. Another process cannot open the same profile at the same time. The window opens only when you choose **Open Browser** or a task you sent needs it. Launch and idle time do not open it and do not call a model. **Close Browser** closes the window and keeps the profile. Stop cancels the browser action in progress. It does not erase the profile or undo a page that already loaded. After a restart, an unfinished browsing task is not resumed.
+
+A signed-in page can keep making ordinary website requests while that window is open. That traffic is not a model call. Zero idle model calls does not mean zero network traffic from a page you left open.
+
+The bot menu shows the available browser. Riot Bot prefers its downloaded Chromium when present, and can otherwise use installed Google Chrome or Microsoft Edge on Windows. No separate download is required when one of those browsers is available. **Install Chromium** remains an optional download from Playwright’s browser distribution into `playwright-browsers`. The progress line includes the download size. It is not a model charge, and it does not start on launch. The app uses a visible browser with its sandbox on. Pages are not embedded in the window.
+
+Browser tools can list tabs, open an `http` or `https` URL, read the page, take a compact snapshot with element references, click or fill an observed element, scroll, go back, close a tab, and search. A reference belongs to one tab and one snapshot. A stale or ambiguous reference is rejected. There is no tool for arbitrary page scripts, a shell inside the page, or the browser’s debugging protocol. Automatic downloads are cancelled. A file upload is not chosen by the bot; take over the window and pick the file yourself.
+
+Search opens a public search page in that browser. The default template is `https://html.duckduckgo.com/html/?q={query}`. Change it in Settings if you want another public `https` template that contains `{query}`. There is no separate search API fee. The model still spends tokens from the task budget to read the results. Snippets are only a way to find a page. Open the source before treating a detailed claim as verified, and include the source URL. If the results cannot be read, the page text is returned instead of invented hits. If the search site blocks automated reading, the status says so once. Take over the window or change the template. It does not keep retrying.
+
+An explicit Google search uses Google even when the default template is DuckDuckGo. The tool also accepts `engine: "google"`. It keeps the exact query and records the engine, results URL, observation time, and observed organic result cards. Ads and grouped sitelinks are excluded from the numbered cards. The explicit route requests US English results with personalization off; it is one observation, not a universal SEO rank. Another engine's result numbers do not establish a Google position.
+
+Search remains free and uses no extra search-service key. If Google presents a CAPTCHA or its result order cannot be read, the task pauses without another model call or alternate-URL retries. The chat notice has **Take over browser** and **Resume browser** controls. Complete the page in the visible browser, choose Resume browser, then send your request again. Resume alone does not start a model call. Free browser search cannot guarantee unattended access to a site that blocks this network. A live Google check on November 1, 2026 was blocked by human verification; no live position was verified in that check.
+
+**Take over** pauses agent clicks until you choose **Resume**. Sign in yourself. The chat does not ask for the password, and password fields are not read or filled. Research and ordinary navigation do not ask for approval on every click. Sending a message, paying, publishing, deleting remote content, uploading a file, and similar actions show the control and the page and wait for confirmation. A search does not. A familiar button label is not treated as proof that the click is harmless.
+
+Limits for one task: 12 browser actions, 5 tabs, 20 seconds for navigation, and 8 seconds for other browser actions. Hitting a limit stops with the result so far. Those steps share the task’s model-call budget. Search is always available. The other browser tools are added when the browser is already open or the request is about opening or using a page. File and terminal tools are added when the request is about files or commands. A request can also ask for one of those groups and receive it on the next step. A closed browser does not add browser definitions to an unrelated message.
+
+The browser is not isolated from your local network. Typed addresses must be `http` or `https`, and a local proxy checks the connections it handles, including redirects, and refuses a host that resolves to a private or local address. Checking only the address in `page.goto`, or resolving a name once, would not cover every connection the browser can make. WebRTC is turned off as a best effort. Do not treat this as a guarantee that a page cannot reach your LAN. There is no trusted-host setting in this version.
+
+## Limits
+
+Context fitting is automatic. Riot Bot uses the model’s documented context length when the provider publishes one, or a capacity you enter under **Advanced context**. For OpenRouter, that published length is read from the public model list and cached. It is not requested again on every turn, and it is not a completion. If neither source is available, automatic mode uses a labeled conservative limit of 32,768 tokens. That number is not a claim about the model. The reply token limit, default 2048, is reserved once, with the same 20% estimate margin used for fitting. Older chat is compacted toward about 12,000 fitted input tokens. A larger window does not send the whole transcript.
+
+The manual input working budget, default 8000, applies only when context fitting is set to manual. It stays under **Advanced context**. It is not the control for an ordinary page.
+
+Other defaults: 12 model calls per task and 10 minutes. Dollar limits are off until you enter both a spend cap and a price per million input tokens and output tokens. The app daily ceiling applies across bots. If a dollar cap is on and a price is missing, the call is refused. Call and token limits work without prices. Figures are labeled estimated or reported. They are not a provider invoice. A cancelled or failed call that already left the app keeps a conservative estimate when the provider does not report usage. Compaction, the one context-length retry, and tool follow-ups share that same budget. Riot Bot does not raise a spending limit to make a request fit.
+
+Stop aborts the current task and blocks later model and tool calls in that task. Work the provider already accepted may still be billed. After a restart, an unfinished task is marked interrupted and is not resumed. Text that had already streamed is kept and marked interrupted.
+
+A Playwright documentation task on November 1, 2026 paused after two successful model calls. The search could not run because Chromium was not installed, so the model fetched a docs page. That stored result was 5,316 characters, about 2,038 estimated tokens. The follow-up was about 6,738 estimated tokens before the fit margin, and about 8,086 after it: instructions near 1,731, tool definitions 2,619, plus the page, the short request, and the tool-call text. The 8,000 figure was the app’s assembly cap. The published OpenRouter context length for the selected model was 1,048,576 tokens. The follow-up was refused before it was sent, and the tool details still said Completed.
+
+Automatic mode no longer treats 8,000 as that ceiling. Long tool results stay stored and the model request gets a short preview, with a way to read another section. If the provider rejects a request for context length, Riot Bot rebuilds a smaller request and retries once. A message that itself does not fit asks for a smaller message or a workspace file. Instructions and tool definitions that cannot fit the selected model are reported as a configuration problem. A dollar limit is reported as a spending limit.
+
+## Context
+
+Open a call in **Activity** and expand **Context**. It shows the usable input, whether that size came from the provider, a capacity you entered, the conservative fallback, or the manual budget, the reply allowance, the estimated input size, provider-reported input tokens when the provider sent them, and the estimated size of instructions, memories, summary, skills, history, and tool definitions. It names the memories and skills that were included, says whether a summary step ran, and says whether older messages were left out. Estimates and provider measurements are labeled separately. The panel does not show API keys or hidden reasoning.
+
+Deleting a memory or disabling a skill removes it from later requests. The original chat can still contain the earlier mention.
+
+## Architecture
+
+The Electron main process is the trusted side. It owns SQLite (`node:sqlite`), credentials, provider calls, files, processes, and the Chromium window. The React window is sandboxed: context isolation on, Node integration off, and a small typed preload bridge. Remote pages stay in Chromium. They are not loaded in the Electron renderer. Markdown is rendered with raw HTML disabled. Code is shown as text. Avatar images are local data URLs, not remote content. Page text is untrusted and cannot change your instructions, permissions, budgets, or which bot is acting.
+
+Every model call goes through one gateway with a run id. A call starts only from a message you send, a bot-setup request you start by creating a bot without a name, or the provider check you start. Status lines, avatar choices, and browser installation do not call a model. The gateway reserves a conservative cost before the call and settles it afterward, including after a crash. Compaction, retries (at most two transient retries), browser follow-ups, and tool follow-ups share the same task budget. The mock provider is used by tests and is never called on launch.
+
+Each request is built from the bot profile, pinned instructions, pinned memories, the rolling summary, the current task, a few retrieved memories, a short skill catalog, and recent messages that fit the input budget. The full skill text is loaded only when a tool asks for it. Older text stays in SQLite and can be searched, including the messages around a match. There is no embeddings index.
+
+Web fetches resolve the host, refuse the request if any address is local or private, and connect to a resolved address while keeping the original Host header and the normal HTTPS certificate check. Each redirect is checked again. TLS verification is not turned off. The browser’s local proxy does the same kind of check for connections it handles. That does not make the browser isolated from the local network.
+
+## Packaging
+
+```powershell
+npm run dist:win
+```
+
+This writes an unsigned installer:
+
+`release\Riot-Bot-Setup-0.1.0.exe`
+
+`playwright-core` is unpacked from the app archive so the packaged app can run the Chromium installer. An unpacked Windows build was checked on November 1, 2026: `release\win-unpacked\resources\app.asar.unpacked\node_modules\playwright-core\cli.js` is present. Chromium itself is downloaded into `%APPDATA%\riot-bot\playwright-browsers` when you choose Install Chromium, including after a restart. The NSIS installer was not rebuilt for this version. It is not code-signed and uses the default Electron icon. Windows SmartScreen and antivirus software can warn about it.
+
+## Tests
+
+```powershell
+npm run check
+```
+
+The November 1, 2026 review and free-search fixes expanded the suite from 69 to 109 tests. `npm run check` passes TypeScript checks, all 109 tests, and the production build. Node 22 prints `ExperimentalWarning: SQLite is an experimental feature` while the tests run. Model calls in these tests use mocks. No paid API call was made for this work. Passing them does not mean every provider model accepts tools, streaming, or the same context size.
+
+An isolated Electron smoke check also verified startup, the renderer sandbox and preload bridge, the New Bot form, saved settings, named-bot creation, bot switching, and separate unsent drafts. Its database and workspaces were temporary, it reported no renderer errors, and Activity stayed at zero model calls. It did not use the normal app-data directory.
+
+Covered: one ongoing conversation after restart, with an earlier chat left intact; a short workspace question with the current tool set and a saved summary; a long conversation that drops older history before refusing; overhead that names Settings instead of the message; automatic fitting that sends a request whose estimate exceeds the old 8,000-token cap; a mock search, open, and stored-section read; one context-length retry that does not repeat the tool; compaction that does not fold the same messages twice; a spending block that stays distinct from context; catalog lookup only for OpenRouter and not on idle; same-bot recall and no cross-bot leakage; migration and a second startup; renaming without moving the workspace; setup calls through the gateway and absent on idle; a bot switch during a run; the app-wide daily ceiling; reactions; avatars; Markdown; scroll stickiness; idle launch and restart; compaction; retries; dollar limits; stop; path checks; command approval; credential redaction; private-network web fetches; browser profiles, stale element references, takeover, cancellation, consequential-click confirmation, and blocked destinations; streamed tool calls; and the provider-check preview making no call.
+
+A separate Chromium check, with no model call, downloaded the browser and opened a public search page and an article in the visible window. That is not an end-to-end test of the assistant.
+
+The running window was also checked at 1180 and 880 pixels wide. The sidebar stayed a vertical bot list with New Bot, avatars, a selected-bot marker, and the bot menu. Earlier conversations still listed a saved chat. Switching bots kept each unsent draft with that bot. No model call was made.
+
+## Known limitations
+
+- Recall is summary plus search, not a full replay of every past message. If the saved messages do not establish an answer, the assistant is instructed to say so.
+- A deleted memory or disabled skill leaves later requests, but older messages that mention it remain in the transcript.
+- Dollar figures can differ from the provider bill. A missing price blocks dollar-budget mode; it does not invent a price.
+- A terminal command is not sandboxed. Approval is per exact command. The workspace is not an operating-system sandbox.
+- Stop ends the command tree through `taskkill /T /F` on Windows. A process that already detached can survive, and that case is reported when the stop call fails.
+- Web fetch uses the first public address after refusing any host that also resolves to a private address. TLS verification stays on.
+- The browser is not isolated from the local network. The proxy covers connections it handles. It does not prove that every browser subrequest is blocked.
+- The secret check only catches common patterns.
+- File undo is refused if the file changed after the edit.
+- Images in model Markdown are not loaded. `http` and `https` links open externally. Avatar uploads are stored locally.
+- One task runs at a time. Nothing runs on a timer, and skills are not learned in the background.
+- Drafts survive a bot switch in the same session. They are not written to disk.
+- No accounts, sync, telemetry, plugin marketplace, or extra agents.
+- Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one.
+- The earlier provider check’s cancellation step did not pass. These mock tests do not rerun that live check.
+- The installer is unsigned and does not yet include this version.
+
+## First browser task
+
+This does not call a model until you send a message. Installed Chrome or Edge can be used without downloading Chromium.
+
+1. `cd riot-bot` then `npm run dev`.
+2. Open the selected bot’s **Menu** and check the available browser. If none is available, choose **Install Chromium** and wait for the size and progress line.
+3. Choose **Open Browser**. A normal browser window opens using that bot’s separate profile.
+4. In the ongoing chat, ask it to search for something and open one of the results. Search has no separate API fee. The model calls that read the pages still use your normal task budget.
+5. For a site that needs a login, choose **Take over**, sign in yourself in that window, then choose **Resume**. Do not paste the password into chat.
+6. If it wants to send, pay, publish, delete, or upload, read the preview and confirm or deny it.
+7. Stop cancels the current task and leaves the profile in place. **Close Browser** closes the window and also leaves the profile in place.
+
+## First real-provider check
+
+This uses API credits. Do it only when you want that.
+
+1. `cd riot-bot` then `npm run dev`.
+2. Open **Settings**. Choose OpenAI or OpenRouter, paste the model ID from that provider, paste your API key, and choose **Save key**.
+3. If a task or daily dollar cap is filled in, also enter the input and output prices per million tokens. Leave the dollar boxes blank to use call and token limits only.
+4. Choose **Save settings**.
+5. Choose **Preview provider check**. Read the credit note. It allows at most 4 calls and 64 output tokens each. It does not contact the provider yet.
+6. Choose **Start provider check**. It asks for a short reply, a harmless memory-list tool call, a follow-up that uses that result, and then cancels one request.
+7. Read the four results. Open **Activity** and confirm the calls are labeled `provider_check`, with estimated or reported cost. A model that does not call the tool is reported as not verified for that step.
+8. Quit and reopen. Confirm Activity did not gain a call while the app was idle.
+
+A pass on one model ID does not establish that another model ID works.
+
+## Next command
+
+```powershell
+cd riot-bot
+npm run dev
+```
