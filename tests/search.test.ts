@@ -2,10 +2,17 @@ import path from 'path'
 import { describe, expect, it } from 'vitest'
 import type { BrowserOpener, LaunchedPage } from '../src/core/browser'
 import { installedBrowserChannel } from '../src/core/browser-playwright'
-import { googleSearchRequested } from '../src/core/browser-policy'
+import { googleResultTarget, googleSearchRequested } from '../src/core/browser-policy'
 import { makeApp } from './helpers'
 
 describe('free web search', () => {
+  it('keeps observed opaque Google links and unwraps only explicit destinations', () => {
+    expect(googleResultTarget('https://www.google.com/goto?url=opaque-token')).toBe('https://www.google.com/goto?url=opaque-token')
+    expect(googleResultTarget('https://www.google.com/url?q=https%3A%2F%2Fangelicpedia.com%2F')).toBe('https://angelicpedia.com/')
+    expect(googleResultTarget('https://www.google.com/search?q=other')).toBeNull()
+    expect(googleResultTarget('https://www.google.com/url?q=http%3A%2F%2F127.0.0.1%2F')).toBeNull()
+    expect(googleResultTarget('javascript:alert(1)')).toBeNull()
+  })
   it('detects installed Chrome and Edge without requiring bundled Chromium', () => {
     const env = { ProgramFiles: 'C:\\Apps', 'ProgramFiles(x86)': 'C:\\Apps32' }
     const chrome = path.join(env.ProgramFiles, 'Google', 'Chrome', 'Application', 'chrome.exe')

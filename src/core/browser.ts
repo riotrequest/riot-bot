@@ -501,7 +501,7 @@ export class BrowserService {
       }
       return `${UNTRUSTED}\nStructured results were not found. This is the page as read, not a list of invented results.\nTitle: ${title || 'Untitled'}\nURL: ${page.url()}\n\n${text || 'The page had no readable text.'}`
     }
-    const lines = hits.map((hit, index) => `${index + 1}. ${hit.title}\n${hit.url}\n${hit.snippet}`).join('\n\n')
+    const lines = hits.map((hit, index) => `${index + 1}. ${hit.title}\n${hit.url}${hit.displayUrl ? `\nDisplayed URL: ${hit.displayUrl}` : ''}\n${hit.snippet}`).join('\n\n')
     return `${UNTRUSTED}\nSearch engine: ${google ? 'Google' : target.hostname}\nExact query: ${JSON.stringify(words)}\nResults page: ${target.toString()}\nObserved at: ${new Date().toISOString()}\n${google ? 'Observed organic result cards on this page, excluding ads and grouped sitelinks. Positions apply only to this query and page; the results URL records the requested country, language, and personalization options. They are not a universal or permanent rank.' : 'Result numbers belong to this search engine; they do not establish a Google position.'}\nSearch uses the browser. There is no separate search-API fee. Reading these results still uses the task’s model budget.\nSnippets are discovery aids. Open a result before treating a detailed claim as verified.\n\n${lines}`
   }
 

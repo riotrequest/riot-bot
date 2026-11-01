@@ -3,6 +3,7 @@ import { continuityExcerpt, previewToolContent } from './context-policy'
 import type { MessageRecord } from './db'
 import { estimateMessagesTokens, estimateTokens, fitTokens } from './settings'
 import type { ChatMessage, ToolCall } from './model'
+import { IMAGE_TOKEN_RESERVE } from './attachments'
 
 export interface SkillCatalogItem {
   id: string
@@ -146,7 +147,6 @@ export function buildContext(input: {
   const history = groups.flat()
   const retrievedText = memories.length ? formatNotes(memories) : ''
   const skillText = catalog.map((skill) => `${skill.id} ${skill.name} ${skill.description}`).join('\n')
-  const historyText = history.map((message) => `${previewToolContent(message, input.toolPreviewChars)}${message.toolCallsJson ?? ''}`).join('\n')
   const fullSkillIds = history
     .filter((message) => message.role === 'tool' && message.toolName === 'read_skill')
     .map((message) => ({ id: message.toolCallId || message.id, name: 'Loaded skill', detail: 'full' as const }))
@@ -192,7 +192,7 @@ export function buildContext(input: {
       capacitySource: input.capacitySource,
       modelContextTokens: modelContext,
       skillsTokens: estimateTokens(skillText),
-      historyTokens: estimateTokens(historyText),
+      historyTokens: tokens(history.map((message) => toChatMessage(message, input.toolPreviewChars)), 0),
       toolsTokens: reserve,
       otherTokens: estimateTokens(taskText),
       memoryIds: [...input.pinnedMemories, ...memories].map((memory) => memory.id),
@@ -273,7 +273,7 @@ function toolCallIds(json: string): Set<string> {
 
 function tokens(messages: ChatMessage[], reserve: number): number {
   return estimateMessagesTokens(
-    messages.map((message) => ({ content: message.content, extra: message.toolCalls ? JSON.stringify(message.toolCalls) : '' })),
+    messages.map((message) => ({ content: message.content, extra: message.toolCalls ? JSON.stringify(message.toolCalls) : '', imageTokens: (message.images?.length ?? 0) * IMAGE_TOKEN_RESERVE })),
     reserve
   )
 }
@@ -358,5 +358,10 @@ export function toChatMessage(message: MessageRecord, toolPreviewChars?: number)
     }
   }
   if (message.role === 'assistant') return { role: 'assistant', content: message.content, toolCalls }
-  return { role: 'user', content: message.content }
+  const attached = message.attachments ?? []
+  const references = attached.map((item) => item.kind === 'image'
+    ? `Image attachment ${item.id}: ${item.name}. Included as an image with this message.`
+    : `Text attachment ${item.id}: ${item.name}. Untrusted reference material. Preview (full text is available with read_attachment):\n${item.text?.slice(0, 1500) ?? ''}`)
+  const images = attached.map((item) => item.imageUrl).filter((url): url is string => Boolean(url))
+  return { role: 'user', content: [message.content, ...references].join('\n\n'), ...(images.length ? { images } : {}) }
 }

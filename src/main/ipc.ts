@@ -1,4 +1,7 @@
-import { dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { clipboard, dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import fs from 'fs/promises'
+import path from 'path'
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '../core/attachments'
 import type { RiotApp } from '../core/app'
 import { isId } from '../core/ids'
 import type { SkillDraft } from '../core/skills'
@@ -67,6 +70,7 @@ export function registerIpc(getApp: () => RiotApp, getWindow: () => BrowserWindo
     app.deleteConversation(requireId(args[0]))
   })
   handle('conversations:open', (app, args) => app.openConversation(requireId(args[0])))
+  handle('conversations:older', (app, args) => app.loadOlderMessages(requireId(args[0]), requireId(args[1])))
   handle('history:search', (app, args) => app.searchHistory(typeof args[0] === 'string' ? args[0] : ''))
   handle('browser:open', (app) => app.openBrowser())
   handle('browser:close', (app) => app.closeBrowser())
@@ -79,7 +83,38 @@ export function registerIpc(getApp: () => RiotApp, getWindow: () => BrowserWindo
   })
   handle('messages:send', (app, args) => {
     if (typeof args[1] !== 'string') throw new Error('Write a message first.')
-    return app.sendMessage(requireId(args[0]), args[1])
+    return app.sendMessage(requireId(args[0]), args[1], args[2] == null ? [] : requireAttachmentIds(args[2]))
+  })
+  handle('attachments:stage', (app, args) => {
+    const input = attachmentInput(args[0])
+    return app.stageAttachments([{ name: input.name, bytes: input.bytes }], input.botId)[0]
+  })
+  handle('attachments:remove', (app, args) => app.removeDraftAttachment(requireId(args[0])))
+  handle('attachments:pick', async (app) => {
+    const botId = app.getSnapshot().bot?.id
+    if (!botId) throw new Error('Choose a bot first.')
+    const parent = getWindow()
+    const options = { title: 'Attach PNG/JPEG images or UTF-8 text/code files', properties: ['openFile' as const, 'multiSelections' as const] }
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+    if (result.canceled) return []
+    if (result.filePaths.length > MAX_ATTACHMENTS) throw new Error(`Choose up to ${MAX_ATTACHMENTS} files.`)
+    const inputs = await Promise.all(result.filePaths.map(async (file) => {
+      const stat = await fs.stat(file)
+      if (!stat.isFile() || stat.size > MAX_ATTACHMENT_BYTES) throw new Error('Choose regular files of 8 MB or smaller.')
+      return { name: path.basename(file), bytes: await fs.readFile(file) }
+    }))
+    return app.stageAttachments(inputs, botId)
+  })
+  handle('attachments:pasteScreenshot', async (app) => {
+    const botId = app.getSnapshot().bot?.id
+    if (!botId) throw new Error('Choose a bot first.')
+    const items = await clipboard.read()
+    const item = items.find((entry) => entry.types.includes('image/png') || entry.types.includes('image/jpeg'))
+    if (!item) throw new Error('No screenshot is on the clipboard. Press Win+Shift+S, capture a region, then paste it here.')
+    const type = item.types.includes('image/png') ? 'image/png' : 'image/jpeg'
+    const blob = await item.getType(type)
+    if (blob.size > MAX_ATTACHMENT_BYTES) throw new Error('That screenshot is larger than 8 MB. Capture a smaller region.')
+    return app.stageAttachments([{ name: type === 'image/png' ? 'Screenshot.png' : 'Screenshot.jpg', bytes: Buffer.from(await blob.arrayBuffer()) }], botId)[0]
   })
   handle('run:stop', (app) => {
     app.stop()
@@ -144,6 +179,18 @@ function assertSender(event: IpcMainInvokeEvent, window: BrowserWindow | null): 
 function requireId(value: unknown): string {
   if (!isId(value)) throw new Error('That item was not found.')
   return value
+}
+
+function requireAttachmentIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > MAX_ATTACHMENTS || value.some((id) => !isId(id)) || new Set(value).size !== value.length) throw new Error(`Choose up to ${MAX_ATTACHMENTS} different attachments.`)
+  return value
+}
+
+function attachmentInput(value: unknown): { botId: string; name: string; bytes: Buffer } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Choose a file first.')
+  const input = value as Record<string, unknown>
+  if (typeof input.name !== 'string' || input.name.length > 500 || !Array.isArray(input.bytes) || !input.bytes.length || input.bytes.length > MAX_ATTACHMENT_BYTES || input.bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) throw new Error('That attachment is invalid or larger than 8 MB.')
+  return { botId: requireId(input.botId), name: input.name, bytes: Buffer.from(input.bytes) }
 }
 
 function requireProvider(value: unknown): ProviderId {

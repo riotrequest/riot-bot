@@ -94,10 +94,12 @@ app.whenReady().then(async () => {
   process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(userData, 'playwright-browsers')
   const logger = fileLogger(path.join(userData, 'riot-bot.log'))
   const credentials = await ElectronCredentialStore.open(userData)
+  const providerFetch: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
   riot = new RiotApp({
     dbPath: path.join(userData, 'riot-bot.sqlite'),
     provider: new MockProvider(),
     credentials,
+    catalogFetchImpl: providerFetch,
     logger,
     openFolder: (folder) => {
       void shell.openPath(folder)
@@ -113,7 +115,7 @@ app.whenReady().then(async () => {
       if (!key) {
         throw new ConfigError('Add your API key in Settings. A ChatGPT or Cursor subscription does not provide this key.')
       }
-      return createOpenAICompatibleProvider({ name: settings.provider, apiKey: key })
+      return createOpenAICompatibleProvider({ name: settings.provider, apiKey: key, fetchImpl: providerFetch })
     }
   })
   riot.boot()

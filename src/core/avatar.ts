@@ -43,17 +43,17 @@ export interface RasterInfo {
   height: number
 }
 
-export function inspectRaster(bytes: Buffer): RasterInfo {
+export function inspectRaster(bytes: Buffer, limits = { bytes: 2_000_000, side: 4096, pixels: 8_000_000 }): RasterInfo {
   if (bytes.length === 0) throw new Error('Choose an image file.')
-  if (bytes.length > 2_000_000) throw new Error('That image is larger than 2 MB.')
+  if (bytes.length > limits.bytes) throw new Error(`That image is larger than ${limits.bytes / 1_000_000} MB.`)
   const head = bytes.subarray(0, Math.min(bytes.length, 256)).toString('utf8').trim().toLowerCase()
   if (head.startsWith('<') || head.includes('<svg') || head.includes('<html') || head.includes('<!doctype') || head.includes('<?xml')) {
     throw new Error('Use a PNG, JPEG, GIF, or WebP image. SVG and HTML are not accepted.')
   }
   const info = dimensions(bytes)
   if (!info) throw new Error('That file is not a PNG, JPEG, GIF, or WebP image.')
-  if (info.width < 1 || info.height < 1 || info.width > 4096 || info.height > 4096 || info.width * info.height > 8_000_000) {
-    throw new Error('That image is too large. Use one that is 4096 pixels or smaller on each side.')
+  if (info.width < 1 || info.height < 1 || info.width > limits.side || info.height > limits.side || info.width * info.height > limits.pixels) {
+    throw new Error(`That image is too large. Use one that is ${limits.side} pixels or smaller on each side, within ${limits.pixels / 1_000_000} megapixels.`)
   }
   return info
 }
@@ -139,7 +139,7 @@ interface NativeImage {
   toPNG(): Uint8Array
 }
 
-function nativeImage(): { createFromBuffer(bytes: Buffer): NativeImage } | null {
+export function nativeImage(): { createFromBuffer(bytes: Buffer): NativeImage } | null {
   try {
     const electron = require('electron') as { nativeImage?: { createFromBuffer(bytes: Buffer): NativeImage } }
     if (electron.nativeImage && typeof electron.nativeImage.createFromBuffer === 'function') return electron.nativeImage

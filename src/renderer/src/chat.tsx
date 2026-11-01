@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import type { AvatarView, ChatMessageView, ConversationDetail, RiotBridge } from '../../shared/types'
-import { actionStatus, completedStatus, copyMarkdown, fileChange, isLongForm, stickToBottom } from '../../core/progress'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { AttachmentView, AvatarView, ChatMessageView, ConversationDetail, MessagePage, RiotBridge, RunStatus } from '../../shared/types'
+import { actionStatus, copyMarkdown, fileChange, isLongForm, stickToBottom } from '../../core/progress'
 import { BotAvatar } from './avatar'
 import { Markdown } from './markdown'
 
@@ -14,19 +14,46 @@ export function ChatTranscript(props: {
   onUndo: (id: string) => void
   onError: (message: string) => void
   onOpenSettings?: () => void
+  onOlderPage: (page: MessagePage) => void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const end = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [away, setAway] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const prepend = useRef<{ height: number; top: number } | null>(null)
   const turns = groupTurns(props.detail.messages)
   const last = props.detail.messages.at(-1)
   const tail = `${props.detail.messages.length}:${last?.content.length ?? 0}:${props.running}`
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const node = scroller.current
+    if (prepend.current && node) {
+      node.scrollTop = prepend.current.top + node.scrollHeight - prepend.current.height
+      prepend.current = null
+      return
+    }
     if (!stick.current) return
     end.current?.scrollIntoView({ block: 'end' })
   }, [tail])
+
+  async function loadOlder(): Promise<void> {
+    const cursor = props.detail.olderMessagesCursor
+    if (!cursor || loadingOlder) return
+    setLoadingOlder(true)
+    try {
+      const page = await props.api.loadOlderMessages(props.detail.conversation.id, cursor)
+      const node = scroller.current
+      if (node) prepend.current = { height: node.scrollHeight, top: node.scrollTop }
+      stick.current = false
+      setAway(true)
+      props.onOlderPage(page)
+    } catch (reason) {
+      props.onError(reason instanceof Error ? reason.message : 'Earlier messages could not be loaded.')
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
 
   function onScroll(): void {
     const node = scroller.current
@@ -44,13 +71,14 @@ export function ChatTranscript(props: {
 
   return (
     <div className="transcript" ref={scroller} onScroll={onScroll}>
+      {props.detail.olderMessagesCursor && <button type="button" className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}</button>}
       {turns.map((turn, index) => (
         <TurnView
           key={turn.user?.id ?? turn.rest[0]?.id ?? index}
           turn={turn}
           latest={index === turns.length - 1}
-          outcome={index === turns.length - 1 ? props.detail.run?.status ?? 'completed' : 'completed'}
-          running={props.running && index === turns.length - 1}
+          outcome={turnOutcome(turn, props.detail)}
+          running={turnOutcome(turn, props.detail) === 'running'}
           statusLabel={props.statusLabel}
           showToolDetails={props.showToolDetails}
           avatar={props.avatar}
@@ -75,6 +103,13 @@ interface Turn {
   rest: ChatMessageView[]
 }
 
+function turnOutcome(turn: Turn, detail: ConversationDetail): RunStatus | undefined {
+  const messages = [turn.user, ...turn.rest].filter((message): message is ChatMessageView => message !== null)
+  const runId = messages.find((message) => message.runId)?.runId
+  if (runId && runId === detail.run?.id) return detail.run.status
+  return messages.find((message) => message.runStatus)?.runStatus
+}
+
 function groupTurns(messages: ChatMessageView[]): Turn[] {
   const turns: Turn[] = []
   for (const message of messages) {
@@ -92,7 +127,7 @@ function groupTurns(messages: ChatMessageView[]): Turn[] {
 function TurnView(props: {
   turn: Turn
   latest: boolean
-  outcome: 'completed' | 'failed' | 'paused' | 'stopped' | 'interrupted' | 'running'
+  outcome: RunStatus | undefined
   running: boolean
   statusLabel: string
   showToolDetails: boolean
@@ -106,8 +141,8 @@ function TurnView(props: {
   const tools = props.turn.rest.filter((message) => message.role === 'tool' && message.toolName !== 'react')
   const files = props.turn.rest.filter((message) => fileChange(message.toolName, message.content))
   const notices = props.turn.rest.filter((message) => message.role === 'notice')
-  const status = props.running ? props.statusLabel || 'Working…' : actionStatus(tools.length, props.outcome === 'running' ? 'completed' : props.outcome)
-  const interrupted = notices.some((notice) => notice.content.startsWith('Interrupted.'))
+  const status = props.running ? props.statusLabel || 'Working…' : props.outcome ? actionStatus(tools.length, props.outcome) : `${tools.length} recorded actions · outcome unavailable`
+  const incomplete = props.outcome && props.outcome !== 'completed' && props.outcome !== 'running'
   const long = prose.some((message) => isLongForm(message.content))
 
   async function copy(): Promise<void> {
@@ -124,6 +159,7 @@ function TurnView(props: {
         <div className="bubble-wrap user">
           <article className="bubble user">
             <p>{props.turn.user.content}</p>
+            <AttachmentList attachments={props.turn.user.attachments ?? []} />
           </article>
           <ReactionList message={props.turn.user} api={props.api} onError={props.onError} />
         </div>
@@ -142,7 +178,7 @@ function TurnView(props: {
                     void props.api.openExternal(url).catch((reason: unknown) => props.onError(reason instanceof Error ? reason.message : 'That link could not be opened.'))
                   }}
                 />
-                {interrupted && message.id === prose.at(-1)?.id && <p className="interrupted">Interrupted</p>}
+                {incomplete && message.id === prose.at(-1)?.id && <p className="interrupted">{props.outcome === 'paused' ? 'Paused · partial reply' : props.outcome === 'failed' ? 'Failed · partial reply' : 'Interrupted · partial reply'}</p>}
               </article>
             ))}
             {files.map((message) => {
@@ -170,7 +206,7 @@ function TurnView(props: {
             ))}
             {!props.running && tools.length > 0 && (
               <details className="tool" open={props.showToolDetails}>
-                <summary>{props.latest ? actionStatus(tools.length, props.outcome === 'running' ? 'completed' : props.outcome) : completedStatus(tools.length)}</summary>
+                <summary>{status}</summary>
                 {tools.map((message) => (
                   <div key={message.id} className="tool-detail">
                     <strong>{message.toolName}</strong>
@@ -212,6 +248,17 @@ function BrowserRecovery({ api, onError }: { api: RiotBridge; onError: (message:
       {note && <p role="status">{note}</p>}
     </div>
   )
+}
+
+export function AttachmentList({ attachments, onRemove }: { attachments: AttachmentView[]; onRemove?: (id: string) => void }) {
+  if (!attachments.length) return null
+  return <div className="attachments" aria-label={onRemove ? 'Draft attachments' : 'Message attachments'}>
+    {attachments.map((item) => <div className="attachment" key={item.id}>
+      {item.previewUrl && <img src={item.previewUrl} alt={`Preview of ${item.name}`} />}
+      <div><strong>{item.name}</strong><span className="help">{item.kind === 'image' ? `${item.width} × ${item.height} · ` : 'Text · '}{Math.max(1, Math.ceil(item.size / 1000))} KB</span></div>
+      {onRemove && <button type="button" className="quiet" aria-label={`Remove ${item.name}`} onClick={() => onRemove(item.id)}>Remove</button>}
+    </div>)}
+  </div>
 }
 
 function ReactionList(props: { message: ChatMessageView; api: RiotBridge; onError: (message: string) => void }) {

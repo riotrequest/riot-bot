@@ -155,7 +155,7 @@ export function inputRoom(contextTokenBudget: number, _maxOutputTokens = 0): num
   return contextTokenBudget
 }
 
-export function estimateMessagesTokens(messages: { content: string; extra?: string }[], reserve = 0): number {
-  const body = messages.reduce((sum, message) => sum + estimateTokens(message.content) + estimateTokens(message.extra ?? '') + 8, 0)
+export function estimateMessagesTokens(messages: { content: string; extra?: string; imageTokens?: number }[], reserve = 0): number {
+  const body = messages.reduce((sum, message) => sum + estimateTokens(message.content) + estimateTokens(message.extra ?? '') + (message.imageTokens ?? 0) + 8, 0)
   return body + reserve
 }

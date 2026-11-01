@@ -1,5 +1,7 @@
 import fs from 'fs'
-import { COST_DISCLAIMER, type Conversation, type Memory, type RunState } from '../shared/types'
+import { COST_DISCLAIMER, type AttachmentView, type Conversation, type Memory, type RunState } from '../shared/types'
+import type { PreparedAttachment } from './attachments'
+import type { MessageAttachment } from './model'
 import { assignBuiltin } from './avatar'
 import { newId } from './ids'
 import { snippetAround, toFtsOrQuery, toFtsQuery } from './search'
@@ -55,6 +57,12 @@ export interface MessageRecord {
   createdAt: number
   summarized: boolean
   runId: string | null
+  attachments?: MessageAttachment[]
+}
+
+export interface AttachmentRecord extends AttachmentView {
+  botId: string
+  messageId: string | null
 }
 
 export interface RunRecord {
@@ -482,7 +490,8 @@ export class Database {
       this.db.exec(SKILL_SCHEMA)
       this.db.exec(BOT_SCHEMA)
       this.ensureInitialBot()
-      this.db.exec('PRAGMA user_version = 4')
+      this.ensureAttachments()
+      this.db.exec('PRAGMA user_version = 5')
       this.ensureModelCatalog()
       return
     }
@@ -504,6 +513,50 @@ export class Database {
       this.db.exec('PRAGMA user_version = 4')
     }
     this.ensureModelCatalog()
+    this.ensureAttachments()
+    if (this.userVersion() < 5) this.db.exec('PRAGMA user_version = 5')
+  }
+
+  private ensureAttachments(): void {
+    this.db.exec(`CREATE TABLE IF NOT EXISTS attachments (
+      id TEXT PRIMARY KEY, bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+      message_id TEXT REFERENCES messages(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, kind TEXT NOT NULL, mime_type TEXT NOT NULL, size INTEGER NOT NULL,
+      width INTEGER, height INTEGER, preview_url TEXT, data BLOB NOT NULL, created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS attachments_bot_message ON attachments(bot_id, message_id, created_at)`)
+  }
+
+  addAttachment(id: string, botId: string, input: PreparedAttachment, now: number): AttachmentRecord {
+    this.db.prepare(`INSERT INTO attachments (id, bot_id, name, kind, mime_type, size, width, height, preview_url, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      id, botId, input.name, input.kind, input.mimeType, input.size, input.width, input.height, input.previewUrl, input.data, now)
+    return { id, botId, messageId: null, name: input.name, kind: input.kind, mimeType: input.mimeType, size: input.size, width: input.width, height: input.height, previewUrl: input.previewUrl }
+  }
+
+  listAttachments(botId: string, messageIds: string[] = []): AttachmentRecord[] {
+    const condition = messageIds.length ? 'message_id IN (SELECT value FROM json_each(?))' : 'message_id IS NULL'
+    const args = messageIds.length ? [botId, JSON.stringify(messageIds)] : [botId]
+    return rows(this.db.prepare(`SELECT id, bot_id, message_id, name, kind, mime_type, size, width, height, preview_url FROM attachments WHERE bot_id = ? AND ${condition} ORDER BY created_at, rowid`).all(...args)).map(mapAttachment)
+  }
+
+  getAttachment(id: string, botId: string): AttachmentRecord | null {
+    const found = row(this.db.prepare('SELECT id, bot_id, message_id, name, kind, mime_type, size, width, height, preview_url FROM attachments WHERE id = ? AND bot_id = ?').get(id, botId))
+    return found ? mapAttachment(found) : null
+  }
+
+  attachmentData(id: string, botId: string): Buffer {
+    const found = row(this.db.prepare('SELECT data FROM attachments WHERE id = ? AND bot_id = ?').get(id, botId))
+    if (!found || !(found.data instanceof Uint8Array)) throw new Error('That attachment is not here.')
+    return Buffer.from(found.data)
+  }
+
+  attachToMessage(ids: string[], messageId: string, botId: string): void {
+    const update = this.db.prepare('UPDATE attachments SET message_id = ? WHERE id = ? AND bot_id = ? AND message_id IS NULL')
+    for (const id of ids) update.run(messageId, id, botId)
+  }
+
+  removeDraftAttachment(id: string, botId: string): void {
+    this.db.prepare('DELETE FROM attachments WHERE id = ? AND bot_id = ? AND message_id IS NULL').run(id, botId)
   }
 
   private ensureModelCatalog(): void {
@@ -851,7 +904,7 @@ export class Database {
     this.db.prepare(`UPDATE conversations SET summary = ? WHERE id = ?`).run(summary, id)
   }
 
-  addMessage(message: MessageRecord): void {
+  addMessage(message: MessageRecord, attachmentIds: string[] = []): void {
     this.transaction(() => {
       this.db
         .prepare(
@@ -870,6 +923,11 @@ export class Database {
           message.summarized ? 1 : 0,
           message.runId
         )
+      if (attachmentIds.length) {
+        const conversation = this.getConversation(message.conversationId)
+        if (!conversation) throw new Error('That conversation is not here.')
+        this.attachToMessage(attachmentIds, message.id, conversation.botId)
+      }
       if (message.role !== 'notice' && message.content.trim()) {
         this.db
           .prepare(`INSERT INTO messages_fts (message_id, conversation_id, content) VALUES (?, ?, ?)`)
@@ -892,6 +950,38 @@ export class Database {
 
   listMessages(conversationId: string): MessageRecord[] {
     return rows(this.db.prepare(`SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, rowid ASC`).all(conversationId)).map(mapMessage)
+  }
+
+  pageMessages(conversationId: string, beforeId?: string, limit = 80): { messages: MessageRecord[]; hasMore: boolean } {
+    const count = Math.max(1, Math.min(100, Math.floor(limit)))
+    const anchor = beforeId ? row(this.db.prepare('SELECT created_at, rowid AS sort_id FROM messages WHERE id = ? AND conversation_id = ?').get(beforeId, conversationId)) : null
+    if (beforeId && !anchor) throw new Error('That history position is not in this conversation.')
+    const found = anchor
+      ? rows(this.db.prepare(`SELECT * FROM messages WHERE conversation_id = ? AND (created_at < ? OR (created_at = ? AND rowid < ?)) ORDER BY created_at DESC, rowid DESC LIMIT ?`).all(conversationId, anchor.created_at, anchor.created_at, anchor.sort_id, count + 1))
+      : rows(this.db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?').all(conversationId, count + 1))
+    return { messages: found.slice(0, count).reverse().map(mapMessage), hasMore: found.length > count }
+  }
+
+  latestMessage(conversationId: string, roles: MessageRecord['role'][] = ['user']): MessageRecord | null {
+    const found = row(this.db.prepare(`SELECT * FROM messages WHERE conversation_id = ? AND role IN (${roles.map(() => '?').join(',')}) ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(conversationId, ...roles))
+    return found ? mapMessage(found) : null
+  }
+
+  unsummarizedMessages(conversationId: string): MessageRecord[] {
+    return rows(this.db.prepare(`SELECT * FROM messages WHERE conversation_id = ? AND summarized = 0 AND role <> 'notice' ORDER BY created_at ASC, rowid ASC`).all(conversationId)).map(mapMessage)
+  }
+
+  messagesForCompaction(conversationId: string, ids: string[]): MessageRecord[] {
+    if (ids.length === 0) return []
+    return rows(this.db.prepare(`SELECT messages.* FROM messages JOIN json_each(?) AS selected ON messages.id = selected.value
+      WHERE conversation_id = ? AND summarized = 0 AND role <> 'notice' ORDER BY created_at ASC, messages.rowid ASC LIMIT 200`).all(JSON.stringify(ids), conversationId)).map(mapMessage)
+  }
+
+  historyIdsBeforeLatestUser(conversationId: string): string[] {
+    return rows(this.db.prepare(`WITH last_user AS (SELECT created_at, rowid AS sort_id FROM messages WHERE conversation_id = ? AND role = 'user' ORDER BY created_at DESC, rowid DESC LIMIT 1)
+      SELECT messages.id FROM messages, last_user WHERE conversation_id = ? AND summarized = 0 AND role <> 'notice'
+      AND (messages.created_at < last_user.created_at OR (messages.created_at = last_user.created_at AND messages.rowid < last_user.sort_id))
+      ORDER BY messages.created_at ASC, messages.rowid ASC`).all(conversationId, conversationId)).map((item) => text(item, 'id'))
   }
 
   getMessage(id: string): MessageRecord | null {
@@ -981,12 +1071,10 @@ export class Database {
     if (!message) return []
     const conversation = this.getConversation(message.conversationId)
     if (!conversation || conversation.botId !== botId) return []
-    const all = this.listMessages(message.conversationId)
-    const index = all.findIndex((item) => item.id === id)
-    if (index < 0) return []
-    const start = Math.max(0, index - Math.max(0, before))
-    const end = Math.min(all.length, index + Math.max(0, after) + 1)
-    return all.slice(start, end)
+    const earlier = before > 0 ? this.pageMessages(message.conversationId, id, Math.min(4, before)).messages : []
+    const anchor = row(this.db.prepare('SELECT created_at, rowid AS sort_id FROM messages WHERE id = ?').get(id))!
+    const later = rows(this.db.prepare(`SELECT * FROM messages WHERE conversation_id = ? AND (created_at > ? OR (created_at = ? AND rowid > ?)) ORDER BY created_at ASC, rowid ASC LIMIT ?`).all(message.conversationId, anchor.created_at, anchor.created_at, anchor.sort_id, Math.max(0, Math.min(4, after)))).map(mapMessage)
+    return [...earlier, message, ...later]
   }
 
   listMemories(botId = this.activeBotId()): MemoryRecord[] {
@@ -1836,4 +1924,13 @@ function mapBot(record: Row): BotRecord {
 
 export function localDayFrom(now: number): string {
   return localDay(now)
+}
+
+function mapAttachment(record: Row): AttachmentRecord {
+  return {
+    id: text(record, 'id'), botId: text(record, 'bot_id'), messageId: record.message_id == null ? null : text(record, 'message_id'),
+    name: text(record, 'name'), kind: text(record, 'kind') === 'image' ? 'image' : 'text', mimeType: text(record, 'mime_type'),
+    size: num(record, 'size'), width: nullableNum(record, 'width'), height: nullableNum(record, 'height'),
+    previewUrl: record.preview_url == null ? null : text(record, 'preview_url')
+  }
 }

@@ -2,7 +2,7 @@ import { spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from 'playwright-core'
-import { BROWSER_ACTION_TIMEOUT_MS, BROWSER_NAV_TIMEOUT_MS, checkNavigationUrl, type SearchHit } from './browser-policy'
+import { BROWSER_ACTION_TIMEOUT_MS, BROWSER_NAV_TIMEOUT_MS, checkNavigationUrl, googleResultTarget, type SearchHit } from './browser-policy'
 import type { LaunchedBrowser, LaunchedPage, RawControl } from './browser'
 
 export interface ChromiumLaunchOptions {
@@ -198,24 +198,25 @@ class PlaywrightPage implements LaunchedPage {
 
   async googleResults(limit: number): Promise<SearchHit[]> {
     await this.page.locator('#rso').waitFor({ state: 'attached', timeout: 3000 }).catch(() => undefined)
-    return this.page.locator('#rso').evaluateAll((roots, max) => {
+    const observed = await this.page.locator('#rso').evaluateAll((roots, max) => {
       const root = roots[0]
       if (!root) return []
       const cards = new Set<Element>()
-      const results: { title: string; url: string; snippet: string }[] = []
+      const results: { title: string; url: string; snippet: string; displayUrl: string }[] = []
       for (const heading of root.querySelectorAll('h3')) {
         const anchor = heading.closest('a[href]') as HTMLAnchorElement | null
         const card = heading.closest('div.MjjYud, div.g, div[data-sokoban-container]')
         if (!anchor || !card || cards.has(card) || heading.closest('#tads, #bottomads, [data-text-ad], [data-attrid]')) continue
-        let url: URL
-        try { url = new URL(anchor.href) } catch { continue }
-        if (url.hostname.endsWith('.google.com') || url.hostname === 'google.com' || !/^https?:$/.test(url.protocol)) continue
         cards.add(card)
-        results.push({ title: heading.textContent?.trim().slice(0, 180) ?? '', url: url.toString(), snippet: (card as HTMLElement).innerText.replace(/\s+/g, ' ').trim().slice(0, 350) })
-        if (results.length >= max) break
+        results.push({ title: heading.textContent?.trim().slice(0, 180) ?? '', url: anchor.href, displayUrl: card.querySelector('cite')?.textContent?.trim().slice(0, 250) ?? '', snippet: (card as HTMLElement).innerText.replace(/\s+/g, ' ').trim().slice(0, 350) })
+        if (results.length >= max * 3) break
       }
       return results
     }, limit)
+    return observed.flatMap((hit) => {
+      const url = googleResultTarget(hit.url)
+      return url ? [{ ...hit, url }] : []
+    }).slice(0, limit)
   }
 
   url(): string {

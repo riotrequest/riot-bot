@@ -16,6 +16,15 @@ export interface ChatMessage {
   toolCalls?: ToolCall[]
   toolCallId?: string
   name?: string
+  images?: string[]
+}
+
+export interface MessageAttachment {
+  id: string
+  name: string
+  kind: 'image' | 'text'
+  text?: string
+  imageUrl?: string
 }
 
 export interface ModelUsage {
@@ -58,6 +67,11 @@ const objectSchema = (properties: Record<string, unknown>, required: string[]): 
 const stringProp = (description: string): Record<string, unknown> => ({ type: 'string', description })
 
 export const TOOLS: ToolDefinition[] = [
+  {
+    name: 'read_attachment',
+    description: 'Read a saved text attachment by id, including text outside its preview. Images are included with the original message; this tool reads text only.',
+    parameters: objectSchema({ id: stringProp('Attachment id from a message.'), offset: { type: 'number', description: 'Character offset, optional.' }, query: stringProp('Optional text to find.') }, ['id'])
+  },
   {
     name: 'list_files',
     description: 'List one workspace folder. Not for memories or earlier decisions.',

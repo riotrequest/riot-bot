@@ -1,4 +1,5 @@
 import type { ContextView } from '../shared/types'
+import { IMAGE_TOKEN_RESERVE } from './attachments'
 import type { Database } from './db'
 import { AppError, ConfigError, LimitError, PauseError, ProviderError, StopError } from './errors'
 import { newId } from './ids'
@@ -138,7 +139,8 @@ export class Gateway {
     const inputTokens = estimateMessagesTokens(
       input.messages.map((message) => ({
         content: message.content,
-        extra: message.toolCalls ? JSON.stringify(message.toolCalls) : ''
+        extra: message.toolCalls ? JSON.stringify(message.toolCalls) : '',
+        imageTokens: (message.images?.length ?? 0) * IMAGE_TOKEN_RESERVE
       })),
       toolReserve
     )

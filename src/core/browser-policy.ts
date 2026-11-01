@@ -84,6 +84,24 @@ export interface SearchHit {
   title: string
   url: string
   snippet: string
+  displayUrl?: string
+}
+
+/** Google may expose an opaque /goto link; keep that observed link and its displayed URL. */
+export function googleResultTarget(href: string): string | null {
+  try {
+    let target = new URL(href)
+    const google = target.hostname === 'google.com' || target.hostname.endsWith('.google.com')
+    if (google) {
+      if (target.pathname === '/url') {
+        const direct = target.searchParams.get('q') || target.searchParams.get('url')
+        if (!direct || !/^https?:\/\//i.test(direct)) return null
+        target = new URL(direct)
+        if (target.hostname === 'google.com' || target.hostname.endsWith('.google.com')) return null
+      } else if (target.pathname !== '/goto' || !target.searchParams.get('url')) return null
+    }
+    return navigationBlocked(target.toString()) ? null : target.toString()
+  } catch { return null }
 }
 
 export function extractSearchResults(html: string, limit = BROWSER_RESULT_LIMIT): SearchHit[] {

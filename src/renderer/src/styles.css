@@ -8,6 +8,19 @@
 }
 
 * { box-sizing: border-box; }
+.transcript { overflow-anchor: none; }
+.load-older { align-self: center; flex-shrink: 0; padding: 8px 16px; border: 1px solid #3a404c; border-radius: 10px; background: #262b36; }
+.composer-body { flex: 1; min-width: 0; }
+.composer > .send { align-self: center; }
+.composer-body textarea { width: 100%; }
+.attachment-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.attachment-controls button { border: 1px solid #3a404c; background: #262b36; border-radius: 8px; padding: 4px 10px; }
+.attachment-controls .help { font-size: 12px; }
+.attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.attachment { display: flex; align-items: center; gap: 8px; padding: 8px; max-width: 100%; background: #20252e; border: 1px solid #3a404c; border-radius: 10px; }
+.attachment img { max-width: 128px; max-height: 96px; object-fit: contain; border-radius: 5px; }
+.attachment strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+.attachment .help { display: block; font-size: 12px; }
 html, body, #root { height: 100%; margin: 0; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; }

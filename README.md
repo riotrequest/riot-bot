@@ -14,6 +14,8 @@ History, memory, and skill search filter by bot before applying the result limit
 
 `npm run check` runs TypeScript checks, tests, and a production build. Vitest was updated to 5.0.5. The production dependency audit has no reported advisories; the remaining 15 moderate advisories are in packaging development dependencies. The existing installer in `release` has not been rebuilt for these changes.
 
+The follow-up adds paged history, saved per-turn outcomes, attachment uploads and screenshot paste, and preserves the All bots Activity filter when a task finishes. Provider and model-catalog requests use Electron's networking stack so they honor Windows trust and proxy settings; public web tools keep their separate address checks. Google result parsing preserves observed opaque redirect links and displayed destinations. Real browser and image/text tasks passed with the selected OpenRouter DeepSeek model on November 1, 2026.
+
 ## Setup
 
 Requires Node.js 22.13 or newer in the 22.x line, 24.x, or 26 and newer for development and tests. The packaged app includes its own runtime.
@@ -28,7 +30,7 @@ The first launch of this version keeps the existing database. Chats, memories, s
 
 Data lives in `%APPDATA%\riot-bot\`:
 
-- `riot-bot.sqlite` — bots, conversations, messages, reactions, memories, skills, tasks, and usage
+- `riot-bot.sqlite` — bots, conversations, messages, attachments (including pending uploads), reactions, memories, skills, tasks, and usage
 - `avatars\` — uploaded bot images, stored as PNG thumbnails named by bot id
 - `browser-profiles\<bot id>\` — that bot’s Chromium cookies and site storage
 - `playwright-browsers\` — the Chromium download, after you choose Install Chromium
@@ -38,6 +40,8 @@ Data lives in `%APPDATA%\riot-bot\`:
 New workspaces are created under your home folder in `RiotBot\workspaces\`. Choosing an existing folder uses that folder as it is. Browser profiles are not inside the workspace and are not your Chrome or Edge profile.
 
 To remove the browser without touching chats, quit the app and delete `playwright-browsers` and `browser-profiles`. Deleting a profile removes that bot’s signed-in site storage. Do not delete the database to uninstall Chromium.
+
+For a full backup, preserve the database, encrypted credentials, avatars, and complete browser profiles. A source ZIP or Git bundle does not contain these. Workspace files are separate and need their own backup. Quit Riot Bot and its browser windows before an ordinary folder copy; for a running database use SQLite's backup API rather than copying its hot WAL files. Restore into a separate folder, check the database and file hashes, and keep the current app-data folder aside before replacing it. Do not mix a restored database with an older WAL/SHM pair. Credentials and browser sign-ins can depend on the same Windows account and machine. Keep app-data archives private.
 
 ## Bots and chats
 
@@ -62,6 +66,12 @@ Casual acknowledgements can be a short reply, an emoji reaction on the message, 
 Tool activity is one status line, such as “Checking memory…”, “Searching the web…”, or “Reading a page…”. When the turn is finished, the details say whether that run completed, failed, paused, or was interrupted, and how many actions finished. A finished tool does not by itself mean the request succeeded. Approvals, errors, file undo, and skill previews stay visible. A pause is shown once, in the chat. If the pause says Open Settings, that button is on the same notice. **Show tool details by default** is off until you turn it on in Settings. The full record remains in Activity, for this bot or for all bots.
 
 The transcript follows new text only while you are near the bottom. Otherwise it leaves a **Jump to latest** control.
+
+Opening a long chat loads the newest 80 messages. **Load earlier messages** prepends another page while keeping your reading position. The complete transcript remains searchable. Completed, paused, stopped, interrupted, and failed outcomes come from each saved run, including after restart. Legacy records without an outcome are labeled as unavailable.
+
+Use **Attach files**, drag files onto the composer, or paste a screenshot with Ctrl+V after Win+Shift+S. **Paste screenshot** reads an image only when clicked. PNG/JPEG images (8 MB maximum, within 8192 pixels per side and 32 megapixels) are decoded and resized to at most 2048 pixels per side. UTF-8 text/code files can be up to 1 MB. Up to four files can accompany a message, including a message with no typed text. Pending attachments stay with their bot across switching and restart. Remove discards the pending copy and leaves the original file intact. Attaching, pasting, and removing do not call a model.
+
+Sending shares those attachments with the selected API provider. Images require a vision-capable model and are sent as image parts. Text has a short preview and a `read_attachment` tool for the full saved contents in bounded sections. Images reserve 16,384 estimated input tokens apiece for fitting and budget checks; actual provider usage varies. Attachments are stored in SQLite and removed with their conversation. PDFs, Office documents, archives, audio/video, GIF, and WebP are not supported in chat yet; convert documents to UTF-8 text or take a PNG screenshot. Earlier images are not replayed after compaction; attach the image again if exact visual details are needed.
 
 The bot’s workspace path is part of its profile. Ask “what is your workspace location” and it can answer from that profile without searching files.
 
@@ -164,13 +174,17 @@ This writes an unsigned installer:
 npm run check
 ```
 
-The November 1, 2026 review and free-search fixes expanded the suite from 69 to 109 tests. `npm run check` passes TypeScript checks, all 109 tests, and the production build. Node 22 prints `ExperimentalWarning: SQLite is an experimental feature` while the tests run. Model calls in these tests use mocks. No paid API call was made for this work. Passing them does not mean every provider model accepts tools, streaming, or the same context size.
+The November 1, 2026 review and follow-up expanded the suite from 69 to 122 tests. `npm run check` passes TypeScript checks, all 122 tests, and the production build. Node 22 prints `ExperimentalWarning: SQLite is an experimental feature` while the tests run. Model calls in the automated suite use mocks. Passing them does not mean every provider model accepts tools, streaming, images, or the same context size.
+
+Additional desktop checks used isolated app data and exercised 80-message pages, scroll preservation, saved failed outcomes, actual PNG/JPEG decoding and resizing, screenshot paste, the file-picker handler, bot separation, pending-upload persistence across restart, message previews, and app-wide Activity after task completion. The history test visits 2,081 messages with identical timestamps without skips or duplicates. No renderer errors were recorded.
+
+Live checks used a verified restoration of app data, the saved Windows-encrypted key, and the selected `deepseek/deepseek-v4.1-flash-1017` model through OpenRouter. The exact Google query `angelicpedia.com` returned Angelicpedia at organic position 1 in the observed US/English page on November 1, 2026; that completed three-call run reported $0.00083484324. A separate one-call image/text check correctly named the synthetic red square, blue circle, and attached code word; it reported $0.000635877. Search used the free browser route. These are observations of those runs, not a permanent ranking or a provider invoice. No normal app-data chats or settings were used as test fixtures.
 
 An isolated Electron smoke check also verified startup, the renderer sandbox and preload bridge, the New Bot form, saved settings, named-bot creation, bot switching, and separate unsent drafts. Its database and workspaces were temporary, it reported no renderer errors, and Activity stayed at zero model calls. It did not use the normal app-data directory.
 
 Covered: one ongoing conversation after restart, with an earlier chat left intact; a short workspace question with the current tool set and a saved summary; a long conversation that drops older history before refusing; overhead that names Settings instead of the message; automatic fitting that sends a request whose estimate exceeds the old 8,000-token cap; a mock search, open, and stored-section read; one context-length retry that does not repeat the tool; compaction that does not fold the same messages twice; a spending block that stays distinct from context; catalog lookup only for OpenRouter and not on idle; same-bot recall and no cross-bot leakage; migration and a second startup; renaming without moving the workspace; setup calls through the gateway and absent on idle; a bot switch during a run; the app-wide daily ceiling; reactions; avatars; Markdown; scroll stickiness; idle launch and restart; compaction; retries; dollar limits; stop; path checks; command approval; credential redaction; private-network web fetches; browser profiles, stale element references, takeover, cancellation, consequential-click confirmation, and blocked destinations; streamed tool calls; and the provider-check preview making no call.
 
-A separate Chromium check, with no model call, downloaded the browser and opened a public search page and an article in the visible window. That is not an end-to-end test of the assistant.
+The earlier browser-only smoke check downloaded Chromium and read a public page without a model call. The later selected-model checks described above exercised the assistant through the provider and browser tools.
 
 The running window was also checked at 1180 and 880 pixels wide. The sidebar stayed a vertical bot list with New Bot, avatars, a selected-bot marker, and the bot menu. Earlier conversations still listed a saved chat. Switching bots kept each unsent draft with that bot. No model call was made.
 
@@ -187,7 +201,7 @@ The running window was also checked at 1180 and 880 pixels wide. The sidebar sta
 - File undo is refused if the file changed after the edit.
 - Images in model Markdown are not loaded. `http` and `https` links open externally. Avatar uploads are stored locally.
 - One task runs at a time. Nothing runs on a timer, and skills are not learned in the background.
-- Drafts survive a bot switch in the same session. They are not written to disk.
+- Typed drafts survive a bot switch in the same session and are not written to disk. Pending file and screenshot attachments are persisted.
 - No accounts, sync, telemetry, plugin marketplace, or extra agents.
 - Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one.
 - The earlier provider check’s cancellation step did not pass. These mock tests do not rerun that live check.

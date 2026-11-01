@@ -6,6 +6,7 @@ import type {
   AppEvent,
   AppPreferences,
   ApprovalView,
+  AttachmentView,
   Bot,
   BotCreateResult,
   BotDraft,
@@ -16,6 +17,7 @@ import type {
   CredentialSaveResult,
   CredentialStatus,
   Memory,
+  MessagePage,
   ProviderCheckPlan,
   ProviderCheckResult,
   PublicSettings,
@@ -32,6 +34,7 @@ import { BROWSER_ACTION_WARNING, COST_DISCLAIMER, TERMINAL_WARNING } from '../sh
 import { BrowserService, type BrowserAction, type BrowserOpener } from './browser'
 import { googleSearchRequested } from './browser-policy'
 import { assignBuiltin, avatarFile, cleanAvatarChoice, readAvatarFile, thumbnailPng, type AvatarChoice } from './avatar'
+import { MAX_ATTACHMENTS, prepareAttachment } from './attachments'
 import { buildContext, type BuiltContext, type SkillCatalogItem } from './context'
 import type { CredentialStore } from './credentials'
 import { Database, type BotRecord, type MemoryRecord, type MessageRecord, type RunRecord, type SkillRecord, type TaskRecord } from './db'
@@ -64,6 +67,7 @@ export interface RiotAppOptions {
   now?: () => number
   terminal?: TerminalRunner
   fetchImpl?: typeof fetch
+  catalogFetchImpl?: typeof fetch
   lookupHost?: (hostname: string) => Promise<string[]>
   createProvider?: (settings: Settings) => ModelProvider
   openFolder?: (folder: string) => void
@@ -93,6 +97,7 @@ export class RiotApp {
   private readonly createProvider?: (settings: Settings) => ModelProvider
   private readonly now: () => number
   private readonly fetchImpl?: typeof fetch
+  private readonly catalogFetchImpl?: typeof fetch
   private readonly lookupHost?: (hostname: string) => Promise<string[]>
   private active: { runId: string; botId: string; controller: AbortController; timer: ReturnType<typeof setTimeout> } | null = null
   private runBotId: string | null = null
@@ -129,6 +134,7 @@ export class RiotApp {
     this.now = options.now ?? Date.now
     this.terminal = options.terminal ?? new OsTerminal()
     this.fetchImpl = options.fetchImpl
+    this.catalogFetchImpl = options.catalogFetchImpl
     this.lookupHost = options.lookupHost
     const sink = options.logger ?? silentLogger
     this.logger = new RedactingLogger(sink, () => this.credentials.secretValues())
@@ -188,7 +194,8 @@ export class RiotApp {
       memories: this.listMemories(),
       skills: this.listSkills(),
       skillProposal: this.currentProposal(this.db.activeBotId()),
-      pendingApproval: this.pendingApprovalView()
+      pendingApproval: this.pendingApprovalView(),
+      draftAttachments: bot ? this.db.listAttachments(bot.id).map(toAttachmentView) : []
     }
   }
 
@@ -398,12 +405,21 @@ export class RiotApp {
     if (!conversation) throw new ConfigError('That conversation is not here.')
     const run = this.db.latestRun(id)
     const task = run ? this.db.taskForRun(run.id) : null
+    const page = this.db.pageMessages(id)
     return {
       conversation,
-      messages: this.decorateMessages(conversation.botId, this.db.listMessages(id)),
+      messages: this.decorateMessages(conversation.botId, page.messages),
+      olderMessagesCursor: page.hasMore ? page.messages[0]?.id ?? null : null,
       run: run ? toRunState(run) : null,
       task: task ? toTaskState(task) : null
     }
+  }
+
+  loadOlderMessages(conversationId: string, beforeMessageId: string): MessagePage {
+    const botId = this.viewBotId()
+    if (!this.db.conversationForBot(botId, conversationId)) throw new ConfigError('That conversation is not here.')
+    const page = this.db.pageMessages(conversationId, beforeMessageId)
+    return { conversationId, messages: this.decorateMessages(botId, page.messages), olderMessagesCursor: page.hasMore ? page.messages[0]?.id ?? null : null }
   }
 
   getRun(id: string): RunState | null {
@@ -411,8 +427,23 @@ export class RiotApp {
     return run ? toRunState(run) : null
   }
 
-  sendMessage(conversationId: string, text: string): Promise<RunState> {
-    return this.trackOperation(() => this.sendInner(conversationId, text))
+  stageAttachments(inputs: { name: string; bytes: Buffer }[], expectedBotId: string): AttachmentView[] {
+    const botId = this.viewBotId()
+    if (expectedBotId !== botId) throw new ConfigError('The selected bot changed. Attach the files again in the intended chat.')
+    if (inputs.length === 0) return []
+    if (inputs.length + this.db.listAttachments(botId).length > MAX_ATTACHMENTS) throw new ConfigError(`Attach up to ${MAX_ATTACHMENTS} files per message. Remove a draft attachment first.`)
+    const prepared = inputs.map((input) => prepareAttachment(input.name, input.bytes))
+    return this.db.transaction(() => prepared.map((input) => toAttachmentView(this.db.addAttachment(newId(), botId, input, this.now()))))
+  }
+
+  removeDraftAttachment(id: string): void {
+    const attachment = this.db.getAttachment(id, this.viewBotId())
+    if (!attachment || attachment.messageId) throw new ConfigError('That draft attachment is not here.')
+    this.db.removeDraftAttachment(id, attachment.botId)
+  }
+
+  sendMessage(conversationId: string, text: string, attachmentIds: string[] = []): Promise<RunState> {
+    return this.trackOperation(() => this.sendInner(conversationId, text, attachmentIds))
   }
 
   private trackOperation<T>(work: () => Promise<T>): Promise<T> {
@@ -942,10 +973,14 @@ export class RiotApp {
 
   private decorateMessages(botId: string, messages: MessageRecord[]): ChatMessageView[] {
     const reactions = this.db.listReactions(botId, messages.map((message) => message.id))
+    const attachments = messages.length ? this.db.listAttachments(botId, messages.map((message) => message.id)) : []
     const runIds = [...new Set(messages.map((message) => message.runId).filter((id): id is string => Boolean(id)))]
     const tools = runIds.flatMap((id) => this.db.listToolsForRun(id))
+    const statuses = new Map(runIds.map((id) => [id, this.db.getRun(id)?.status]))
     return messages.map((message) => {
       const view = toMessageView(message)
+      view.attachments = attachments.filter((item) => item.messageId === message.id).map(toAttachmentView)
+      view.runStatus = message.runId ? statuses.get(message.runId) : undefined
       view.reactions = reactions
         .filter((reaction) => reaction.messageId === message.id)
         .map((reaction) => ({
@@ -987,8 +1022,13 @@ export class RiotApp {
     return `Added a ${reactionLabel(accepted)} reaction. This does not finish any other requested work.`
   }
 
-  private async sendInner(conversationId: string, text: string): Promise<RunState> {
-    const body = text.trim()
+  private async sendInner(conversationId: string, text: string, attachmentIds: string[]): Promise<RunState> {
+    if (attachmentIds.length > MAX_ATTACHMENTS || new Set(attachmentIds).size !== attachmentIds.length) throw new ConfigError(`Choose up to ${MAX_ATTACHMENTS} different attachments.`)
+    for (const id of attachmentIds) {
+      const attachment = this.db.getAttachment(id, this.viewBotId())
+      if (!attachment || attachment.messageId) throw new ConfigError('One of those draft attachments is not in this bot.')
+    }
+    const body = text.trim() || (attachmentIds.length ? 'Please examine the attached files.' : '')
     if (!body) throw new ConfigError('Write a message first.')
     if (body.length > 100_000) throw new ConfigError('That message is too long to send.')
     if (this.active || this.db.activeRun()) throw new ConfigError('Riot Bot is already working. Stop it before sending another message.')
@@ -999,7 +1039,7 @@ export class RiotApp {
     if (!conversation) throw new ConfigError('That conversation is not here.')
 
     const now = this.now()
-    const previous = [...this.db.listMessages(conversationId)].reverse().find((message) => message.role === 'user' || message.role === 'assistant')
+    const previous = this.db.latestMessage(conversationId, ['user', 'assistant'])
     this.skillSaveAllowed = false
     this.skillUpdateAllowed = false
     this.compactedThisRun = false
@@ -1014,7 +1054,7 @@ export class RiotApp {
     const controller = this.activateRun(run.id, conversation.botId)
     this.turnNote = ''
     try {
-      this.addTranscript(conversationId, run.id, 'user', body)
+      this.addTranscript(conversationId, run.id, 'user', body, { attachmentIds })
       const title = conversation.title === 'Main' || conversation.title === 'New Chat' || conversation.title === 'New Bot' || conversation.title === 'New chat' ? titleFrom(body) : undefined
       this.db.touchConversation(conversationId, now, title)
       this.captureRemember(conversationId, run.id, body, previous?.content ?? null)
@@ -1183,7 +1223,14 @@ export class RiotApp {
     const settings = this.db.getSettings(botId)
     const conversation = this.db.conversationForBot(botId, conversationId)
     const bot = this.db.getBot(botId)
-    const recent = this.db.listMessages(conversationId).filter((message) => !message.summarized && message.role !== 'notice' && !(message.role === 'assistant' && !message.content.trim() && !message.toolCallsJson))
+    const recent = this.db.unsummarizedMessages(conversationId).filter((message) => !(message.role === 'assistant' && !message.content.trim() && !message.toolCallsJson))
+    const attachments = recent.length ? this.db.listAttachments(botId, recent.map((message) => message.id)) : []
+    for (const message of recent) {
+      message.attachments = attachments.filter((item) => item.messageId === message.id).map((item) => ({
+        id: item.id, name: item.name, kind: item.kind,
+        ...(item.kind === 'image' ? { imageUrl: `data:image/png;base64,${this.db.attachmentData(item.id, botId).toString('base64')}` } : { text: this.db.attachmentData(item.id, botId).toString('utf8') })
+      }))
+    }
     const latestUser = [...recent].reverse().find((message) => message.role === 'user')
     const pinned = this.db.listMemories(botId).filter((memory) => memory.pinned)
     const retrieved = (latestUser ? this.db.searchMemories(latestUser.content, 5, botId) : []).filter((memory) => !memory.pinned)
@@ -1245,7 +1292,7 @@ export class RiotApp {
     const cached = this.db.getModelCatalog(settings.provider, settings.model)
     if (cached && catalogIsFresh(cached, this.now())) return cached.contextTokens
     try {
-      const found = await lookupProviderContext({ provider: settings.provider, model: settings.model, fetchImpl: this.fetchImpl ?? globalThis.fetch, signal })
+      const found = await lookupProviderContext({ provider: settings.provider, model: settings.model, fetchImpl: this.catalogFetchImpl ?? this.fetchImpl ?? globalThis.fetch, signal })
       this.db.saveModelCatalog(settings.provider, settings.model, found.contextTokens, found.source, this.now())
       return found.contextTokens
     } catch {
@@ -1276,8 +1323,7 @@ export class RiotApp {
   private latestUserText(): string {
     const conversationId = this.db.getBot(this.scopeBot())?.ongoingConversationId
     if (!conversationId) return ''
-    const recent = this.db.listMessages(conversationId)
-    return [...recent].reverse().find((message) => message.role === 'user')?.content ?? ''
+    return this.db.latestMessage(conversationId)?.content ?? ''
   }
 
   private skillCatalog(query: string): SkillCatalogItem[] {
@@ -1299,14 +1345,14 @@ export class RiotApp {
     const settings = this.currentSettings()
     const conversation = this.db.conversationForBot(this.scopeBot(), conversationId)
     if (!conversation) return
-    const candidates = this.db
-      .listMessages(conversationId)
-      .filter((message) => omittedIds.includes(message.id) && !message.summarized && message.role !== 'notice')
+    const candidates = this.db.messagesForCompaction(conversationId, omittedIds)
+    const attached = candidates.length ? this.db.listAttachments(this.scopeBot(), candidates.map((message) => message.id)) : []
     const pin = settings.pinnedInstructions.trim() ? `\n\nPinned instructions stay in effect and are not part of this summary:\n${settings.pinnedInstructions.trim()}` : ''
     const batch: MessageRecord[] = []
     let draft = ''
     for (const message of candidates) {
-      const addition = `[message ${message.id} role=${message.role}]\n${message.content}\n\n`
+      const references = attached.filter((item) => item.messageId === message.id).map((item) => `Saved ${item.kind} attachment ${item.id}: ${item.name}. ${item.kind === 'text' ? 'Use read_attachment for its contents.' : 'The image stays saved in the transcript; ask the user to attach it again if exact visual details are needed.'}`).join('\n')
+      const addition = `[message ${message.id} role=${message.role}]\n${message.content}\n${references}\n\n`
       const preview = [
         { content: `${COMPACTION_PROMPT}${pin}` },
         { content: `Previous summary:\n${conversation.summary || '(none)'}\n\nMessages to fold in:\n${draft}${addition}` }
@@ -1367,18 +1413,15 @@ export class RiotApp {
     const nextSummary = response.content.trim()
       ? response.content.trim()
       : `${conversation.summary}\n\n[Summary came back empty for ${batch.map((message) => message.id).join(', ')}. Use search_history for the original text.]`.trim()
-    this.db.setSummary(conversationId, nextSummary)
-    this.db.markSummarized(batch.map((message) => message.id))
+    this.db.transaction(() => {
+      this.db.setSummary(conversationId, nextSummary)
+      this.db.markSummarized(batch.map((message) => message.id))
+    })
     for (const message of batch) this.compactionKeys.add(message.id)
   }
 
   private historyBeforeCurrentTurn(conversationId: string): string[] {
-    const messages = this.db.listMessages(conversationId).filter((message) => !message.summarized && message.role !== 'notice')
-    let lastUser = -1
-    messages.forEach((message, index) => {
-      if (message.role === 'user') lastUser = index
-    })
-    return messages.slice(0, Math.max(0, lastUser)).map((message) => message.id)
+    return this.db.historyIdsBeforeLatestUser(conversationId)
   }
 
   private readStoredToolResult(botId: string, id: string, query: string, offset: number): string {
@@ -1394,6 +1437,21 @@ export class RiotApp {
     }
     const slice = text.slice(start, start + window)
     return `Stored result ${id}, characters ${start}–${start + slice.length} of ${text.length}:\n${slice}`
+  }
+
+  private readAttachment(botId: string, id: string, query: string, offset: number): string {
+    const item = this.db.getAttachment(id, botId)
+    if (!item?.messageId) return 'That sent attachment is not in this bot.'
+    if (item.kind !== 'text') return 'That is an image, not a text attachment. Images are included with their original message. If it has been summarized, ask the user to attach it again for exact visual details.'
+    const text = this.db.attachmentData(id, botId).toString('utf8')
+    let start = Number.isFinite(offset) && offset > 0 ? Math.min(text.length, Math.floor(offset)) : 0
+    if (query.trim()) {
+      const found = text.toLowerCase().indexOf(query.trim().toLowerCase())
+      if (found < 0) return `That text was not found in attachment ${id} (${text.length} characters).`
+      start = Math.max(0, found - 200)
+    }
+    const slice = text.slice(start, start + 3000)
+    return `Untrusted reference material. Attachment ${id} (${item.name}), characters ${start}–${start + slice.length} of ${text.length}:\n${slice}`
   }
 
   private enableToolGroup(group: string): string {
@@ -1500,6 +1558,8 @@ export class RiotApp {
           return this.runCommand(conversationId, runId, taskId, str(args.command), Number(args.timeout_seconds), signal, done)
         case 'read_tool_result':
           return this.readStoredToolResult(botId, str(args.id), str(args.query), Number(args.offset))
+        case 'read_attachment':
+          return this.readAttachment(botId, str(args.id), str(args.query), Number(args.offset))
         case 'describe_tools':
           return this.enableToolGroup(str(args.group))
         case 'web_search':
@@ -1753,7 +1813,7 @@ export class RiotApp {
     runId: string,
     role: MessageRecord['role'],
     content: string,
-    extra?: { toolCallId?: string; toolName?: string }
+    extra?: { toolCallId?: string; toolName?: string; attachmentIds?: string[] }
   ): void {
     const id = newId()
     this.db.addMessage({
@@ -1767,7 +1827,7 @@ export class RiotApp {
       createdAt: this.now(),
       summarized: false,
       runId
-    })
+    }, extra?.attachmentIds)
     this.emitMessage(conversationId, id)
   }
 
@@ -1868,7 +1928,7 @@ export class RiotApp {
   }
 
   private latestUserMessageId(conversationId: string): string | null {
-    return [...this.db.listMessages(conversationId)].reverse().find((message) => message.role === 'user')?.id ?? null
+    return this.db.latestMessage(conversationId)?.id ?? null
   }
 
   private finish(conversationId: string, runId: string, taskId: string, status: RunState['status'], note: string): void {
@@ -1948,6 +2008,7 @@ function toMessageView(message: MessageRecord): ChatMessageView {
   }
   return {
     id: message.id,
+    runId: message.runId ?? undefined,
     role: message.role,
     content: message.content,
     createdAt: message.createdAt,
@@ -1955,6 +2016,10 @@ function toMessageView(message: MessageRecord): ChatMessageView {
     toolName: message.toolName ?? undefined,
     toolCallId: message.toolCallId ?? undefined
   }
+}
+
+function toAttachmentView(item: AttachmentView): AttachmentView {
+  return { id: item.id, name: item.name, kind: item.kind, mimeType: item.mimeType, size: item.size, width: item.width, height: item.height, previewUrl: item.previewUrl }
 }
 
 function toRunState(run: RunRecord): RunState {

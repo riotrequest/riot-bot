@@ -19,6 +19,8 @@ export function progressLabel(name: string): string {
     case 'search_files':
     case 'read_file':
       return 'Reading project files…'
+    case 'read_attachment':
+      return 'Reading an attachment…'
     case 'write_file':
     case 'edit_file':
       return 'Updating project files…'

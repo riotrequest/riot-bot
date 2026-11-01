@@ -3,6 +3,7 @@ import type {
   ActivityEntry,
   AppPreferences,
   ApprovalView,
+  AttachmentView,
   Bot,
   BotDraft,
   ChatMessageView,
@@ -11,6 +12,7 @@ import type {
   ConversationDetail,
   CredentialStatus,
   Memory,
+  MessagePage,
   ProviderCheckPlan,
   ProviderCheckResult,
   BrowserView,
@@ -24,7 +26,7 @@ import type {
 } from '../../shared/types'
 import { formatUsd, TERMINAL_WARNING } from '../../shared/types'
 import { AVATAR_CHOICES, AVATAR_COLORS, AVATAR_EMOJIS, BotAvatar } from './avatar'
-import { ChatTranscript } from './chat'
+import { AttachmentList, ChatTranscript } from './chat'
 
 type Screen = 'chat' | 'memory' | 'skills' | 'activity' | 'settings' | 'new-bot' | 'earlier'
 
@@ -60,14 +62,23 @@ function Shell({ api }: { api: RiotBridge }) {
   const [approval, setApproval] = useState<ApprovalView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [draftAttachments, setDraftAttachments] = useState<AttachmentView[]>([])
   const [busy, setBusy] = useState(false)
   const [ongoingId, setOngoingId] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [browserNote, setBrowserNote] = useState('')
   const conversationId = useRef<string | null>(null)
   const viewedBotId = useRef<string | null>(null)
+  const activityScopeRef = useRef(activityScope)
   const drafts = useRef<Record<string, string>>({})
   viewedBotId.current = bot?.id ?? null
+  activityScopeRef.current = activityScope
+
+  async function refreshActivity(scope = activityScopeRef.current): Promise<void> {
+    const botId = viewedBotId.current
+    const next = await api.listActivity(scope)
+    if (scope === activityScopeRef.current && botId === viewedBotId.current) setActivity(next)
+  }
 
   async function loadConversation(id: string): Promise<void> {
     const next = await api.openConversation(id)
@@ -87,11 +98,13 @@ function Shell({ api }: { api: RiotBridge }) {
     setSettings(snapshot.settings)
     setCredentials(snapshot.credentials)
     setUsage(snapshot.usage)
-    setActivity(snapshot.activity)
+    if (activityScopeRef.current === 'bot') setActivity(snapshot.activity)
+    else void refreshActivity()
     setMemories(snapshot.memories)
     setSkills(snapshot.skills)
     setProposal(snapshot.skillProposal)
     setApproval(snapshot.pendingApproval)
+    setDraftAttachments(snapshot.draftAttachments ?? [])
     if (snapshot.current) {
       conversationId.current = snapshot.current.conversation.id
       setDetail(snapshot.current)
@@ -127,6 +140,10 @@ function Shell({ api }: { api: RiotBridge }) {
       }
       if ((event.type === 'delta' || event.type === 'message') && event.conversationId === conversationId.current) {
         setDetail((current) => mergeMessage(current, event.message))
+        if (event.message.role === 'user' && event.message.attachments?.length) {
+          const sent = new Set(event.message.attachments.map((item) => item.id))
+          setDraftAttachments((current) => current.filter((item) => !sent.has(item.id)))
+        }
         return
       }
       if (event.type === 'browser-progress') {
@@ -137,12 +154,16 @@ function Shell({ api }: { api: RiotBridge }) {
         setRunningBotId(event.run.status === 'running' ? event.run.botId : null)
         setBusy(event.run.status === 'running')
         if (event.conversationId === conversationId.current) {
-          setDetail((current) => (current ? { ...current, run: event.run, task: event.task } : current))
+          setDetail((current) => (current ? {
+            ...current, run: event.run, task: event.task,
+            messages: current.messages.map((message) => message.runId === event.run.id ? { ...message, runStatus: event.run.status } : message)
+          } : current))
         }
         if (event.run.status !== 'running') {
-          void api.listActivity(activityScope).then(setActivity).catch(() => undefined)
+          void refreshActivity().catch(() => undefined)
           void api.getUsage().then(setUsage).catch(() => undefined)
           void api.getSnapshot().then((snapshot) => {
+            if (snapshot.bot?.id !== viewedBotId.current) return
             setConversations(snapshot.conversations)
             setOngoingId(snapshot.ongoingConversationId)
           }).catch(() => undefined)
@@ -156,17 +177,22 @@ function Shell({ api }: { api: RiotBridge }) {
   const configured = settings && credentials ? providerReady(settings, credentials) : false
 
   async function send(): Promise<void> {
-    if (!detail || !draft.trim() || running) return
+    if (!detail || (!draft.trim() && !draftAttachments.length) || running) return
     const text = draft
+    const attachmentIds = draftAttachments.map((item) => item.id)
+    const sendingBotId = bot?.id
     setDraft('')
+    setDraftAttachments([])
     if (bot) drafts.current[bot.id] = ''
     setError(null)
     setBusy(true)
     try {
-      await api.sendMessage(detail.conversation.id, text)
+      await api.sendMessage(detail.conversation.id, text, attachmentIds)
     } catch (reason) {
-      setDraft(text)
       if (bot) drafts.current[bot.id] = text
+      if (bot?.id === viewedBotId.current) setDraft(text)
+      const snapshot = await api.getSnapshot().catch(() => null)
+      if (snapshot && snapshot.bot?.id === sendingBotId && viewedBotId.current === sendingBotId) setDraftAttachments(snapshot.draftAttachments ?? [])
       setError(messageOf(reason))
     } finally {
       setBusy(false)
@@ -212,8 +238,11 @@ function Shell({ api }: { api: RiotBridge }) {
                     setMemories(snapshot.memories)
                     setSkills(snapshot.skills)
                     setProposal(snapshot.skillProposal)
-                    setActivity(snapshot.activity)
+                    viewedBotId.current = snapshot.bot?.id ?? null
+                    if (activityScopeRef.current === 'bot') setActivity(snapshot.activity)
+                    else void refreshActivity().catch(() => undefined)
                     setDraft(drafts.current[item.id] ?? '')
+                    setDraftAttachments(snapshot.draftAttachments ?? [])
                     if (snapshot.current) {
                       conversationId.current = snapshot.current.conversation.id
                       setDetail(snapshot.current)
@@ -331,8 +360,10 @@ function Shell({ api }: { api: RiotBridge }) {
         )}
         {screen === 'chat' && detail && (
           <ChatPane
+            key={detail.conversation.id}
             detail={detail}
             draft={draft}
+            attachments={draftAttachments}
             running={running}
             readOnly={viewingEarlier}
             onBack={() => {
@@ -350,6 +381,17 @@ function Shell({ api }: { api: RiotBridge }) {
             onSend={() => void send()}
             onUndo={(id) => void api.undoEdit(id).then((result) => setError(result.ok ? null : result.message))}
             onError={(next) => setError(next)}
+            onOlderPage={(page) => setDetail((current) => current?.conversation.id === page.conversationId ? {
+              ...current,
+              olderMessagesCursor: page.olderMessagesCursor,
+              messages: [...page.messages.filter((message) => !current.messages.some((existing) => existing.id === message.id)), ...current.messages]
+            } : current)}
+            onAttachments={(items) => {
+              if (viewedBotId.current === detail.conversation.botId) setDraftAttachments((current) => [...current, ...items.filter((item) => !current.some((existing) => existing.id === item.id))])
+            }}
+            onRemoveAttachment={(id) => {
+              void api.removeDraftAttachment(id).then(() => setDraftAttachments((current) => current.filter((item) => item.id !== id))).catch((reason: unknown) => setError(messageOf(reason)))
+            }}
           />
         )}
         {screen === 'memory' && (
@@ -385,7 +427,8 @@ function Shell({ api }: { api: RiotBridge }) {
             scope={activityScope}
             onScope={(scope) => {
               setActivityScope(scope)
-              void api.listActivity(scope).then(setActivity).catch((reason: unknown) => setError(messageOf(reason)))
+              activityScopeRef.current = scope
+              void refreshActivity(scope).catch((reason: unknown) => setError(messageOf(reason)))
             }}
           />
         )}
@@ -400,6 +443,7 @@ function Shell({ api }: { api: RiotBridge }) {
               setSettings(next)
               setCredentials(status)
               void api.getSnapshot().then((snapshot) => {
+                if (snapshot.bot?.id !== viewedBotId.current) return
                 setBots(snapshot.bots)
                 setBot(snapshot.bot)
                 setPreferences(snapshot.preferences)
@@ -417,6 +461,7 @@ function Shell({ api }: { api: RiotBridge }) {
 function ChatPane(props: {
   detail: ConversationDetail
   draft: string
+  attachments: AttachmentView[]
   running: boolean
   readOnly?: boolean
   onBack?: () => void
@@ -431,7 +476,28 @@ function ChatPane(props: {
   onSend: () => void
   onUndo: (id: string) => void
   onError: (message: string) => void
+  onOlderPage: (page: MessagePage) => void
+  onAttachments: (items: AttachmentView[]) => void
+  onRemoveAttachment: (id: string) => void
 }) {
+  const [attaching, setAttaching] = useState(false)
+
+  async function attach(work: () => Promise<AttachmentView[]>): Promise<void> {
+    if (attaching) return
+    setAttaching(true)
+    try { props.onAttachments(await work()) } catch (reason) { props.onError(messageOf(reason)) } finally { setAttaching(false) }
+  }
+
+  async function upload(files: File[]): Promise<void> {
+    await attach(async () => {
+      for (const file of files) {
+        if (file.size > 8_000_000) throw new Error('Attachments must be 8 MB or smaller.')
+        const item = await props.api.stageAttachment({ botId: props.detail.conversation.botId, name: file.name || 'Screenshot.png', bytes: Array.from(new Uint8Array(await file.arrayBuffer())) })
+        props.onAttachments([item])
+      }
+      return []
+    })
+  }
   return (
     <>
       {!props.configured && (
@@ -451,6 +517,7 @@ function ChatPane(props: {
         onUndo={props.onUndo}
         onError={props.onError}
         onOpenSettings={props.onOpenSettings}
+        onOlderPage={props.onOlderPage}
       />
       {props.readOnly && (
         <div className="banner">
@@ -465,22 +532,41 @@ function ChatPane(props: {
         className="composer"
         onSubmit={(event) => {
           event.preventDefault()
-          props.onSend()
+          if (!attaching) props.onSend()
+        }}
+        onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files.length) return
+          event.preventDefault()
+          void upload(Array.from(event.dataTransfer.files))
         }}
       >
-        <textarea
-          value={props.draft}
-          placeholder="Message Riot Bot"
-          rows={3}
-          onChange={(event) => props.onDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
+        <div className="composer-body">
+          <AttachmentList attachments={props.attachments} onRemove={props.onRemoveAttachment} />
+          <textarea
+            value={props.draft}
+            placeholder="Message Riot Bot"
+            rows={3}
+            onChange={(event) => props.onDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                if (!attaching) props.onSend()
+              }
+            }}
+            onPaste={(event) => {
+              if (!event.clipboardData.files.length) return
               event.preventDefault()
-              props.onSend()
-            }
-          }}
-        />
-        <button className="send" type="submit" disabled={props.running || !props.draft.trim()}>
+              void upload(Array.from(event.clipboardData.files))
+            }}
+          />
+          <div className="attachment-controls">
+            <button type="button" disabled={attaching} onClick={() => void attach(() => props.api.pickAttachments())}>Attach files</button>
+            <button type="button" disabled={attaching} onClick={() => void attach(async () => [await props.api.pasteScreenshot()])}>Paste screenshot</button>
+            <span className="help">{attaching ? 'Adding attachment…' : 'Win+Shift+S, then Ctrl+V · PNG/JPEG or UTF-8 text/code · Up to 4 files'}</span>
+          </div>
+        </div>
+        <button className="send" type="submit" disabled={attaching || props.running || (!props.draft.trim() && !props.attachments.length)}>
           Send
         </button>
       </form>

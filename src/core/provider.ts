@@ -256,6 +256,10 @@ function headers(name: 'openai' | 'openrouter', apiKey: string): Record<string, 
 }
 
 function toApiMessage(message: ModelCompleteInput['messages'][number]): Record<string, unknown> {
+  if (message.role === 'user' && message.images?.length) return {
+    role: 'user',
+    content: [{ type: 'text', text: message.content }, ...message.images.map((url) => ({ type: 'image_url', image_url: { url } }))]
+  }
   if (message.role === 'tool') return { role: 'tool', content: message.content, tool_call_id: message.toolCallId }
   if (message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0) {
     return {

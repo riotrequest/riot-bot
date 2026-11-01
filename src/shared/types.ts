@@ -72,8 +72,21 @@ export interface AppPreferences {
   showToolDetails: boolean
 }
 
+export interface AttachmentView {
+  id: string
+  name: string
+  kind: 'image' | 'text'
+  mimeType: string
+  size: number
+  width: number | null
+  height: number | null
+  previewUrl: string | null
+}
+
 export interface ChatMessageView {
   id: string
+  runId?: string
+  runStatus?: RunStatus
   role: 'user' | 'assistant' | 'tool' | 'notice'
   content: string
   createdAt: number
@@ -85,6 +98,7 @@ export interface ChatMessageView {
   toolEndedAt?: number | null
   toolError?: string | null
   interrupted?: boolean
+  attachments?: AttachmentView[]
 }
 
 export interface RunState {
@@ -114,6 +128,13 @@ export interface ConversationDetail {
   messages: ChatMessageView[]
   run: RunState | null
   task: TaskState | null
+  olderMessagesCursor?: string | null
+}
+
+export interface MessagePage {
+  conversationId: string
+  messages: ChatMessageView[]
+  olderMessagesCursor: string | null
 }
 
 export interface Memory {
@@ -312,6 +333,7 @@ export interface Snapshot {
   skills: Skill[]
   skillProposal: SkillProposal | null
   pendingApproval: ApprovalView | null
+  draftAttachments: AttachmentView[]
 }
 
 export interface BotDraft {
@@ -357,6 +379,7 @@ export interface RiotBridge {
   createConversation(): Promise<Conversation>
   deleteConversation(id: string): Promise<void>
   openConversation(id: string): Promise<ConversationDetail>
+  loadOlderMessages(conversationId: string, beforeMessageId: string): Promise<MessagePage>
   searchHistory(query: string): Promise<HistoryHitView[]>
   openBrowser(): Promise<string>
   closeBrowser(): Promise<string>
@@ -364,7 +387,11 @@ export interface RiotBridge {
   resumeBrowser(): Promise<string>
   installBrowser(): Promise<string>
   openExternal(url: string): Promise<void>
-  sendMessage(conversationId: string, text: string): Promise<RunState>
+  sendMessage(conversationId: string, text: string, attachmentIds?: string[]): Promise<RunState>
+  pickAttachments(): Promise<AttachmentView[]>
+  stageAttachment(input: { botId: string; name: string; bytes: number[] }): Promise<AttachmentView>
+  pasteScreenshot(): Promise<AttachmentView>
+  removeDraftAttachment(id: string): Promise<void>
   stop(): Promise<void>
   listMemories(query?: string): Promise<Memory[]>
   updateMemory(id: string, content: string): Promise<Memory>
