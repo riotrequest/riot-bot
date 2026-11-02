@@ -11,6 +11,7 @@ import type {
   Conversation,
   ConversationDetail,
   CredentialStatus,
+  CodexStatus,
   Memory,
   MessagePage,
   ProviderCheckPlan,
@@ -54,6 +55,7 @@ function Shell({ api }: { api: RiotBridge }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null)
+  const [codex, setCodex] = useState<CodexStatus | null>(null)
   const [usage, setUsage] = useState<UsageSummary | null>(null)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
   const [memories, setMemories] = useState<Memory[]>([])
@@ -97,6 +99,7 @@ function Shell({ api }: { api: RiotBridge }) {
     setConversations(snapshot.conversations)
     setSettings(snapshot.settings)
     setCredentials(snapshot.credentials)
+    setCodex(snapshot.codex)
     setUsage(snapshot.usage)
     if (activityScopeRef.current === 'bot') setActivity(snapshot.activity)
     else void refreshActivity()
@@ -114,6 +117,10 @@ function Shell({ api }: { api: RiotBridge }) {
   useEffect(() => {
     void reload().catch((reason: unknown) => setError(messageOf(reason)))
     return api.onEvent((event) => {
+      if (event.type === 'codex-status') {
+        setCodex(event.status)
+        return
+      }
       if (event.type === 'error') {
         setError(event.message)
         return
@@ -174,7 +181,11 @@ function Shell({ api }: { api: RiotBridge }) {
 
   const running = busy || runningBotId !== null || detail?.run?.status === 'running'
   const viewingEarlier = Boolean(detail && ongoingId && detail.conversation.id !== ongoingId && screen === 'chat')
-  const configured = settings && credentials ? providerReady(settings, credentials) : false
+  useEffect(() => {
+    if (settings?.provider === 'codex') void api.getCodexStatus().then(setCodex).catch(() => undefined)
+  }, [api, settings?.provider])
+
+  const configured = settings && credentials ? providerReady(settings, credentials, codex) : false
 
   async function send(): Promise<void> {
     if (!detail || (!draft.trim() && !draftAttachments.length) || running) return
@@ -438,6 +449,8 @@ function Shell({ api }: { api: RiotBridge }) {
             preferences={preferences}
             settings={settings}
             credentials={credentials}
+            codex={codex}
+            onCodex={setCodex}
             api={api}
             onSaved={(next, status) => {
               setSettings(next)
@@ -502,7 +515,7 @@ function ChatPane(props: {
     <>
       {!props.configured && (
         <div className="banner">
-          Add a provider, model ID, and API key in Settings. Riot Bot does not use a ChatGPT or Cursor subscription. Opening the app does not contact a model.
+          Choose a model in Settings and connect Codex with ChatGPT, or add an API key for OpenAI or OpenRouter. Opening the app does not start a model turn.
         </div>
       )}
       {props.proposal && <SkillProposalCard proposal={props.proposal} api={props.api} onProposal={props.onProposal} onError={props.onError} />}
@@ -686,10 +699,10 @@ function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityE
       {usage && (
         <div className="usage">
           <h2>Today, all bots, {usage.day}</h2>
-          <p>{usage.modelCalls} model calls</p>
-          <p>Estimated {formatUsd(usage.estimatedUsd)}</p>
-          <p>Reported by provider {formatUsd(usage.reportedUsd)}</p>
-          <p>Unsettled reservations {formatUsd(usage.unsettledUsd)}</p>
+          <p>{usage.modelCalls} API model calls · {usage.codexTurns ?? 0} native Codex turns</p>
+          <p>API estimated {formatUsd(usage.estimatedUsd)}</p>
+          <p>API reported {formatUsd(usage.reportedUsd)}</p>
+          <p>API unsettled reservations {formatUsd(usage.unsettledUsd)}</p>
           <p className="help">{usage.disclaimer}</p>
         </div>
       )}
@@ -701,7 +714,7 @@ function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityE
             <span>{entry.provider}</span>
             <span>{entry.model}</span>
             <span>{entry.outcome ?? 'in progress'}</span>
-            <span>{entry.costLabel === 'reported' ? `Reported ${formatUsd(entry.reportedCostUsd ?? 0)}` : entry.costLabel === 'estimated' ? `Estimated ${formatUsd(entry.estimatedCostUsd ?? 0)}` : entry.costLabel ?? 'Cost unknown'}</span>
+            <span>{entry.costLabel === 'subscription' ? 'ChatGPT account usage' : entry.costLabel === 'reported' ? `Reported ${formatUsd(entry.reportedCostUsd ?? 0)}` : entry.costLabel === 'estimated' ? `Estimated ${formatUsd(entry.estimatedCostUsd ?? 0)}` : entry.costLabel ?? 'Cost unknown'}</span>
           </summary>
           <dl className="tech">
             <div>
@@ -750,6 +763,8 @@ function SettingsPane(props: {
   preferences: AppPreferences
   settings: PublicSettings
   credentials: CredentialStatus
+  codex: CodexStatus | null
+  onCodex: (status: CodexStatus) => void
   api: RiotBridge
   onSaved: (settings: PublicSettings, credentials: CredentialStatus) => void
   onPreferences: (preferences: AppPreferences) => void
@@ -779,7 +794,7 @@ function SettingsPane(props: {
           .updateBot({ name: botName, purpose: botPurpose, instructions: draft.pinnedInstructions })
           .then(() => props.api.updateSettings(draft))
           .then(async (next) => {
-            if (!pendingKey) {
+            if (!pendingKey || draft.provider === 'codex') {
               props.onSaved(next, props.credentials)
               setSavedNote('Settings saved.')
               return
@@ -793,7 +808,7 @@ function SettingsPane(props: {
           .catch((reason: unknown) => props.onError(messageOf(reason)))
       }}
     >
-      <p className="help">Riot Bot uses the API key you paste here. A ChatGPT Plus, Codex, or Cursor subscription does not fill this in. The key is shared by every bot. Each bot chooses its own model.</p>
+      <p className="help">Each bot chooses its own backend and model. API keys and the Codex connection are shared across this app’s bots.</p>
       <label>
         Bot name
         <input value={botName} onChange={(event) => setBotName(event.target.value)} />
@@ -809,16 +824,19 @@ function SettingsPane(props: {
       </button>
       <label>
         Provider
-        <select value={draft.provider} onChange={(event) => setDraft({ ...draft, provider: event.target.value as PublicSettings['provider'] })}>
+        <select value={draft.provider} onChange={(event) => { setKey(''); setDraft({ ...draft, provider: event.target.value as PublicSettings['provider'], model: '' }) }}>
           <option value="openai">OpenAI</option>
           <option value="openrouter">OpenRouter</option>
+          <option value="codex">Codex · ChatGPT sign-in (preview)</option>
         </select>
       </label>
       <label>
         Model ID
-        <input value={draft.model} placeholder="Paste the model ID from your provider" onChange={(event) => setDraft({ ...draft, model: event.target.value })} />
+        <input value={draft.model} list={draft.provider === 'codex' ? 'codex-models' : undefined} placeholder={draft.provider === 'codex' ? 'Connect Codex, then choose a model' : 'Paste the model ID from your provider'} onChange={(event) => setDraft({ ...draft, model: event.target.value })} />
+        {draft.provider === 'codex' && <datalist id="codex-models">{props.codex?.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</datalist>}
       </label>
       <p className="help">Riot Bot does not pick a model for you, and it does not assume every model can use tools or streaming.</p>
+      {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : <>
       <label>
         API key
         <input type="password" value={key} autoComplete="off" placeholder={configured ? 'A key is saved. Paste a new one to replace it.' : 'Paste an API key'} onChange={(event) => setKey(event.target.value)} />
@@ -827,6 +845,7 @@ function SettingsPane(props: {
         <button
           type="button"
           onClick={() => {
+            if (draft.provider === 'codex') return
             void props.api
               .setCredential(draft.provider, key)
               .then((result) => {
@@ -842,6 +861,7 @@ function SettingsPane(props: {
         <button
           type="button"
           onClick={() => {
+            if (draft.provider === 'codex') return
             void props.api
               .clearCredential(draft.provider)
               .then((status) => {
@@ -855,6 +875,7 @@ function SettingsPane(props: {
         </button>
       </div>
       <p className="help">{keyNote}</p>
+      </>}
       <label>
         Workspace folder
         <input value={draft.workspacePath} onChange={(event) => setDraft({ ...draft, workspacePath: event.target.value })} />
@@ -875,30 +896,37 @@ function SettingsPane(props: {
       </label>
       <div className="callout">
         <strong>Terminal commands</strong>
-        <p>{TERMINAL_WARNING}</p>
+        <p>{draft.provider === 'codex' ? 'Codex uses its native sandbox and approval rules. Safe read commands can run automatically. Commands that need approval appear here; broader network and filesystem permission grants are declined. Read-only mode prevents writes, but does not limit every native file read to this workspace. Native edits do not have Riot’s Undo button.' : TERMINAL_WARNING}</p>
       </div>
+      {draft.provider !== 'codex' &&
       <label className="check">
         <input type="checkbox" checked={draft.streaming} onChange={(event) => setDraft({ ...draft, streaming: event.target.checked })} />
         Stream replies. Turn this off if a model rejects streaming.
       </label>
+      }
       <label className="check">
         <input type="checkbox" checked={draft.toolsEnabled} onChange={(event) => setDraft({ ...draft, toolsEnabled: event.target.checked })} />
-        Allow tools. Turn this off if a model cannot use them.
+        {draft.provider === 'codex' ? 'Allow native shell, web search, and Riot memory/file tools.' : 'Allow tools. Turn this off if a model cannot use them.'}
       </label>
       <label>
         Instructions
         <textarea value={draft.pinnedInstructions} rows={4} onChange={(event) => setDraft({ ...draft, pinnedInstructions: event.target.value })} />
       </label>
       <div className="grid">
+        {draft.provider !== 'codex' && <>
         <NumberField label="Model calls per task" value={draft.maxModelCallsPerTask} onChange={(value) => setDraft({ ...draft, maxModelCallsPerTask: value })} />
         <NumberField label="Reply token limit" value={draft.maxOutputTokens} onChange={(value) => setDraft({ ...draft, maxOutputTokens: value })} />
+        </>}
         <NumberField label="Task minutes" value={Math.round(draft.maxTaskDurationMs / 60000)} onChange={(value) => setDraft({ ...draft, maxTaskDurationMs: value * 60 * 1000 })} />
+        {draft.provider !== 'codex' && <>
         <OptionalMoney label="Estimated spend per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={(value) => setDraft({ ...draft, maxEstimatedSpendPerTaskUsd: value })} />
         <OptionalMoney label="App daily spend ceiling (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={(value) => setDraft({ ...draft, maxEstimatedSpendPerDayUsd: value })} />
         <OptionalMoney label="This bot’s daily limit (USD)" value={draft.botSpendPerDayUsd} onChange={(value) => setDraft({ ...draft, botSpendPerDayUsd: value })} />
         <OptionalMoney label="Input price per million tokens" value={draft.inputUsdPerMillion} onChange={(value) => setDraft({ ...draft, inputUsdPerMillion: value })} />
         <OptionalMoney label="Output price per million tokens" value={draft.outputUsdPerMillion} onChange={(value) => setDraft({ ...draft, outputUsdPerMillion: value })} />
+        </>}
       </div>
+      {draft.provider === 'codex' ? <p className="help">Codex manages its native tool loop, streaming, and context compaction. Riot’s API call, reply-token, context, and dollar limits do not control native turns. The task timer and Stop still apply. Native turns use your signed-in account’s Codex limits and any usage settings you have enabled there. Riot never switches to an API key automatically.</p> : <>
       <p className="help">
         Automatic context fitting uses the model’s documented window when Riot Bot has it, or a capacity you enter below. It does not ask you to raise a token budget for an ordinary page. A larger window does not send the whole transcript, and it does not raise a spending limit. Browser search has no separate search fee. Reading pages still uses the task’s model budget.
       </p>
@@ -935,6 +963,7 @@ function SettingsPane(props: {
         </p>
       </details>
       <p className="help">Leave the dollar boxes blank to turn dollar limits off. The app daily ceiling applies to every bot. A bot limit can only tighten it. If a dollar box is filled in, both prices are required. Prices are your estimate, not a promise of the invoice.</p>
+      </>}
       <label className="check">
         <input
           type="checkbox"
@@ -948,7 +977,7 @@ function SettingsPane(props: {
         />
         Show tool details by default
       </label>
-      <ProviderCheck api={props.api} onError={props.onError} />
+      {draft.provider !== 'codex' && <ProviderCheck api={props.api} onError={props.onError} />}
       <div className="row">
         <button className="send" type="submit">
           Save settings
@@ -957,6 +986,29 @@ function SettingsPane(props: {
       </div>
     </form>
   )
+}
+
+function CodexConnection({ api, status, onChange, onError }: { api: RiotBridge; status: CodexStatus | null; onChange: (status: CodexStatus) => void; onError: (message: string) => void }) {
+  const [busy, setBusy] = useState(false)
+  async function action(work: () => Promise<CodexStatus>): Promise<void> {
+    setBusy(true)
+    try { onChange(await work()) } catch (error) { onError(messageOf(error)) } finally { setBusy(false) }
+  }
+  useEffect(() => { void api.getCodexStatus().then(onChange).catch(error => onError(messageOf(error))) }, [api])
+  return <div className="callout">
+    <strong>Codex connection (preview)</strong>
+    <p>{status?.connected ? `Connected: ${status.email ?? 'ChatGPT account'}${status.plan ? ` · ${status.plan}` : ''}` : 'Sign in with your own ChatGPT account through the official Codex CLI.'}</p>
+    <p className="help">{status?.note}</p>
+    <p className="help">Sending a message starts a native Codex turn with its own tools and web search. Sign-in and status checks do not start a turn. Credentials stay in Riot Bot’s separate Codex profile and are managed by the official CLI.</p>
+    {status?.limits.map((limit, index) => <p key={`${limit.name}-${index}`} className="help">{limit.name}: {limit.usedPercent}% used{limit.resetsAt ? ` · resets ${new Date(limit.resetsAt * 1000).toLocaleString()}` : ''}</p>)}
+    <div className="row">
+      {!status?.connected && !status?.loginPending && <button type="button" disabled={busy || status?.installed === false} onClick={() => void action(() => api.connectCodex())}>Sign in with ChatGPT</button>}
+      {status?.loginPending && <button type="button" disabled={busy} onClick={() => void action(() => api.cancelCodexLogin())}>Cancel sign-in</button>}
+      <button type="button" disabled={busy} onClick={() => void action(() => api.getCodexStatus())}>Refresh Codex status</button>
+      {status?.connected && <button type="button" disabled={busy} onClick={() => void action(() => api.disconnectCodex())}>Disconnect Codex</button>}
+    </div>
+    <p className="help">The model catalog is a list of available model IDs, not a guarantee of account access. Subscription activity is shown separately from API dollars.</p>
+  </div>
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
@@ -984,7 +1036,8 @@ function OptionalMoney({ label, value, onChange }: { label: string; value: numbe
   )
 }
 
-function providerReady(settings: PublicSettings, credentials: CredentialStatus): boolean {
+function providerReady(settings: PublicSettings, credentials: CredentialStatus, codex: CodexStatus | null): boolean {
+  if (settings.provider === 'codex') return Boolean(settings.model.trim() && codex?.connected && !codex.loginPending)
   if (!settings.model.trim()) return false
   return settings.provider === 'openai' ? credentials.openaiConfigured : credentials.openrouterConfigured
 }
@@ -1613,7 +1666,7 @@ function NewBotForm(props: { settings: PublicSettings; onCreate: (draft: BotDraf
           .finally(() => setBusy(false))
       }}
     >
-      <p className="help">A bot keeps its own chats, memories, skills, and workspace. If you leave the name blank and a model is configured, one short setup request suggests a name and instructions.</p>
+      <p className="help">A bot keeps its own chats, memories, skills, and workspace. {provider === 'codex' ? 'Codex bots use a local default name when left blank; setup does not start a native turn.' : 'If you leave the name blank and a model is configured, one short setup request suggests a name and instructions.'}</p>
       <label>
         What should this bot help with?
         <textarea value={purpose} rows={3} onChange={(event) => setPurpose(event.target.value)} />
@@ -1624,9 +1677,10 @@ function NewBotForm(props: { settings: PublicSettings; onCreate: (draft: BotDraf
       </label>
       <label>
         Provider
-        <select value={provider} onChange={(event) => setProvider(event.target.value as PublicSettings['provider'])}>
+        <select value={provider} onChange={(event) => { setProvider(event.target.value as PublicSettings['provider']); setModel('') }}>
           <option value="openai">OpenAI</option>
           <option value="openrouter">OpenRouter</option>
+          <option value="codex">Codex · ChatGPT sign-in (preview)</option>
         </select>
       </label>
       <label>
@@ -1706,6 +1760,7 @@ function NewBotForm(props: { settings: PublicSettings; onCreate: (draft: BotDraf
 }
 
 function labelPurpose(purpose: string): string {
+  if (purpose === 'codex_turn') return 'Native Codex turn'
   if (purpose === 'compaction') return 'Summary'
   if (purpose === 'tool_continuation') return 'Follow-up'
   if (purpose === 'chat') return 'Reply'

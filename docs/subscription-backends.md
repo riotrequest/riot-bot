@@ -1,6 +1,6 @@
 **Subscription backend design — checked November 2, 2026**
 
-This is the saved design for a later implementation. The current build offers the OpenAI and OpenRouter API-key backends. Codex and Claude subscription sign-in are not exposed in this pass, as requested.
+Codex has now been implemented as a preview backend after authorization. The OpenAI and OpenRouter API-key backends remain available. [Codex setup and current limits](codex.md) describes the implemented managed-login route; Claude remains a saved design.
 
 The requirement is to preserve the provider's agent capabilities. An API model uses Riot Bot's existing tool loop and free browser search. A native agent backend should use its own agent loop, tools, search, sessions, and permission protocol when available. Riot Bot supplies the bot identity, scoped memories, task intent, UI, and consent. Native search results still do not establish an observed Google organic position; an exact ranking request needs the browser evidence for that engine.
 
@@ -20,7 +20,7 @@ That registered route can drive app-server through a documented Responses provid
 
 The Agent SDK carries built-in tools, sessions, hooks, and permissions, including web search. Its overview separately says third-party products cannot offer Claude.ai login or plan limits through the SDK without prior approval. SDK availability is not blanket permission for subscription authentication. Confirm the applicable route before implementing it. [Claude Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview)
 
-**Changes required in Riot Bot.** The current ModelProvider.complete contract returns one model response to Riot Bot's gateway. It is appropriate for the API path but cannot represent a native agent session faithfully. Add a native agent session runner alongside that path when implementing a connector; do not wrap the native agent as a raw chat-completions call and run a second tool loop around it.
+**Runner boundary.** The ModelProvider.complete contract returns one model response to Riot Bot's gateway. The implemented Codex runner sits alongside that API path and forwards native turn/tool events directly. It does not run a second Riot tool loop around the native agent.
 
 The runner must map native events into persisted chat, activity, and run outcomes. It should advertise actual available capabilities and use native search by default, with Riot Bot tools exposed only when needed through a controlled integration. Avoid duplicate searches, overlapping compaction, and replaying the whole transcript into an already resumed native session. Keep provider/thread mappings and configuration scoped by bot and conversation.
 
@@ -33,4 +33,4 @@ The runner must map native events into persisted chat, activity, and run outcome
 - Native browser/tool sessions, attachments, memory access, and approvals preserve bot isolation. Credentials stay out of the renderer, transcript, logs, source, and exported reports.
 - Acceptance checks cover supported sign-in and cancellation, native search, memory access, attachment handling, session resume, Stop, permission denial, quota exhaustion, bot switching, and absence of automatic paid fallback.
 
-Implement Codex first when authorized, then the Claude connector under its documented conditions. Keep the working API search implementation for users who select API models.
+Codex preview verification covers its installed CLI protocol and sandbox without model calls, plus fixture-based authentication/turn/stop/tool/session tests and the Electron UI. A real authenticated model turn remains a user sign-in acceptance step. The installed CLI’s legacy sandbox has broad read access; native sessions are logically separated by bot/conversation, but that is not a filesystem confidentiality boundary. Implement Claude separately under its documented conditions. Keep the API search implementation for users who select API models.

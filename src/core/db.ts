@@ -492,7 +492,8 @@ export class Database {
       this.db.exec(BOT_SCHEMA)
       this.ensureInitialBot()
       this.ensureAttachments()
-      this.db.exec('PRAGMA user_version = 6')
+      this.ensureCodexSessions()
+      this.db.exec('PRAGMA user_version = 7')
       this.ensureModelCatalog()
       return
     }
@@ -515,6 +516,7 @@ export class Database {
     }
     this.ensureModelCatalog()
     this.ensureAttachments()
+    this.ensureCodexSessions()
     if (this.userVersion() < 5) this.db.exec('PRAGMA user_version = 5')
     if (this.userVersion() < 6) {
       this.transaction(() => {
@@ -523,6 +525,15 @@ export class Database {
         this.db.exec('PRAGMA user_version = 6')
       })
     }
+    if (this.userVersion() < 7) this.db.exec('PRAGMA user_version = 7')
+  }
+
+  private ensureCodexSessions(): void {
+    this.db.exec(`CREATE TABLE IF NOT EXISTS codex_sessions (
+      conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+      bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+      connection_id TEXT NOT NULL, thread_id TEXT NOT NULL, signature TEXT NOT NULL, usage_json TEXT
+    )`)
   }
 
   private ensureAttachments(): void {
@@ -533,6 +544,24 @@ export class Database {
       width INTEGER, height INTEGER, preview_url TEXT, data BLOB NOT NULL, created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS attachments_bot_message ON attachments(bot_id, message_id, created_at)`)
+  }
+
+  codexSession(conversationId: string, botId: string): { connectionId: string; threadId: string; signature: string; usage: string | null } | null {
+    const found = row(this.db.prepare('SELECT * FROM codex_sessions WHERE conversation_id = ? AND bot_id = ?').get(conversationId, botId))
+    return found ? { connectionId: text(found, 'connection_id'), threadId: text(found, 'thread_id'), signature: text(found, 'signature'), usage: found.usage_json == null ? null : text(found, 'usage_json') } : null
+  }
+
+  saveCodexSession(conversationId: string, botId: string, connectionId: string, threadId: string, signature: string, usage: string | null): void {
+    this.db.prepare(`INSERT INTO codex_sessions (conversation_id, bot_id, connection_id, thread_id, signature, usage_json) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(conversation_id) DO UPDATE SET connection_id=excluded.connection_id,thread_id=excluded.thread_id,signature=excluded.signature,usage_json=excluded.usage_json`).run(conversationId, botId, connectionId, threadId, signature, usage)
+  }
+
+  codexTurnCount(day: string): number {
+    return num(row(this.db.prepare(`SELECT COUNT(*) AS total FROM model_requests WHERE provider = 'codex' AND day = ?`).get(day))!, 'total')
+  }
+
+  clearCodexSession(conversationId: string, botId: string): void {
+    this.db.prepare('DELETE FROM codex_sessions WHERE conversation_id = ? AND bot_id = ?').run(conversationId, botId)
   }
 
   addAttachment(id: string, botId: string, input: PreparedAttachment, now: number): AttachmentRecord {
@@ -680,6 +709,7 @@ export class Database {
   interruptUnfinished(now: number): number {
     const note = 'Interrupted because Riot Bot restarted. It was not resumed, and unfinished tool actions were not repeated.'
     const result = this.transaction(() => {
+      this.db.prepare(`DELETE FROM codex_sessions WHERE conversation_id IN (SELECT conversation_id FROM runs WHERE status = 'running')`).run()
       const runs = this.db.prepare(`UPDATE runs SET status = 'interrupted', ended_at = ?, note = ? WHERE status = 'running'`).run(now, note) as {
         changes?: number
       }
@@ -1328,7 +1358,7 @@ export class Database {
   }
 
   countModelRequests(day: string): number {
-    const found = row(this.db.prepare(`SELECT COUNT(*) AS count FROM model_requests WHERE day = ? AND outcome != 'released'`).get(day))
+    const found = row(this.db.prepare(`SELECT COUNT(*) AS count FROM model_requests WHERE day = ? AND outcome != 'released' AND provider <> 'codex'`).get(day))
     return found ? num(found, 'count') : 0
   }
 

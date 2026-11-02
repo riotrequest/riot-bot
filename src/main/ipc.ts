@@ -150,8 +150,12 @@ export function registerIpc(getApp: () => RiotApp, getWindow: () => BrowserWindo
   handle('activity:list', (app, args) => app.listActivity(args[0] === 'app' ? 'app' : 'bot'))
   handle('usage:get', (app) => app.getUsage())
   handle('settings:update', (app, args) => app.updateSettings(pickSettings(args[0])))
-  handle('credentials:set', (app, args) => app.setCredential(requireProvider(args[0]), requireSecret(args[1])))
-  handle('credentials:clear', (app, args) => app.clearCredential(requireProvider(args[0])))
+  handle('codex:status', (app) => app.getCodexStatus())
+  handle('codex:connect', (app) => app.connectCodex())
+  handle('codex:cancelLogin', (app) => app.cancelCodexLogin())
+  handle('codex:disconnect', (app) => app.disconnectCodex())
+  handle('credentials:set', (app, args) => app.setCredential(requireApiProvider(args[0]), requireSecret(args[1])))
+  handle('credentials:clear', (app, args) => app.clearCredential(requireApiProvider(args[0])))
   handle('workspace:pick', async () => {
     const parent = getWindow()
     const options = { properties: ['openDirectory' as const], title: 'Choose a workspace folder' }
@@ -194,7 +198,12 @@ function attachmentInput(value: unknown): { botId: string; name: string; bytes: 
 }
 
 function requireProvider(value: unknown): ProviderId {
-  if (value !== 'openai' && value !== 'openrouter') throw new Error('Choose OpenAI or OpenRouter.')
+  if (value !== 'openai' && value !== 'openrouter' && value !== 'codex') throw new Error('Choose OpenAI, OpenRouter, or Codex.')
+  return value
+}
+
+function requireApiProvider(value: unknown): 'openai' | 'openrouter' {
+  if (value !== 'openai' && value !== 'openrouter') throw new Error('API keys are only used by OpenAI and OpenRouter.')
   return value
 }
 

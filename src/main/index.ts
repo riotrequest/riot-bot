@@ -111,6 +111,7 @@ app.whenReady().then(async () => {
       void shell.openExternal(url)
     },
     createProvider: (settings) => {
+      if (settings.provider === 'codex') throw new ConfigError('Codex uses its native connection. It cannot use an API key.')
       const key = credentials.get(settings.provider)
       if (!key) {
         throw new ConfigError('Add your API key in Settings. A ChatGPT or Cursor subscription does not provide this key.')

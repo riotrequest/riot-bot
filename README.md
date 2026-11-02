@@ -16,7 +16,9 @@ History, memory, and skill search filter by bot before applying the result limit
 
 The follow-up adds paged history, saved per-turn outcomes, attachment uploads and screenshot paste, and preserves the All bots Activity filter when a task finishes. Provider and model-catalog requests use Electron's networking stack so they honor Windows trust and proxy settings; public web tools keep their separate address checks. Google result parsing preserves observed opaque redirect links and displayed destinations. Real browser and image/text tasks passed with the selected OpenRouter DeepSeek model on November 1, 2026.
 
-The November 2 search follow-up makes Brave the default and upgrades saved DuckDuckGo defaults on startup, preserving custom templates. It reads parent result cards rather than counting grouped links, rereads existing results after human verification, distinguishes reader failures from sign-in requests, and detects closed browser contexts before reopening them. The subscription-backend design is saved in [docs/subscription-backends.md](docs/subscription-backends.md); subscription sign-in is not implemented in this build.
+The November 2 search follow-up makes Brave the default and upgrades saved DuckDuckGo defaults on startup, preserving custom templates. It reads parent result cards rather than counting grouped links, rereads existing results after human verification, distinguishes reader failures from sign-in requests, and detects closed browser contexts before reopening them.
+
+Codex is now available as a preview backend through the official CLI and its managed ChatGPT sign-in. It runs Codex’s native agent loop, search, and tools alongside Riot’s scoped memory/history/attachment tools. See [Codex setup and behavior](docs/codex.md). The separate API backends keep their existing tool loop and free Brave browser search. The [backend design](docs/subscription-backends.md) records the remaining Claude work.
 
 ## Setup
 
@@ -37,13 +39,14 @@ Data lives in `%APPDATA%\riot-bot\`:
 - `browser-profiles\<bot id>\` — that bot’s Chromium cookies and site storage
 - `playwright-browsers\` — the Chromium download, after you choose Install Chromium
 - `credentials.bin.json` — API keys encrypted with Windows
+- `codex\` — Riot-owned Codex authentication, native sessions, and configuration; managed by the official CLI
 - `riot-bot.log` — redacted operational log
 
 New workspaces are created under your home folder in `RiotBot\workspaces\`. Choosing an existing folder uses that folder as it is. Browser profiles are not inside the workspace and are not your Chrome or Edge profile.
 
 To remove the browser without touching chats, quit the app and delete `playwright-browsers` and `browser-profiles`. Deleting a profile removes that bot’s signed-in site storage. Do not delete the database to uninstall Chromium.
 
-For a full backup, preserve the database, encrypted credentials, avatars, and complete browser profiles. A source ZIP or Git bundle does not contain these. Workspace files are separate and need their own backup. Quit Riot Bot and its browser windows before an ordinary folder copy; for a running database use SQLite's backup API rather than copying its hot WAL files. Restore into a separate folder, check the database and file hashes, and keep the current app-data folder aside before replacing it. Do not mix a restored database with an older WAL/SHM pair. Credentials and browser sign-ins can depend on the same Windows account and machine. Keep app-data archives private.
+For a full backup, preserve the database, encrypted credentials, avatars, complete browser profiles, and the Codex profile when connected. A source ZIP or Git bundle does not contain these. Workspace files are separate and need their own backup. Quit Riot Bot and its browser windows before an ordinary folder copy; for a running database use SQLite's backup API rather than copying its hot WAL files. Restore into a separate folder, check the database and file hashes, and keep the current app-data folder aside before replacing it. Do not mix a restored database with an older WAL/SHM pair. Credentials and browser sign-ins can depend on the same Windows account and machine. Keep app-data archives private.
 
 ## Bots and chats
 
@@ -73,7 +76,7 @@ Opening a long chat loads the newest 80 messages. **Load earlier messages** prep
 
 Use **Attach files**, drag files onto the composer, or paste a screenshot with Ctrl+V after Win+Shift+S. **Paste screenshot** reads an image only when clicked. PNG/JPEG images (8 MB maximum, within 8192 pixels per side and 32 megapixels) are decoded and resized to at most 2048 pixels per side. UTF-8 text/code files can be up to 1 MB. Up to four files can accompany a message, including a message with no typed text. Pending attachments stay with their bot across switching and restart. Remove discards the pending copy and leaves the original file intact. Attaching, pasting, and removing do not call a model.
 
-Sending shares those attachments with the selected API provider. Images require a vision-capable model and are sent as image parts. Text has a short preview and a `read_attachment` tool for the full saved contents in bounded sections. Images reserve 16,384 estimated input tokens apiece for fitting and budget checks; actual provider usage varies. Attachments are stored in SQLite and removed with their conversation. PDFs, Office documents, archives, audio/video, GIF, and WebP are not supported in chat yet; convert documents to UTF-8 text or take a PNG screenshot. Earlier images are not replayed after compaction; attach the image again if exact visual details are needed.
+Sending shares those attachments with the selected backend. Images require a vision-capable model and are sent as image parts. Text has a short preview and a `read_attachment` tool (`riot_read_attachment` in Codex) for the full saved contents in bounded sections. API images reserve 16,384 estimated input tokens apiece for fitting and budget checks; actual provider usage varies. Codex manages its own context and account usage. Attachments are stored in SQLite and removed with their conversation. PDFs, Office documents, archives, audio/video, GIF, and WebP are not supported in chat yet; convert documents to UTF-8 text or take a PNG screenshot. Earlier images are not replayed after compaction; attach the image again if exact visual details are needed.
 
 The bot’s workspace path is part of its profile. Ask “what is your workspace location” and it can answer from that profile without searching files.
 
@@ -85,6 +88,10 @@ Every bot has an avatar in the bot list, the chat header, and once beside each a
 
 Open **Settings**.
 
+For Codex, choose **Codex · ChatGPT sign-in (preview)**, click **Sign in with ChatGPT**, complete the official browser flow, enter a model ID from the provided catalog, choose a workspace, and save. The official Codex CLI must be installed. Full instructions and permission differences are in [docs/codex.md](docs/codex.md).
+
+For an API backend:
+
 1. Choose **OpenAI** or **OpenRouter**.
 2. Paste the model ID from that provider. Riot Bot does not ship a model list and does not assume every model supports tools, streaming, or the same context size.
 3. Paste an API key and choose **Save key**, or leave a new key in the box and choose **Save settings**.
@@ -92,15 +99,15 @@ Open **Settings**.
 
 A ChatGPT Plus, Codex, or Cursor subscription does not supply this key. The key is shared by every bot. Keys stay in the main process. The window only learns whether a key is saved. On this machine Windows credential protection is available, so a saved key survives restart. If that protection is unavailable, the key is kept in memory for the session and forgotten on quit.
 
-That statement applies to the current API-key backends. Supported subscription integrations have their own authentication, native tools, permissions, and usage limits. The saved backend design keeps those capabilities and billing paths separate from the existing API loop.
+That statement applies to the API-key backends. Codex has its own authentication, native tools, permissions, and usage limits. A Codex quota or authentication failure never switches to an API key.
 
 OpenAI requests go to `https://api.openai.com/v1/chat/completions`. OpenRouter requests go to `https://openrouter.ai/api/v1/chat/completions`.
 
 ## What you can ask it to do
 
-File tools stay inside the selected bot’s workspace. File creation and editing stay off until **Allow Riot Bot to create and edit files in this folder** is checked. Each app-made edit can be undone from the chat if the file has not changed since. The workspace is not an operating-system sandbox.
+Riot’s API file tools stay inside the selected bot’s workspace. File creation and editing stay off until **Allow Riot Bot to create and edit files in this folder** is checked. Each app-made edit can be undone from the chat if the file has not changed since. The API workspace is not an operating-system sandbox. Codex uses its native sandbox and file tools; its edits do not have Riot’s Undo button, and its legacy Windows policy permits broader reads. See the Codex guide.
 
-A terminal command is shown with its working folder and time limit, and it runs only after you approve that exact command. The workspace folder does not contain the shell.
+An API terminal command is shown with its working folder and time limit, and it runs only after you approve that exact command. The workspace folder does not contain the API shell. Codex follows its native approval rules: safe read commands can run automatically, and native requests that need approval appear in Riot Bot.
 
 `fetch_url` is still the lightweight tool for a straightforward public page. The browser is for JavaScript pages, search, and interaction.
 
@@ -199,7 +206,7 @@ The running window was also checked at 1180 and 880 pixels wide. The sidebar sta
 - Recall is summary plus search, not a full replay of every past message. If the saved messages do not establish an answer, the assistant is instructed to say so.
 - A deleted memory or disabled skill leaves later requests, but older messages that mention it remain in the transcript.
 - Dollar figures can differ from the provider bill. A missing price blocks dollar-budget mode; it does not invent a price.
-- A terminal command is not sandboxed. Approval is per exact command. The workspace is not an operating-system sandbox.
+- An API terminal command is not sandboxed. Approval is per exact command. Codex uses its own sandbox and approval rules; its legacy Windows policy permits broader filesystem reads.
 - Stop ends the command tree through `taskkill /T /F` on Windows. A process that already detached can survive, and that case is reported when the stop call fails.
 - Web fetch uses the first public address after refusing any host that also resolves to a private address. TLS verification stays on.
 - The browser is not isolated from the local network. The proxy covers connections it handles. It does not prove that every browser subrequest is blocked.

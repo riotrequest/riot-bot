@@ -1,22 +1,22 @@
-import type { ProviderId } from '../shared/types'
+import type { ApiProviderId } from '../shared/types'
 
 export interface CredentialStatusSource {
   storage: 'os' | 'session'
   encryptionAvailable: boolean
   explanation: string
-  has(provider: ProviderId): boolean
+  has(provider: ApiProviderId): boolean
 }
 
 export interface CredentialStore {
   status(): CredentialStatusSource
-  set(provider: ProviderId, secret: string): { persistent: boolean; message: string }
-  get(provider: ProviderId): string | null
-  clear(provider: ProviderId): void
+  set(provider: ApiProviderId, secret: string): { persistent: boolean; message: string }
+  get(provider: ApiProviderId): string | null
+  clear(provider: ApiProviderId): void
   secretValues(): string[]
 }
 
 export class MemoryCredentialStore implements CredentialStore {
-  private readonly values = new Map<ProviderId, string>()
+  private readonly values = new Map<ApiProviderId, string>()
   encryptionAvailable: boolean
   storage: 'os' | 'session'
 
@@ -36,7 +36,7 @@ export class MemoryCredentialStore implements CredentialStore {
     }
   }
 
-  set(provider: ProviderId, secret: string): { persistent: boolean; message: string } {
+  set(provider: ApiProviderId, secret: string): { persistent: boolean; message: string } {
     this.values.set(provider, secret)
     if (!this.encryptionAvailable) {
       return {
@@ -47,11 +47,11 @@ export class MemoryCredentialStore implements CredentialStore {
     return { persistent: true, message: 'Saved with operating-system credential protection. It is not shown again.' }
   }
 
-  get(provider: ProviderId): string | null {
+  get(provider: ApiProviderId): string | null {
     return this.values.get(provider) ?? null
   }
 
-  clear(provider: ProviderId): void {
+  clear(provider: ApiProviderId): void {
     this.values.delete(provider)
   }
 

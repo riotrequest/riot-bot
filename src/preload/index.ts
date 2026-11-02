@@ -1,8 +1,12 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { AppEvent, ProviderId, PublicSettings, RiotBridge } from '../shared/types'
+import type { AppEvent, PublicSettings, RiotBridge } from '../shared/types'
 
 const api: RiotBridge = {
   getSnapshot: () => ipcRenderer.invoke('app:getSnapshot'),
+  getCodexStatus: () => ipcRenderer.invoke('codex:status'),
+  connectCodex: () => ipcRenderer.invoke('codex:connect'),
+  cancelCodexLogin: () => ipcRenderer.invoke('codex:cancelLogin'),
+  disconnectCodex: () => ipcRenderer.invoke('codex:disconnect'),
   createBot: (draft) => ipcRenderer.invoke('bots:create', draft),
   selectBot: (id) => ipcRenderer.invoke('bots:select', id),
   updateBot: (patch) => ipcRenderer.invoke('bots:update', patch),
@@ -47,8 +51,8 @@ const api: RiotBridge = {
   listActivity: (scope) => ipcRenderer.invoke('activity:list', scope),
   getUsage: () => ipcRenderer.invoke('usage:get'),
   updateSettings: (patch: Partial<PublicSettings>) => ipcRenderer.invoke('settings:update', patch),
-  setCredential: (provider: ProviderId, secret: string) => ipcRenderer.invoke('credentials:set', provider, secret),
-  clearCredential: (provider: ProviderId) => ipcRenderer.invoke('credentials:clear', provider),
+  setCredential: (provider, secret) => ipcRenderer.invoke('credentials:set', provider, secret),
+  clearCredential: (provider) => ipcRenderer.invoke('credentials:clear', provider),
   pickWorkspace: () => ipcRenderer.invoke('workspace:pick'),
   resolveApproval: (id, approved) => ipcRenderer.invoke('approvals:resolve', id, approved),
   undoEdit: (id) => ipcRenderer.invoke('edits:undo', id),

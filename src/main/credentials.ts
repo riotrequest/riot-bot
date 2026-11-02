@@ -2,10 +2,10 @@ import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import type { CredentialStatusSource, CredentialStore } from '../core/credentials'
-import type { ProviderId } from '../shared/types'
+import type { ApiProviderId } from '../shared/types'
 
 export class ElectronCredentialStore implements CredentialStore {
-  private readonly session = new Map<ProviderId, string>()
+  private readonly session = new Map<ApiProviderId, string>()
   private readonly file: string
   private encryptionAvailable: boolean
 
@@ -36,7 +36,7 @@ export class ElectronCredentialStore implements CredentialStore {
     }
   }
 
-  set(provider: ProviderId, secret: string): { persistent: boolean; message: string } {
+  set(provider: ApiProviderId, secret: string): { persistent: boolean; message: string } {
     if (this.encryptionAvailable) {
       try {
         const data = this.read()
@@ -55,7 +55,7 @@ export class ElectronCredentialStore implements CredentialStore {
     }
   }
 
-  get(provider: ProviderId): string | null {
+  get(provider: ApiProviderId): string | null {
     if (this.session.has(provider)) return this.session.get(provider) ?? null
     if (!this.encryptionAvailable) return null
     const encoded = this.read()[provider]
@@ -67,7 +67,7 @@ export class ElectronCredentialStore implements CredentialStore {
     }
   }
 
-  clear(provider: ProviderId): void {
+  clear(provider: ApiProviderId): void {
     this.session.delete(provider)
     if (!this.encryptionAvailable) return
     const data = this.read()
@@ -76,7 +76,7 @@ export class ElectronCredentialStore implements CredentialStore {
   }
 
   secretValues(): string[] {
-    return (['openai', 'openrouter'] as ProviderId[])
+    return (['openai', 'openrouter'] as ApiProviderId[])
       .map((provider) => this.get(provider))
       .filter((value): value is string => Boolean(value))
   }

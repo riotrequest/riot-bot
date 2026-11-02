@@ -73,7 +73,7 @@ export function estimateCostUsd(inputTokens: number, outputTokens: number, price
 }
 
 export function sanitizeSettings(input: Partial<Settings>): Settings {
-  const provider = input.provider === 'openrouter' ? 'openrouter' : 'openai'
+  const provider = input.provider === 'codex' ? 'codex' : input.provider === 'openrouter' ? 'openrouter' : 'openai'
   const model = String(input.model ?? '').replace(/[\r\n]/g, '').trim().slice(0, 200)
   return {
     provider,

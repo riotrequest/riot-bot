@@ -4,6 +4,7 @@ const KEY_PATTERNS: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._~+/=-]{8,}/gi,
   /(api[_-]?key\s*[=:]\s*)([^\s"',]+)/gi,
   /(authorization\s*[=:]\s*)([^\s"',]+)/gi,
+  /((?:access_token|refresh_token|id_token)["']?\s*[=:]\s*["']?)([^\s"',}]+)/gi,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g
 ]
 

@@ -1,4 +1,16 @@
-export type ProviderId = 'openai' | 'openrouter'
+export type ProviderId = 'openai' | 'openrouter' | 'codex'
+export type ApiProviderId = Exclude<ProviderId, 'codex'>
+
+export interface CodexStatus {
+  installed: boolean
+  connected: boolean
+  plan: string | null
+  email: string | null
+  loginPending: boolean
+  models: { id: string; name: string }[]
+  limits: { name: string; usedPercent: number; resetsAt: number | null }[]
+  note: string
+}
 
 export type RunStatus = 'running' | 'completed' | 'stopped' | 'failed' | 'interrupted' | 'paused'
 
@@ -151,7 +163,7 @@ export interface Memory {
 
 export interface ApprovalView {
   id: string
-  kind: 'terminal' | 'browser'
+  kind: 'terminal' | 'browser' | 'codex'
   title: string
   command: string
   cwd: string
@@ -282,6 +294,7 @@ export interface UsageSummary {
   reportedUsd: number
   unsettledUsd: number
   disclaimer: string
+  codexTurns?: number
 }
 
 export interface CredentialStatus {
@@ -334,6 +347,7 @@ export interface Snapshot {
   skillProposal: SkillProposal | null
   pendingApproval: ApprovalView | null
   draftAttachments: AttachmentView[]
+  codex: CodexStatus
 }
 
 export interface BotDraft {
@@ -356,6 +370,7 @@ export interface BotCreateResult {
 }
 
 export type AppEvent =
+  | { type: 'codex-status'; status: CodexStatus }
   | { type: 'delta'; conversationId: string; message: ChatMessageView }
   | { type: 'message'; conversationId: string; message: ChatMessageView }
   | { type: 'run'; conversationId: string; run: RunState; task: TaskState | null }
@@ -369,6 +384,10 @@ export type AppEvent =
 
 export interface RiotBridge {
   getSnapshot(): Promise<Snapshot>
+  getCodexStatus(): Promise<CodexStatus>
+  connectCodex(): Promise<CodexStatus>
+  cancelCodexLogin(): Promise<CodexStatus>
+  disconnectCodex(): Promise<CodexStatus>
   createBot(draft: BotDraft): Promise<BotCreateResult>
   selectBot(id: string): Promise<Snapshot>
   updateBot(patch: { name?: string; purpose?: string; instructions?: string }): Promise<Bot>
@@ -413,8 +432,8 @@ export interface RiotBridge {
   listActivity(scope?: 'bot' | 'app'): Promise<ActivityEntry[]>
   getUsage(): Promise<UsageSummary>
   updateSettings(patch: Partial<PublicSettings>): Promise<PublicSettings>
-  setCredential(provider: ProviderId, secret: string): Promise<CredentialSaveResult>
-  clearCredential(provider: ProviderId): Promise<CredentialStatus>
+  setCredential(provider: ApiProviderId, secret: string): Promise<CredentialSaveResult>
+  clearCredential(provider: ApiProviderId): Promise<CredentialStatus>
   pickWorkspace(): Promise<string | null>
   resolveApproval(id: string, approved: boolean): Promise<void>
   undoEdit(id: string): Promise<{ ok: boolean; message: string }>
