@@ -4,6 +4,7 @@ import type {
   AppPreferences,
   ApprovalView,
   AttachmentView,
+  ArtifactView,
   Bot,
   BotDraft,
   ChatMessageView,
@@ -18,6 +19,7 @@ import type {
   ProviderCheckResult,
   BrowserView,
   HistoryHitView,
+  JobView,
   PublicSettings,
   RiotBridge,
   Skill,
@@ -28,8 +30,9 @@ import type {
 import { formatUsd, TERMINAL_WARNING } from '../../shared/types'
 import { AVATAR_CHOICES, AVATAR_COLORS, AVATAR_EMOJIS, BotAvatar } from './avatar'
 import { AttachmentList, ChatTranscript } from './chat'
+import { JobsPane, LibraryPane } from './jobs'
 
-type Screen = 'chat' | 'memory' | 'skills' | 'activity' | 'settings' | 'new-bot' | 'earlier'
+type Screen = 'chat' | 'jobs' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'new-bot' | 'earlier'
 
 export function App() {
   const api = window.riot
@@ -48,7 +51,8 @@ function Shell({ api }: { api: RiotBridge }) {
   const [screen, setScreen] = useState<Screen>('chat')
   const [bots, setBots] = useState<Bot[]>([])
   const [bot, setBot] = useState<Bot | null>(null)
-  const [runningBotId, setRunningBotId] = useState<string | null>(null)
+  const [jobs, setJobs] = useState<JobView[]>([])
+  const [artifacts, setArtifacts] = useState<ArtifactView[]>([])
   const [preferences, setPreferences] = useState<AppPreferences>({ showToolDetails: false })
   const [activityScope, setActivityScope] = useState<'bot' | 'app'>('bot')
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -93,7 +97,9 @@ function Shell({ api }: { api: RiotBridge }) {
     const snapshot = await api.getSnapshot()
     setBots(snapshot.bots)
     setBot(snapshot.bot)
-    setRunningBotId(snapshot.runningBotId)
+    viewedBotId.current = snapshot.bot?.id ?? null
+    setJobs(snapshot.jobs ?? [])
+    setArtifacts(snapshot.artifacts ?? [])
     setPreferences(snapshot.preferences)
     setOngoingId(snapshot.ongoingConversationId)
     setConversations(snapshot.conversations)
@@ -111,12 +117,26 @@ function Shell({ api }: { api: RiotBridge }) {
     if (snapshot.current) {
       conversationId.current = snapshot.current.conversation.id
       setDetail(snapshot.current)
+    } else {
+      conversationId.current = null
+      setDetail(null)
     }
   }
 
   useEffect(() => {
     void reload().catch((reason: unknown) => setError(messageOf(reason)))
     return api.onEvent((event) => {
+      if (event.type === 'jobs-changed') {
+        void api.listJobs('app').then(setJobs).catch(() => undefined)
+        const id = viewedBotId.current
+        void api.getSnapshot().then((snapshot) => { if (id === viewedBotId.current && id === snapshot.bot?.id) setDraftAttachments(snapshot.draftAttachments ?? []) }).catch(() => undefined)
+        return
+      }
+      if (event.type === 'artifacts-changed') {
+        const id = viewedBotId.current
+        void api.listArtifacts().then((items) => { if (id === viewedBotId.current) setArtifacts(items) }).catch(() => undefined)
+        return
+      }
       if (event.type === 'codex-status') {
         setCodex(event.status)
         return
@@ -158,8 +178,6 @@ function Shell({ api }: { api: RiotBridge }) {
         return
       }
       if (event.type === 'run') {
-        setRunningBotId(event.run.status === 'running' ? event.run.botId : null)
-        setBusy(event.run.status === 'running')
         if (event.conversationId === conversationId.current) {
           setDetail((current) => (current ? {
             ...current, run: event.run, task: event.task,
@@ -179,7 +197,9 @@ function Shell({ api }: { api: RiotBridge }) {
     })
   }, [api])
 
-  const running = busy || runningBotId !== null || detail?.run?.status === 'running'
+  const botJobs = jobs.filter((job) => job.botId === bot?.id)
+  const running = botJobs.some((job) => job.status === 'running') || detail?.run?.status === 'running'
+  const queued = botJobs.filter((job) => job.status === 'queued').length
   const viewingEarlier = Boolean(detail && ongoingId && detail.conversation.id !== ongoingId && screen === 'chat')
   useEffect(() => {
     if (settings?.provider === 'codex') void api.getCodexStatus().then(setCodex).catch(() => undefined)
@@ -188,7 +208,7 @@ function Shell({ api }: { api: RiotBridge }) {
   const configured = settings && credentials ? providerReady(settings, credentials, codex) : false
 
   async function send(): Promise<void> {
-    if (!detail || (!draft.trim() && !draftAttachments.length) || running) return
+    if (!detail || (!draft.trim() && !draftAttachments.length) || busy) return
     const text = draft
     const attachmentIds = draftAttachments.map((item) => item.id)
     const sendingBotId = bot?.id
@@ -198,7 +218,7 @@ function Shell({ api }: { api: RiotBridge }) {
     setError(null)
     setBusy(true)
     try {
-      await api.sendMessage(detail.conversation.id, text, attachmentIds)
+      await api.queueMessage(detail.conversation.id, text, attachmentIds)
     } catch (reason) {
       if (bot) drafts.current[bot.id] = text
       if (bot?.id === viewedBotId.current) setDraft(text)
@@ -208,6 +228,15 @@ function Shell({ api }: { api: RiotBridge }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function selectBot(id: string): Promise<void> {
+    if (bot) drafts.current[bot.id] = draft
+    setMenuOpen(false)
+    await api.selectBot(id)
+    await reload()
+    setDraft(drafts.current[id] ?? '')
+    setScreen('chat')
   }
 
   return (
@@ -238,35 +267,12 @@ function Shell({ api }: { api: RiotBridge }) {
                 className="bot-select"
                 aria-current={item.id === bot?.id ? 'true' : undefined}
                 onClick={() => {
-                  if (bot) drafts.current[bot.id] = draft
-                  setMenuOpen(false)
-                  void api.selectBot(item.id).then((snapshot) => {
-                    setBots(snapshot.bots)
-                    setBot(snapshot.bot)
-                    setConversations(snapshot.conversations)
-                    setOngoingId(snapshot.ongoingConversationId)
-                    setSettings(snapshot.settings)
-                    setMemories(snapshot.memories)
-                    setSkills(snapshot.skills)
-                    setProposal(snapshot.skillProposal)
-                    viewedBotId.current = snapshot.bot?.id ?? null
-                    if (activityScopeRef.current === 'bot') setActivity(snapshot.activity)
-                    else void refreshActivity().catch(() => undefined)
-                    setDraft(drafts.current[item.id] ?? '')
-                    setDraftAttachments(snapshot.draftAttachments ?? [])
-                    if (snapshot.current) {
-                      conversationId.current = snapshot.current.conversation.id
-                      setDetail(snapshot.current)
-                    } else {
-                      conversationId.current = null
-                      setDetail(null)
-                    }
-                    setScreen('chat')
-                  }).catch((reason: unknown) => setError(messageOf(reason)))
+                  void selectBot(item.id).catch((reason: unknown) => setError(messageOf(reason)))
                 }}
               >
                 <BotAvatar avatar={item.avatar} label={item.name} size={28} />
                 <span>{item.name}</span>
+                {jobs.some((job) => job.botId === item.id && (job.status === 'running' || job.status === 'queued')) && <small className="bot-job-status">{jobs.some((job) => job.botId === item.id && job.awaitingApproval) ? 'Approval' : jobs.some((job) => job.botId === item.id && job.status === 'running') ? 'Working' : 'Queued'}</small>}
               </button>
               {item.id === bot?.id && (
                 <button type="button" className="bot-menu-button" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
@@ -301,6 +307,8 @@ function Shell({ api }: { api: RiotBridge }) {
           <button className={screen === 'chat' ? 'active' : ''} onClick={() => setScreen('chat')}>
             Chat
           </button>
+          <button className={screen === 'jobs' ? 'active' : ''} onClick={() => setScreen('jobs')}>Jobs</button>
+          <button className={screen === 'library' ? 'active' : ''} onClick={() => setScreen('library')}>Library</button>
           <button className={screen === 'memory' ? 'active' : ''} onClick={() => setScreen('memory')}>
             Memory
           </button>
@@ -314,6 +322,7 @@ function Shell({ api }: { api: RiotBridge }) {
             Settings
           </button>
         </nav>
+        <p className="desktop-note">Close to tray · Quit from the tray menu</p>
       </aside>
       <section className="main">
         <header className="topbar">
@@ -324,8 +333,8 @@ function Shell({ api }: { api: RiotBridge }) {
               <p className="status">
                 {bot ? bot.name : 'Riot Bot'}
                 {bot?.purpose ? ` · ${bot.purpose}` : ''}
-                {running ? ' · Working on your last message.' : ' · Idle. Nothing is sent until you send a message.'}
-                {runningBotId && runningBotId !== bot?.id ? ' Another bot is still working.' : ''}
+                {running ? ' · Working. You can queue your next message.' : queued ? ' · Queued.' : ' · Ready.'}
+                {jobs.some((job) => job.botId !== bot?.id && job.status === 'running') ? ' Other bots are working.' : ''}
               </p>
             </div>
           </div>
@@ -376,6 +385,9 @@ function Shell({ api }: { api: RiotBridge }) {
             draft={draft}
             attachments={draftAttachments}
             running={running}
+            submitting={busy}
+            queued={queued}
+            onJobs={() => setScreen('jobs')}
             readOnly={viewingEarlier}
             onBack={() => {
               if (!ongoingId) return
@@ -383,6 +395,7 @@ function Shell({ api }: { api: RiotBridge }) {
             }}
             onOpenSettings={() => setScreen('settings')}
             configured={configured}
+            configurationNote={settings?.provider === 'codex' && codex?.connected && codex.models.length > 0 && !codex.models.some((model) => model.id === settings.model) ? `The saved model ${settings.model} is not listed for this Codex account. Choose an available model in Settings.` : undefined}
             showToolDetails={preferences.showToolDetails}
             avatar={bot?.avatar ?? null}
             proposal={proposal}
@@ -405,6 +418,8 @@ function Shell({ api }: { api: RiotBridge }) {
             }}
           />
         )}
+        {screen === 'jobs' && <JobsPane api={api} jobs={jobs} bots={bots} botId={bot?.id ?? null} onOpen={(id) => void selectBot(id).catch((reason: unknown) => setError(messageOf(reason)))} onError={setError} />}
+        {screen === 'library' && <LibraryPane api={api} artifacts={artifacts} onError={setError} />}
         {screen === 'memory' && (
           <MemoryPane
             memories={memories}
@@ -476,10 +491,14 @@ function ChatPane(props: {
   draft: string
   attachments: AttachmentView[]
   running: boolean
+  submitting: boolean
+  queued: number
+  onJobs: () => void
   readOnly?: boolean
   onBack?: () => void
   onOpenSettings?: () => void
   configured: boolean
+  configurationNote?: string
   showToolDetails: boolean
   avatar: Bot['avatar'] | null
   proposal: SkillProposal | null
@@ -515,7 +534,8 @@ function ChatPane(props: {
     <>
       {!props.configured && (
         <div className="banner">
-          Choose a model in Settings and connect Codex with ChatGPT, or add an API key for OpenAI or OpenRouter. Opening the app does not start a model turn.
+          <span>{props.configurationNote ?? 'Choose a model in Settings and connect Codex with ChatGPT, or add an API key for OpenAI or OpenRouter. Opening the app does not start a model turn.'}</span>
+          <button type="button" onClick={props.onOpenSettings}>Open Settings</button>
         </div>
       )}
       {props.proposal && <SkillProposalCard proposal={props.proposal} api={props.api} onProposal={props.onProposal} onError={props.onError} />}
@@ -541,6 +561,8 @@ function ChatPane(props: {
         </div>
       )}
       {!props.readOnly && (
+      <>
+      {(props.running || props.queued > 0) && <div className="queue-strip"><span>{props.running ? 'This bot is working.' : 'Waiting for a worker.'} {props.queued > 0 ? `${props.queued} message${props.queued === 1 ? '' : 's'} queued.` : 'Your next message will wait its turn.'}</span><button onClick={props.onJobs}>View jobs</button></div>}
       <form
         className="composer"
         onSubmit={(event) => {
@@ -558,7 +580,7 @@ function ChatPane(props: {
           <AttachmentList attachments={props.attachments} onRemove={props.onRemoveAttachment} />
           <textarea
             value={props.draft}
-            placeholder="Message Riot Bot"
+            placeholder={props.running ? 'Queue a message for this bot' : 'Message Riot Bot'}
             rows={3}
             onChange={(event) => props.onDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -579,10 +601,11 @@ function ChatPane(props: {
             <span className="help">{attaching ? 'Adding attachment…' : 'Win+Shift+S, then Ctrl+V · PNG/JPEG or UTF-8 text/code · Up to 4 files'}</span>
           </div>
         </div>
-        <button className="send" type="submit" disabled={attaching || props.running || (!props.draft.trim() && !props.attachments.length)}>
-          Send
+        <button className="send" type="submit" disabled={attaching || props.submitting || (!props.draft.trim() && !props.attachments.length)}>
+          {props.submitting ? 'Saving…' : props.running || props.queued ? 'Queue' : 'Send'}
         </button>
       </form>
+      </>
       )}
     </>
   )
@@ -831,9 +854,12 @@ function SettingsPane(props: {
         </select>
       </label>
       <label>
-        Model ID
-        <input value={draft.model} list={draft.provider === 'codex' ? 'codex-models' : undefined} placeholder={draft.provider === 'codex' ? 'Connect Codex, then choose a model' : 'Paste the model ID from your provider'} onChange={(event) => setDraft({ ...draft, model: event.target.value })} />
-        {draft.provider === 'codex' && <datalist id="codex-models">{props.codex?.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</datalist>}
+        {draft.provider === 'codex' ? 'Codex model' : 'Model ID'}
+        {draft.provider === 'codex' ? <select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>
+          <option value="">{props.codex?.connected ? 'Choose an available model' : 'Connect Codex to load models'}</option>
+          {draft.model && !props.codex?.models.some(model => model.id === draft.model) && <option value={draft.model}>{draft.model} · current choice</option>}
+          {props.codex?.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+        </select> : <input value={draft.model} placeholder="Paste the model ID from your provider" onChange={(event) => setDraft({ ...draft, model: event.target.value })} />}
       </label>
       <p className="help">Riot Bot does not pick a model for you, and it does not assume every model can use tools or streaming.</p>
       {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : <>
@@ -1036,7 +1062,7 @@ function OptionalMoney({ label, value, onChange }: { label: string; value: numbe
 }
 
 function providerReady(settings: PublicSettings, credentials: CredentialStatus, codex: CodexStatus | null): boolean {
-  if (settings.provider === 'codex') return Boolean(settings.model.trim() && codex?.connected && !codex.loginPending)
+  if (settings.provider === 'codex') return Boolean(settings.model.trim() && codex?.connected && !codex.loginPending && (!codex.models.length || codex.models.some(model => model.id === settings.model)))
   if (!settings.model.trim()) return false
   return settings.provider === 'openai' ? credentials.openaiConfigured : credentials.openrouterConfigured
 }
@@ -1466,6 +1492,8 @@ function ProviderCheck(props: { api: RiotBridge; onError: (message: string) => v
 }
 
 function screenTitle(screen: Screen): string {
+  if (screen === 'jobs') return 'Jobs'
+  if (screen === 'library') return 'Library'
   if (screen === 'memory') return 'Memory'
   if (screen === 'skills') return 'Skills'
   if (screen === 'activity') return 'Activity'

@@ -26,6 +26,8 @@ export function progressLabel(name: string): string {
       return 'Updating project files…'
     case 'run_terminal':
       return 'Running the approved command…'
+    case 'verify_website':
+      return 'Checking desktop and mobile pages…'
     case 'fetch_url':
       return 'Fetching a page…'
     case 'read_tool_result':

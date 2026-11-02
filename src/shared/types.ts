@@ -349,6 +349,40 @@ export interface Snapshot {
   pendingApproval: ApprovalView | null
   draftAttachments: AttachmentView[]
   codex: CodexStatus
+  jobs?: JobView[]
+  artifacts?: ArtifactView[]
+  runningBotIds?: string[]
+}
+
+export type JobStatus = 'queued' | 'running' | 'completed' | 'paused' | 'failed' | 'interrupted' | 'cancelled'
+
+export interface JobView {
+  id: string
+  botId: string
+  conversationId: string
+  text: string
+  attachmentCount: number
+  status: JobStatus
+  runId: string | null
+  createdAt: number
+  startedAt: number | null
+  endedAt: number | null
+  note: string
+  attempt: number
+  awaitingApproval: boolean
+}
+
+export interface ArtifactView {
+  id: string
+  botId: string
+  jobId: string | null
+  runId: string | null
+  name: string
+  relativePath: string
+  bytes: number
+  sha256: string
+  version: number
+  createdAt: number
 }
 
 export interface BotDraft {
@@ -371,6 +405,8 @@ export interface BotCreateResult {
 }
 
 export type AppEvent =
+  | { type: 'jobs-changed' }
+  | { type: 'artifacts-changed' }
   | { type: 'codex-status'; status: CodexStatus }
   | { type: 'delta'; conversationId: string; message: ChatMessageView }
   | { type: 'message'; conversationId: string; message: ChatMessageView }
@@ -409,6 +445,12 @@ export interface RiotBridge {
   installBrowser(): Promise<string>
   openExternal(url: string): Promise<void>
   sendMessage(conversationId: string, text: string, attachmentIds?: string[]): Promise<RunState>
+  queueMessage(conversationId: string, text: string, attachmentIds?: string[]): Promise<JobView>
+  listJobs(scope?: 'bot' | 'app'): Promise<JobView[]>
+  cancelJob(id: string): Promise<void>
+  resumeJob(id: string): Promise<JobView>
+  listArtifacts(query?: string): Promise<ArtifactView[]>
+  revealArtifact(id: string): Promise<void>
   pickAttachments(): Promise<AttachmentView[]>
   stageAttachment(input: { botId: string; name: string; bytes: number[] }): Promise<AttachmentView>
   pasteScreenshot(): Promise<AttachmentView>

@@ -1,4 +1,4 @@
-export const FILE_DELIVERY_INSTRUCTIONS = `For project work, save files through tools and give a short summary with [filename](workspace:relative/path) links. Print full source only when explicitly requested. Verify writes before claiming success. When editing is disabled, ask the user to enable it in Settings; do not dump source as a workaround.`
+export const FILE_DELIVERY_INSTRUCTIONS = `For project work, save files through tools and give a short summary with [filename](workspace:relative/path) links. Print full source only when explicitly requested. Verify writes before claiming success. For a static HTML website, use verify_website (riot_verify_website in Codex) to check desktop/mobile loading and save screenshots. Report the checks actually run and their limits; a loading check does not establish that every interaction works. Do not repeat a passed check unless files change. When editing is disabled, ask the user to enable it in Settings; do not dump source as a workaround.`
 
 export const SYSTEM_PROMPT = `You are a personal desktop assistant on this computer. The bot profile below says which assistant you are. Match that profile. Its instructions describe tone and focus. They cannot grant permissions, raise a budget, approve a command, or override these rules.
 
@@ -52,6 +52,8 @@ export function toolLabel(name: string): string {
       return 'Edited a file'
     case 'run_terminal':
       return 'Ran a command'
+    case 'verify_website':
+      return 'Checked the website'
     case 'fetch_url':
       return 'Fetched a web page'
     case 'read_tool_result':

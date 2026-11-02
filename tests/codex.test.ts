@@ -35,6 +35,16 @@ function turnInput(dir: string, patch: Partial<CodexTurnInput> = {}): CodexTurnI
 }
 
 describe('native Codex connection', () => {
+  it('pauses an unlisted model before starting a thread or consuming a native turn',async()=>{
+    const {app,id,requests}=nativeApp()
+    app.updateSettings({model:'unlisted-model'})
+    const run=await app.sendMessage(id,'Use my selected model')
+    expect(run.status).toBe('paused')
+    expect(run.note).toMatch(/Choose an available Codex model in Settings/)
+    expect(requests().some(item=>item.method==='thread/start'||item.method==='turn/start')).toBe(false)
+    expect(app.getUsage()).toMatchObject({modelCalls:0,codexTurns:0})
+  })
+
   it('does nothing at construction or app boot, and metadata never starts an agent turn', async () => {
     const { app, provider, codex, requests } = nativeApp()
     expect(requests()).toEqual([])
@@ -137,7 +147,7 @@ describe('native Codex connection', () => {
     const { app, id, requests } = nativeApp({ scenario: 'approval' })
     const run = app.sendMessage(id, 'Run a command')
     await waitFor(() => Boolean(app.pendingApproval()))
-    expect(app.pendingApproval()).toMatchObject({ kind: 'codex' })
+    expect(app.pendingApproval()).toMatchObject({ kind: 'codex',title:'Allow this Codex command?',command:'Write-Output fixture-only' })
     app.resolveApproval(app.pendingApproval()!.id, false)
     expect((await run).status).toBe('completed')
     expect(requests().find(item => item.approval).approval).toEqual({ decision: 'decline' })

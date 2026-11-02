@@ -106,6 +106,11 @@ export const TOOLS: ToolDefinition[] = [
     )
   },
   {
+    name: 'verify_website',
+    description: 'Check a static workspace HTML page at desktop and mobile sizes in a fresh browser with external networking blocked. Saves screenshots and a report. Checks initial script errors, missing local assets and horizontal overflow; does not test every interaction or run project commands. Requires workspace editing.',
+    parameters: objectSchema({ path: stringProp('Workspace HTML file, for example index.html.') }, ['path'])
+  },
+  {
     name: 'run_terminal',
     description: 'Request one exact command. It is not limited to the workspace. The user must approve it.',
     parameters: objectSchema(
@@ -253,7 +258,7 @@ export const TOOLS: ToolDefinition[] = [
   }
 ]
 
-const FILE_TOOL_NAMES = new Set(['list_files', 'search_files', 'read_file', 'write_file', 'edit_file'])
+const FILE_TOOL_NAMES = new Set(['list_files', 'search_files', 'read_file', 'write_file', 'edit_file', 'verify_website'])
 const TERMINAL_TOOL_NAMES = new Set(['run_terminal'])
 
 export function toolsForGroups(groups: Array<'files' | 'terminal' | 'browser'>): ToolDefinition[] {

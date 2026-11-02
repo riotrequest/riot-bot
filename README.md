@@ -2,6 +2,16 @@
 
 Riot Bot is a personal Windows desktop assistant. Each bot has one ongoing conversation, its own memories, skills, workspace, and browser profile. The app does not call a model when it is idle, opened, or restarted.
 
+## Persistent jobs and saved files — November 2, 2026
+
+Messages now become durable jobs. You can queue a follow-up while a bot works and switch to another bot. Two bots can run independently; each has its own provider, tools, browser, approvals and Stop control. Jobs sharing a workspace take turns. The **Jobs** view shows queued work, approvals and outcomes across one or all bots.
+
+Closing the chat hides it in the Windows system tray while work continues. Double-click the Riot tray icon to reopen; use its menu to stop all work or **Quit Riot Bot**. Quit interrupts active jobs and pauses the queue. Reopening does not make model calls: choose **Resume** for work you want to continue. The computer must remain on and awake. This is a local desktop service; scheduled routines and a cloud/mobile control plane are still future work.
+
+The per-bot **Library** keeps versioned copies of files created or changed during a job, including partial results from a stopped job. Copies remain available after the workspace original changes or is deleted. Chat keeps short summaries and workspace file links. **Show saved file** reveals the version in Explorer; HTML does not render automatically. See [job, Library and verification behavior](docs/jobs-and-library.md) for bounds and recovery details.
+
+API and native Codex bots can use **verify_website** for a static HTML file. It loads desktop and mobile viewports in fresh browser contexts, blocks external page requests, and saves screenshots plus a report. It checks initial script errors, missing local assets and horizontal overflow. It does not establish that every interaction, backend or visual detail works. General project commands still require approval.
+
 ## Review fixes — November 1, 2026
 
 Tool arguments are checked against their definitions before any action in a batch runs. Missing file contents, malformed JSON, and unknown tools pause without executing the batch. A cut-off tool batch is discarded and retried in smaller complete pieces within the task limits. Turning tools off is enforced in the main process, including while a terminal command waits for approval.
@@ -40,6 +50,7 @@ Data lives in `%APPDATA%\riot-bot\`:
 - `playwright-browsers\` — the Chromium download, after you choose Install Chromium
 - `credentials.bin.json` — API keys encrypted with Windows
 - `codex\` — Riot-owned Codex authentication, native sessions, and configuration; managed by the official CLI
+- `artifacts\<bot id>\` — immutable saved file versions in that bot’s Library
 - `riot-bot.log` — redacted operational log
 
 New workspaces are created under your home folder in `RiotBot\workspaces\`, with file editing enabled for that new folder. Existing folders start with editing off. Writes can create subfolders inside the workspace. Browser profiles are not inside the workspace and are not your Chrome or Edge profile.

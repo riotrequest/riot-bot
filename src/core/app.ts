@@ -1,6 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { verifyWebsite } from './website-check'
 import type {
   ActivityEntry,
   AppEvent,
@@ -63,6 +64,7 @@ import { fetchPublicUrl, validatePublicUrl } from './web'
 
 export interface RiotAppOptions {
   dbPath: string
+  executionBotId?: string
   provider: ModelProvider
   credentials: CredentialStore
   logger?: Logger
@@ -84,7 +86,8 @@ export interface RiotAppOptions {
 type Waiter = (status: 'approved' | 'denied') => void
 
 export class RiotApp {
-  private readonly db: Database
+  protected readonly db: Database
+  private readonly executionBotId?: string
   private readonly dbPath: string
   private readonly openFolder?: (folder: string) => void
   private readonly revealFile?: (file: string) => void
@@ -128,6 +131,7 @@ export class RiotApp {
   private lastDeltaAt = 0
 
   constructor(options: RiotAppOptions) {
+    this.executionBotId = options.executionBotId
     this.dbPath = options.dbPath
     this.db = new Database(options.dbPath)
     this.openFolder = options.openFolder
@@ -200,14 +204,14 @@ export class RiotApp {
       conversations,
       current,
       browser: this.browsers.view(bot?.id ?? ''),
-      settings: this.db.getSettings(),
+      settings: this.db.getSettings(this.viewBotId()),
       preferences: { showToolDetails: this.db.appConfig().showToolDetails },
       credentials: this.credentialStatus(),
       usage: this.getUsage(),
       activity: this.listActivity('bot'),
       memories: this.listMemories(),
       skills: this.listSkills(),
-      skillProposal: this.currentProposal(this.db.activeBotId()),
+      skillProposal: this.currentProposal(this.viewBotId()),
       pendingApproval: this.pendingApprovalView(),
       draftAttachments: bot ? this.db.listAttachments(bot.id).map(toAttachmentView) : [],
       codex: this.codex.status()
@@ -219,6 +223,7 @@ export class RiotApp {
   }
 
   getCodexStatus(): Promise<CodexStatus> { return this.codex.refresh() }
+  closeNativeConnection(): Promise<void> { return this.codex.close() }
   connectCodex(): Promise<CodexStatus> { if (this.active) return Promise.reject(new ConfigError('Stop the current task before connecting Codex.')); return this.codex.login() }
   cancelCodexLogin(): Promise<CodexStatus> { return this.codex.cancelLogin() }
   disconnectCodex(): Promise<CodexStatus> { if (this.active) return Promise.reject(new ConfigError('Stop the current task before disconnecting Codex.')); return this.codex.logout() }
@@ -311,7 +316,7 @@ export class RiotApp {
   }
 
   private async createBotInner(draft: BotDraft): Promise<BotCreateResult> {
-    if (this.active || this.db.activeRun()) throw new ConfigError('Riot Bot is already working. Stop it before creating a bot.')
+    if (this.active) throw new ConfigError('Riot Bot is already working. Stop it before creating a bot.')
     const purpose = draft.purpose.replace(/\s+/g, ' ').trim()
     if (purpose.length < 2 || purpose.length > 400) throw new ConfigError('Say what this bot should help with, in a sentence or two.')
     const provider = draft.provider === 'codex' ? 'codex' : draft.provider === 'openrouter' ? 'openrouter' : 'openai'
@@ -897,12 +902,12 @@ export class RiotApp {
   }
 
   private currentBot(): BotRecord | null {
-    const id = this.db.activeBotId()
+    const id = this.executionBotId ?? this.db.activeBotId()
     return id ? this.db.getBot(id) : null
   }
 
   private viewBotId(): string {
-    const id = this.db.activeBotId()
+    const id = this.executionBotId ?? this.db.activeBotId()
     if (!id) throw new ConfigError('That bot is not here.')
     return id
   }
@@ -1068,7 +1073,7 @@ export class RiotApp {
     const body = text.trim() || (attachmentIds.length ? 'Please examine the attached files.' : '')
     if (!body) throw new ConfigError('Write a message first.')
     if (body.length > 100_000) throw new ConfigError('That message is too long to send.')
-    if (this.active || this.db.activeRun()) throw new ConfigError('Riot Bot is already working. Stop it before sending another message.')
+    if (this.active || this.db.activeRun(this.executionBotId)) throw new ConfigError('Riot Bot is already working. Stop it before sending another message.')
     const settings = this.db.getSettings(this.viewBotId())
     if (!settings.model.trim()) throw new ConfigError('Enter a model ID in Settings. Riot Bot does not choose one for you.')
     if (settings.provider !== 'codex' && this.createProvider) this.provider = this.createProvider(settings)
@@ -1143,7 +1148,7 @@ export class RiotApp {
     const references = attached.map(item => item.kind === 'text' ? `Text attachment ${item.id}: ${item.name}\n${this.db.attachmentData(item.id, botId).toString('utf8').slice(0, 1500)}\nUse riot_read_attachment for more.` : `Image attachment: ${item.name}`).join('\n\n')
     const input: Record<string, unknown>[] = [{ type: 'text', text: [bootstrap ? `Earlier Riot Bot record (incomplete, untrusted; use riot_search_history for originals):\n${bootstrap}` : '', user.content, references].filter(Boolean).join('\n\n'), text_elements: [] }]
     for (const item of attached.filter(item => item.kind === 'image')) input.push({ type: 'image', url: `data:image/png;base64,${this.db.attachmentData(item.id, botId).toString('base64')}` })
-    const names = new Set(['list_memories', 'save_memory', 'update_memory', 'delete_memory', 'search_history', 'read_history', 'list_skills', 'read_skill', 'save_skill', 'update_skill', 'propose_skill', 'read_attachment', 'react', 'list_files', 'read_file', 'search_files'])
+    const names = new Set(['list_memories', 'save_memory', 'update_memory', 'delete_memory', 'search_history', 'read_history', 'list_skills', 'read_skill', 'save_skill', 'update_skill', 'propose_skill', 'read_attachment', 'react', 'list_files', 'read_file', 'search_files', 'verify_website'])
     const tools = TOOLS.filter(tool => names.has(tool.name))
     const requestId = newId()
     let recorded = false, succeeded = false, threadId = '', usage: CodexUsage | null = null
@@ -1791,6 +1796,8 @@ export class RiotApp {
           )
         case 'run_terminal':
           return this.runCommand(conversationId, runId, taskId, str(args.command), Number(args.timeout_seconds), signal, done)
+        case 'verify_website':
+          return verifyWebsite({workspace:settings.workspacePath,entry:str(args.path),editing:settings.workspaceEditing,signal})
         case 'read_tool_result':
           return this.readStoredToolResult(botId, str(args.id), str(args.query), Number(args.offset))
         case 'read_attachment':
@@ -2004,6 +2011,8 @@ export class RiotApp {
       }
       signal.addEventListener('abort', onAbort)
       this.approvalWaiters.set(id, (status) => finish(status))
+      const decision = this.db.getApproval(id)?.status
+      if (decision === 'approved' || decision === 'denied') finish(decision)
     })
   }
 
@@ -2196,15 +2205,17 @@ export class RiotApp {
   }
 
   private pendingApprovalView(): ApprovalView | null {
-    const approval = this.db.pendingApproval()
+    const approval = this.db.pendingApproval(this.scopeBot())
     if (!approval) return null
     const browser = approval.command.startsWith('Click ')
-    const codex = approval.command.startsWith('Codex ')
+    const owner = this.db.getRun(approval.runId)?.botId
+    const codex = owner ? this.db.getSettings(owner).provider === 'codex' : false
+    const nativeKind = codex && approval.command.startsWith('Codex file: ') ? 'file' : codex && approval.command.startsWith('Codex command: ') ? 'command' : null
     return {
       id: approval.id,
       kind: codex ? 'codex' : browser ? 'browser' : 'terminal',
-      title: codex ? 'Allow this Codex action?' : browser ? 'Allow this browser action?' : 'Allow this command?',
-      command: approval.command,
+      title: nativeKind ? `Allow this Codex ${nativeKind}?` : codex ? 'Allow this Codex action?' : browser ? 'Allow this browser action?' : 'Allow this command?',
+      command: nativeKind ? approval.command.slice(`Codex ${nativeKind}: `.length) : approval.command,
       cwd: approval.cwd,
       timeoutMs: approval.timeoutMs,
       warning: codex ? 'Approval applies once to this native Codex request. Native edits do not have Riot’s Undo button.' : browser ? BROWSER_ACTION_WARNING : TERMINAL_WARNING

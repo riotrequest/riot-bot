@@ -1,0 +1,363 @@
+import fs from 'fs'
+import path from 'path'
+import type { ApiProviderId, AppEvent, ArtifactView, CodexStatus, CredentialSaveResult, CredentialStatus, JobView, PublicSettings, RunState, Snapshot } from '../shared/types'
+import { RiotApp, type RiotAppOptions } from './app'
+import { artifactFile, artifactView, captureArtifacts, workspaceInventory } from './artifacts'
+import { MAX_ATTACHMENTS } from './attachments'
+import type { JobRecord } from './db'
+import { ConfigError } from './errors'
+import { inside } from './path-safety'
+import { publicErrorMessage } from './redact'
+import type { Settings } from './settings'
+
+export interface RiotServiceOptions extends RiotAppOptions {
+  maxConcurrentJobs?: number
+  createExecutor?: (botId: string, options: RiotAppOptions) => RiotApp
+}
+
+interface ActiveJob {
+  id: string
+  workspace: string
+  finished: Promise<void>
+}
+
+/** The desktop service owns queues; each bot executor owns its complete agent state. */
+export class RiotService extends RiotApp {
+  private readonly options: RiotServiceOptions
+  private readonly executors = new Map<string,RiotApp>()
+  private readonly activeJobs = new Map<string,ActiveJob>()
+  private readonly serviceListeners = new Set<(event: AppEvent)=>void>()
+  private readonly libraryRoot: string
+  private ready = false
+  private serviceClosing = false
+  private shutdownTask: Promise<void> | null = null
+  private changingNativeConnection = false
+  private pumpScheduled = false
+
+  constructor(options: RiotServiceOptions) {
+    super(options)
+    if (options.dbPath === ':memory:') throw new ConfigError('The job service needs a persistent database file.')
+    this.options = options
+    this.libraryRoot = path.join(path.dirname(options.dbPath),'artifacts')
+    super.onEvent(event=>this.broadcast(event))
+  }
+
+  override boot(): { interrupted: number } {
+    const result = super.boot()
+    this.db.recoverJobs(this.timestamp())
+    this.ready = true
+    return result
+  }
+
+  override onEvent(listener: (event: AppEvent)=>void): ()=>void {
+    this.serviceListeners.add(listener)
+    return ()=>this.serviceListeners.delete(listener)
+  }
+
+  override async sendMessage(conversationId: string, text: string, attachmentIds: string[] = []): Promise<RunState> {
+    const job = this.queueMessage(conversationId,text,attachmentIds)
+    return new Promise((resolve,reject)=>{
+      const settle = (): void => {
+        const current = this.db.getJob(job.id)
+        if (!current || current.status==='queued' || current.status==='running') return
+        const run = current.runId ? this.getRun(current.runId) : null
+        if (run?.status==='running') return
+        unsubscribe()
+        if (run) resolve(run)
+        else reject(new ConfigError(current.note || 'The job did not start.'))
+      }
+      const unsubscribe = this.onEvent(event=>{if(event.type==='jobs-changed')settle()})
+      settle()
+    })
+  }
+
+  override getSnapshot(): Snapshot {
+    const snapshot = super.getSnapshot()
+    if (!this.ready) return snapshot
+    const jobs = this.listJobs('app')
+    const runningBotIds = [...new Set([...this.activeJobs.keys(),...(snapshot.runningBotId ? [snapshot.runningBotId] : [])])]
+    const executor = snapshot.bot ? this.executors.get(snapshot.bot.id) : undefined
+    return {
+      ...snapshot,jobs,artifacts:this.listArtifacts(),runningBotIds,
+      runningBotId:runningBotIds.includes(snapshot.bot?.id ?? '') ? snapshot.bot!.id : runningBotIds[0] ?? null,
+      browser:executor ? executor.getSnapshot().browser : snapshot.browser,
+      pendingApproval:executor ? executor.pendingApproval() : snapshot.pendingApproval
+    }
+  }
+
+  queueMessage(conversationId: string, text: string, attachmentIds: string[] = []): JobView {
+    this.assertOpen()
+    const botId = this.currentBotId()
+    if (!this.db.conversationForBot(botId,conversationId)) throw new ConfigError('That conversation is not in this bot.')
+    if (conversationId!==this.db.getBot(botId)?.ongoingConversationId) throw new ConfigError('Send new work in the ongoing chat.')
+    const body = text.trim() || (attachmentIds.length ? 'Please examine the attached files.' : '')
+    if (!body || body.length>100_000) throw new ConfigError('Write a message of up to 100,000 characters.')
+    if (attachmentIds.length>MAX_ATTACHMENTS || new Set(attachmentIds).size!==attachmentIds.length) throw new ConfigError(`Choose up to ${MAX_ATTACHMENTS} different attachments.`)
+    const settings = this.db.getSettings(botId)
+    if (settings.provider==='codex' && (this.changingNativeConnection || super.getSnapshot().codex?.loginPending)) throw new ConfigError('Finish or cancel Codex sign-in before queuing a native job.')
+    if (!settings.model.trim()) throw new ConfigError('Choose a model in Settings first.')
+    const job = this.db.transaction(()=>{
+      if (this.db.pendingJobCount(botId)>=20) throw new ConfigError('This bot has 20 pending jobs. Finish or cancel some before adding more.')
+      for (const id of attachmentIds) {
+        const attachment = this.db.getAttachment(id,botId)
+        if (!attachment || attachment.messageId || this.db.attachmentReserved(id)) throw new ConfigError('An attachment is missing or already belongs to another job.')
+      }
+      return this.db.createJob({botId,conversationId,text:body,attachmentIds,binding:executionBinding(settings),now:this.timestamp()})
+    })
+    this.jobsChanged()
+    this.schedulePump()
+    return jobView(job)
+  }
+
+  listJobs(scope: 'bot'|'app' = 'bot'): JobView[] {
+    return this.db.listJobs(scope==='app' ? undefined : this.currentBotId()).map(jobView)
+  }
+
+  listArtifacts(query = ''): ArtifactView[] {
+    const search = query.trim().toLowerCase()
+    return this.db.listArtifacts(this.currentBotId()).filter(item=>!search||item.relativePath.toLowerCase().includes(search)).map(artifactView)
+  }
+
+  revealArtifact(id: string): void {
+    const record = this.db.getArtifact(id,this.currentBotId())
+    if (!record) throw new ConfigError('That saved result is not in this bot’s Library.')
+    if (!this.options.revealFile) throw new ConfigError('Open the desktop app to show the saved file.')
+    this.options.revealFile(artifactFile(this.libraryRoot,record))
+  }
+
+  cancelJob(id: string): void {
+    const job = this.requireJob(id)
+    if (job.status==='completed' || job.status==='cancelled') return
+    this.db.updateJob(id,{status:'cancelled',endedAt:this.timestamp(),note:'Cancelled by you.'})
+    if (this.activeJobs.get(job.botId)?.id===id) {
+      this.db.pauseQueuedJobs(job.botId,'Queue paused when you stopped this bot. Choose Resume for a queued job to continue.')
+      this.executors.get(job.botId)?.stop()
+    }
+    this.jobsChanged()
+    this.schedulePump()
+  }
+
+  resumeJob(id: string): JobView {
+    this.assertOpen()
+    const job = this.requireJob(id)
+    if (job.status==='queued' || job.status==='running' || job.status==='completed') throw new ConfigError('That job is not waiting to resume.')
+    this.db.updateJob(id,{
+      status:'queued',note:'',endedAt:null,resume:job.runId!==null,
+      binding:executionBinding(this.db.getSettings(job.botId))
+    })
+    this.jobsChanged()
+    this.schedulePump()
+    return jobView(this.db.getJob(id)!)
+  }
+
+  override stop(): void {
+    const botId = this.currentBotId()
+    const active = this.activeJobs.get(botId)
+    if (active) this.cancelJob(active.id)
+    else this.db.pauseQueuedJobs(botId)
+    if (super.getSnapshot().runningBotId===botId) super.stop()
+    this.jobsChanged()
+  }
+
+  stopAll(): void {
+    this.db.pauseQueuedJobs(undefined,'Queue paused when you stopped all work.')
+    for (const job of this.activeJobs.values()) this.cancelJob(job.id)
+    super.stop()
+  }
+
+  override openBrowser(): Promise<string> { return this.executor(this.currentBotId()).openBrowser() }
+  override closeBrowser(): Promise<string> { return this.executor(this.currentBotId()).closeBrowser() }
+  override takeoverBrowser(): string { return this.executor(this.currentBotId()).takeoverBrowser() }
+  override resumeBrowser(): string { return this.executor(this.currentBotId()).resumeBrowser() }
+
+  override resolveApproval(id: string, approved: boolean): void {
+    const approval = this.db.getApproval(id)
+    if (!approval || approval.status!=='pending') throw new ConfigError('That request is no longer waiting.')
+    const owner = this.db.getRun(approval.runId)?.botId
+    const executor = owner ? this.executors.get(owner) : undefined
+    if (executor?.pendingApproval()?.id===id) executor.resolveApproval(id,approved)
+    else if (super.pendingApproval()?.id===id) super.resolveApproval(id,approved)
+    else throw new ConfigError('The original worker is no longer waiting for this approval.')
+    this.jobsChanged()
+  }
+
+  override updateSettings(patch: Partial<PublicSettings>): PublicSettings {
+    if (this.activeJobs.has(this.currentBotId())) throw new ConfigError('Stop this bot’s job before changing its settings. Other bots can keep working.')
+    return super.updateSettings(patch)
+  }
+
+  override updateBot(patch: { name?: string; purpose?: string; instructions?: string }) {
+    if (patch.instructions !== undefined && this.activeJobs.has(this.currentBotId())) throw new ConfigError('Stop this bot’s job before changing its instructions.')
+    return super.updateBot(patch)
+  }
+
+  override setCredential(provider: ApiProviderId, secret: string): CredentialSaveResult {
+    this.connectionChanging(provider)
+    return super.setCredential(provider,secret)
+  }
+
+  override clearCredential(provider: ApiProviderId): CredentialStatus {
+    this.connectionChanging(provider)
+    return super.clearCredential(provider)
+  }
+
+  override async connectCodex(): Promise<CodexStatus> {
+    this.connectionChanging('codex')
+    this.changingNativeConnection = true
+    try {
+      await Promise.all([...this.executors.values()].map(executor=>executor.closeNativeConnection()))
+      return await super.connectCodex()
+    } finally { this.changingNativeConnection = false }
+  }
+
+  override async disconnectCodex(): Promise<CodexStatus> {
+    this.connectionChanging('codex')
+    this.changingNativeConnection = true
+    try {
+      await Promise.all([...this.executors.values()].map(executor=>executor.closeNativeConnection()))
+      return await super.disconnectCodex()
+    } finally { this.changingNativeConnection = false }
+  }
+
+  override deleteConversation(id: string): void {
+    if (this.db.conversationHasPendingJobs(id)) throw new ConfigError('Cancel this chat’s pending jobs before deleting it.')
+    super.deleteConversation(id)
+  }
+
+  override close(): Promise<void> {
+    if (!this.shutdownTask) {
+      this.serviceClosing = true
+      this.shutdownTask = Promise.resolve().then(()=>this.shutdown())
+    }
+    return this.shutdownTask
+  }
+
+  private async shutdown(): Promise<void> {
+    this.db.pauseQueuedJobs(undefined,'Riot Bot quit. Choose Resume when you reopen it.')
+    this.jobsChanged()
+    for (const executor of this.executors.values()) executor.stop()
+    super.stop()
+    await Promise.allSettled([...this.activeJobs.values()].map(job=>job.finished))
+    await Promise.allSettled([...this.executors.values()].map(executor=>executor.close()))
+    this.executors.clear()
+    this.activeJobs.clear()
+    await super.close()
+    this.serviceListeners.clear()
+    this.ready = false
+  }
+
+  private executor(botId: string): RiotApp {
+    let executor = this.executors.get(botId)
+    if (executor) return executor
+    const options: RiotAppOptions = { ...this.options,executionBotId:botId,terminal:undefined,codex:undefined }
+    executor = this.options.createExecutor?.(botId,options) ?? new RiotApp(options)
+    executor.onEvent(event=>{
+      // Closing one worker's transport does not sign the shared account out.
+      if (event.type==='codex-status' && !event.status.connected) return
+      const active = this.activeJobs.get(botId)
+      if (event.type==='run' && active && this.db.getJob(active.id)?.runId!==event.run.id) this.db.attachJobRun(active.id,event.run.id)
+      if (event.type==='approval') {
+        this.jobsChanged()
+        this.broadcast({type:'approval',approval:this.executors.get(this.currentBotId())?.pendingApproval() ?? null})
+      } else if (event.type!=='browser-progress' || botId===this.currentBotId()) this.broadcast(event)
+    })
+    // ponytail: retain one executor per used bot; add idle eviction if many native sessions become costly.
+    this.executors.set(botId,executor)
+    return executor
+  }
+
+  private schedulePump(): void {
+    if (this.pumpScheduled || this.serviceClosing) return
+    this.pumpScheduled = true
+    queueMicrotask(()=>{
+      this.pumpScheduled = false
+      if (!this.serviceClosing) this.pump()
+    })
+  }
+
+  private pump(): void {
+    const limit = Math.max(1,Math.min(4,this.options.maxConcurrentJobs ?? 2))
+    for (const job of this.db.queuedJobs()) {
+      if (this.activeJobs.size>=limit) break
+      if (this.activeJobs.has(job.botId)) continue
+      const settings = this.db.getSettings(job.botId)
+      if (executionBinding(settings)!==job.binding) {
+        this.db.updateJob(job.id,{status:'paused',note:'This bot’s setup changed after the job was queued. Review it, then choose Resume.'})
+        this.jobsChanged()
+        continue
+      }
+      if ([...this.activeJobs.values()].some(active=>workspacesOverlap(active.workspace,settings.workspacePath))) continue
+      const active: ActiveJob = {id:job.id,workspace:settings.workspacePath,finished:Promise.resolve()}
+      this.activeJobs.set(job.botId,active)
+      active.finished = this.execute(job,settings).finally(()=>{
+        this.activeJobs.delete(job.botId)
+        this.jobsChanged()
+        this.schedulePump()
+      })
+    }
+  }
+
+  private async execute(job: JobRecord, settings: Settings): Promise<void> {
+    this.db.updateJob(job.id,{status:'running',startedAt:this.timestamp(),endedAt:null,attempt:job.attempt+1,note:''})
+    this.jobsChanged()
+    const before = workspaceInventory(settings.workspacePath)
+    try {
+      const body = job.resume
+        ? `Resume my earlier task: ${job.text}\n\nReview the saved files, tool results and unfinished work before taking another action. Do not repeat completed actions. Re-request approval for any command or consequential action that still needs it.`
+        : job.text
+      const run = await this.executor(job.botId).sendMessage(job.conversationId,body,job.resume ? [] : job.attachmentIds)
+      const current = this.db.getJob(job.id)
+      if (!current) return
+      this.db.attachJobRun(job.id,run.id)
+      const saved = captureArtifacts({db:this.db,job:this.db.getJob(job.id)!,workspace:settings.workspacePath,libraryRoot:this.libraryRoot,before,secrets:this.options.credentials.secretValues(),now:this.timestamp()})
+      if (saved) this.broadcast({type:'artifacts-changed'})
+      const status = current.status==='cancelled' ? 'cancelled' : this.serviceClosing ? 'interrupted' : run.status==='completed' ? 'completed' : run.status==='stopped' ? 'cancelled' : run.status
+      this.db.updateJob(job.id,{status,endedAt:this.timestamp(),note:current.status==='cancelled' ? current.note : run.note})
+      if (status!=='completed') this.db.pauseQueuedJobs(job.botId,'An earlier job needs attention. Review it, then Resume the queued work you want.')
+    } catch (error) {
+      const cancelled = this.db.getJob(job.id)?.status==='cancelled'
+      this.db.updateJob(job.id,{status:cancelled ? 'cancelled' : this.serviceClosing ? 'interrupted' : 'failed',endedAt:this.timestamp(),note:cancelled ? 'Cancelled by you.' : publicErrorMessage(error,this.options.credentials.secretValues())})
+      this.db.pauseQueuedJobs(job.botId,'An earlier job failed. Review it before resuming queued work.')
+    }
+  }
+
+  private currentBotId(): string {
+    const id = this.db.activeBotId()
+    if (!id) throw new ConfigError('Choose a bot first.')
+    return id
+  }
+
+  private connectionChanging(provider: Settings['provider']): void {
+    if ([...this.activeJobs.keys()].some(id=>this.db.getSettings(id).provider===provider)) throw new ConfigError('Stop jobs using this connection before changing the account or key.')
+    for (const job of this.db.queuedJobs()) if (this.db.getSettings(job.botId).provider===provider) this.db.updateJob(job.id,{status:'paused',note:'The connection is changing. Check the account and model, then choose Resume.'})
+    this.jobsChanged()
+  }
+
+  private requireJob(id: string): JobRecord {
+    const job = this.db.getJob(id)
+    if (!job || !this.db.getBot(job.botId)) throw new ConfigError('That job is no longer available.')
+    return job
+  }
+
+  private assertOpen(): void {
+    if (!this.ready || this.serviceClosing) throw new ConfigError('The job service is not ready. Reopen Riot Bot.')
+  }
+
+  private timestamp(): number { return this.options.now?.() ?? Date.now() }
+  private jobsChanged(): void { this.broadcast({type:'jobs-changed'}) }
+  private broadcast(event: AppEvent): void { for (const listener of this.serviceListeners) listener(event) }
+}
+
+function executionBinding(settings: Settings): string {
+  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions])
+}
+
+function workspacesOverlap(first: string, second: string): boolean {
+  if (!first || !second) return false
+  try { return inside(fs.realpathSync(first),fs.realpathSync(second)) || inside(fs.realpathSync(second),fs.realpathSync(first)) } catch { return path.resolve(first)===path.resolve(second) }
+}
+
+function jobView(record: JobRecord): JobView {
+  const { attachmentIds:_attachments,binding:_binding,resume:_resume,...view } = record
+  return {...view,text:view.text.slice(0,1000)}
+}

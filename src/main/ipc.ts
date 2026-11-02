@@ -2,7 +2,7 @@ import { clipboard, dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent
 import fs from 'fs/promises'
 import path from 'path'
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '../core/attachments'
-import type { RiotApp } from '../core/app'
+import type { RiotService } from '../core/service'
 import { isId } from '../core/ids'
 import type { SkillDraft } from '../core/skills'
 import { publicErrorMessage } from '../core/redact'
@@ -38,8 +38,8 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'searchUrlTemplate'
 ]
 
-export function registerIpc(getApp: () => RiotApp, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore): void {
-  const handle = (channel: string, fn: (app: RiotApp, args: unknown[]) => unknown): void => {
+export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore): void {
+  const handle = (channel: string, fn: (app: RiotService, args: unknown[]) => unknown): void => {
     ipcMain.handle(channel, async (event, ...args) => {
       assertSender(event, getWindow())
       try {
@@ -51,6 +51,12 @@ export function registerIpc(getApp: () => RiotApp, getWindow: () => BrowserWindo
   }
 
   handle('app:getSnapshot', (app) => app.getSnapshot())
+  handle('jobs:queue', (app,args) => app.queueMessage(requireId(args[0]),requireText(args[1],'Write a message first.'),args[2] == null ? [] : requireAttachmentIds(args[2])))
+  handle('jobs:list', (app,args) => app.listJobs(args[0] === 'app' ? 'app' : 'bot'))
+  handle('jobs:cancel', (app,args) => app.cancelJob(requireId(args[0])))
+  handle('jobs:resume', (app,args) => app.resumeJob(requireId(args[0])))
+  handle('artifacts:list', (app,args) => app.listArtifacts(typeof args[0] === 'string' ? args[0] : ''))
+  handle('artifacts:reveal', (app,args) => app.revealArtifact(requireId(args[0])))
   handle('bots:create', (app, args) => app.createBot(botDraft(args[0])))
   handle('bots:select', (app, args) => app.selectBot(requireId(args[0])))
   handle('bots:update', (app, args) => app.updateBot(botPatch(args[0])))

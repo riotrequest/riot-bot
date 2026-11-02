@@ -7,7 +7,7 @@ The preview connector uses the official Codex CLI’s app-server and its managed
 1. Install the official Codex CLI if it is missing, then restart Riot Bot. The connector was checked against Codex CLI **0.154.0** on November 2, 2026.
 2. In Settings, select **Codex · ChatGPT sign-in (preview)**.
 3. Click **Sign in with ChatGPT** and finish the official browser flow. Riot opens only the supported HTTPS authentication hosts. **Cancel sign-in**, **Refresh Codex status**, and **Disconnect Codex** are available in the same panel.
-4. Enter a Codex model ID, using the suggestions from the connected model catalog. The catalog does not guarantee that your account can use a model.
+4. Choose a Codex model from the connected account’s picker. An old model choice remains visible for correction. Riot pauses an unlisted model before starting a native turn; being listed still does not guarantee that the account can use it.
 5. Select this bot’s workspace and save Settings. Send a message to start a native turn.
 
 Sign-in and status checks do not start a model turn. Riot neither imports another app’s login nor copies tokens out of your normal Codex profile. The connection is app-wide; each bot still has its own native conversation mapping.
@@ -18,7 +18,7 @@ Native turns use the signed-in account’s Codex allowance and any additional us
 
 An authentication error, quota failure, failed turn, or disconnected server pauses/fails visibly. Riot never silently switches provider, account, model, or API key. There are no scheduled native turns or automatic retries of interrupted actions.
 
-With tools enabled, Codex retains native web search, shell, and file capabilities. Prefixed `riot_` tools expose this bot’s memories, bounded history/attachments, skills, reactions, and bounded workspace reads. Riot does not add its own search or shell tool alongside the native equivalents. Turning off the native shell/search/Riot-tools checkbox disables those capabilities and forces a read-only policy; other built-in native capabilities are governed by Codex. Unsupported native permission/forms requests are declined. Ask/answer clarifications through ordinary chat.
+With tools enabled, Codex retains native web search, shell, and file capabilities. Prefixed `riot_` tools expose this bot’s memories, bounded history/attachments, skills, reactions, bounded workspace reads and static website verification. Riot does not add its own search or shell tool alongside the native equivalents. Turning off the native shell/search/Riot-tools checkbox disables those capabilities and forces a read-only policy; other built-in native capabilities are governed by Codex. Unsupported native permission/forms requests are declined. Ask/answer clarifications through ordinary chat.
 
 Codex’s search source is not a verified Google organic position. Exact rank claims still require observed results from the named engine. A native search does not use Riot’s visible browser profile or its CAPTCHA handoff controls.
 
@@ -36,6 +36,6 @@ Riot’s separate `CODEX_HOME` is `%APPDATA%\riot-bot\codex`. The official CLI m
 
 The installed CLI initialized, accepted a thread and dynamic-tool schema, and enforced the tested Windows write policies using a fresh signed-out profile. No model turn was started in that check. Protocol fixtures exercise managed login/cancel/logout, native search events, scoped Riot memory, attachments, session reuse/restart, approval refusal, Stop (including a stuck child process), quota/disconnect errors, and separate usage accounting. A disposable Electron instance exercises the provider controls, authentication status events, chat, and Activity without renderer errors.
 
-The real browser sign-in and an authenticated turn with your selected Codex model remain to be completed after you connect. No real Codex model/search response is claimed by the fixture checks.
+An authenticated acceptance task on November 2 used the connected Riot account in an isolated profile with **gpt-5.6-sol**, selected explicitly after the account rejected the previously saved gpt-6.1-sol. It created an HTML page through approved native file edits, used Riot’s website checker, repaired detected mobile overflow and returned a short summary with a file link. Library captured four output files. Independent checks of the final page passed both viewport sizes and the JavaScript button interaction. The task used no API calls or fallback. Earlier diagnostic attempts included the rejected model, a test approval-wait issue and declined file edits while approval display was being corrected; those attempts were not successful acceptance tasks. No native web-search quality claim is made by this local website task.
 
 Protocol reference: [Codex App Server](https://learn.chatgpt.com/docs/app-server). The alternate registered [Sign in with ChatGPT integration](https://developers.openai.com/siwc/quickstart) is a different authentication route and is not implemented here.

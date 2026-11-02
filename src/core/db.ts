@@ -1,5 +1,5 @@
 import fs from 'fs'
-import { COST_DISCLAIMER, type AttachmentView, type Conversation, type Memory, type RunState } from '../shared/types'
+import { COST_DISCLAIMER, type ArtifactView, type AttachmentView, type Conversation, type JobView, type Memory, type RunState } from '../shared/types'
 import type { PreparedAttachment } from './attachments'
 import type { MessageAttachment } from './model'
 import { DEFAULT_SEARCH_TEMPLATE, DUCKDUCKGO_SEARCH_TEMPLATE } from './browser-policy'
@@ -10,6 +10,60 @@ import { DEFAULT_SETTINGS, localDay, sanitizeSettings, type Settings } from './s
 import { openDatabase, type SqlDatabase } from './sqlite'
 
 type Row = Record<string, unknown>
+
+export interface JobRecord extends JobView {
+  attachmentIds: string[]
+  binding: string
+  resume: boolean
+}
+
+export interface ArtifactRecord extends ArtifactView {
+  workspaceRoot: string
+  storageKey: string
+}
+
+const RUNTIME_SCHEMA = `
+CREATE TABLE IF NOT EXISTS jobs (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT NOT NULL UNIQUE,
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  attachment_ids_json TEXT NOT NULL DEFAULT '[]',
+  binding TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  ended_at INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  attempt INTEGER NOT NULL DEFAULT 0,
+  resume INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS jobs_dispatch ON jobs(status, seq);
+CREATE INDEX IF NOT EXISTS jobs_bot ON jobs(bot_id, seq);
+CREATE TABLE IF NOT EXISTS job_runs (
+  job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  PRIMARY KEY(job_id, run_id)
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+  run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  relative_path TEXT NOT NULL,
+  workspace_root TEXT NOT NULL,
+  storage_key TEXT NOT NULL,
+  bytes INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(bot_id, workspace_root, relative_path, version)
+);
+CREATE INDEX IF NOT EXISTS artifacts_bot ON artifacts(bot_id, created_at);
+`
 
 function row(value: unknown): Row | null {
   if (!value || typeof value !== 'object') return null
@@ -493,7 +547,8 @@ export class Database {
       this.ensureInitialBot()
       this.ensureAttachments()
       this.ensureCodexSessions()
-      this.db.exec('PRAGMA user_version = 9')
+      this.db.exec(RUNTIME_SCHEMA)
+      this.db.exec('PRAGMA user_version = 10')
       this.ensureModelCatalog()
       return
     }
@@ -544,6 +599,10 @@ export class Database {
       this.db.prepare('UPDATE model_catalog SET fetched_at = 0').run()
       this.db.exec('PRAGMA user_version = 9')
     })
+    if (this.userVersion() < 10) this.transaction(() => {
+      this.db.exec(RUNTIME_SCHEMA)
+      this.db.exec('PRAGMA user_version = 10')
+    })
   }
 
   private ensureCodexSessions(): void {
@@ -589,7 +648,7 @@ export class Database {
   }
 
   listAttachments(botId: string, messageIds: string[] = []): AttachmentRecord[] {
-    const condition = messageIds.length ? 'message_id IN (SELECT value FROM json_each(?))' : 'message_id IS NULL'
+    const condition = messageIds.length ? 'message_id IN (SELECT value FROM json_each(?))' : `message_id IS NULL AND NOT EXISTS (SELECT 1 FROM jobs, json_each(jobs.attachment_ids_json) WHERE json_each.value = attachments.id AND jobs.status IN ('queued','running','paused','interrupted'))`
     const args = messageIds.length ? [botId, JSON.stringify(messageIds)] : [botId]
     return rows(this.db.prepare(`SELECT id, bot_id, message_id, name, kind, mime_type, size, width, height, preview_url FROM attachments WHERE bot_id = ? AND ${condition} ORDER BY created_at, rowid`).all(...args)).map(mapAttachment)
   }
@@ -611,7 +670,88 @@ export class Database {
   }
 
   removeDraftAttachment(id: string, botId: string): void {
+    if (this.attachmentReserved(id)) throw new Error('That attachment belongs to a queued job. Cancel the job before removing it.')
     this.db.prepare('DELETE FROM attachments WHERE id = ? AND bot_id = ? AND message_id IS NULL').run(id, botId)
+  }
+
+  attachmentReserved(id: string): boolean {
+    return Boolean(this.db.prepare(`SELECT 1 FROM jobs, json_each(jobs.attachment_ids_json) WHERE json_each.value = ? AND jobs.status IN ('queued','running','paused','interrupted') LIMIT 1`).get(id))
+  }
+
+  createJob(input: { botId: string; conversationId: string; text: string; attachmentIds: string[]; binding: string; now: number }): JobRecord {
+    const id = newId()
+    this.db.prepare(`INSERT INTO jobs (id,bot_id,conversation_id,text,attachment_ids_json,binding,created_at) VALUES (?,?,?,?,?,?,?)`).run(id,input.botId,input.conversationId,input.text,JSON.stringify(input.attachmentIds),input.binding,input.now)
+    return this.getJob(id)!
+  }
+
+  getJob(id: string): JobRecord | null {
+    const found = row(this.db.prepare(`SELECT jobs.*, EXISTS(SELECT 1 FROM approvals WHERE approvals.run_id = jobs.run_id AND approvals.status = 'pending') AS awaiting_approval FROM jobs WHERE id = ?`).get(id))
+    return found ? mapJob(found) : null
+  }
+
+  listJobs(botId?: string): JobRecord[] {
+    const query = `SELECT jobs.*, EXISTS(SELECT 1 FROM approvals WHERE approvals.run_id = jobs.run_id AND approvals.status = 'pending') AS awaiting_approval FROM jobs`
+    const order = `ORDER BY CASE WHEN status IN ('queued','running','paused','interrupted') THEN 0 ELSE 1 END, seq DESC`
+    return rows(botId ? this.db.prepare(`${query} WHERE bot_id = ? ${order} LIMIT 100`).all(botId) : this.db.prepare(`${query} ${order} LIMIT 200`).all()).map(mapJob)
+  }
+
+  conversationHasPendingJobs(conversationId: string): boolean {
+    return Boolean(this.db.prepare(`SELECT 1 FROM jobs WHERE conversation_id = ? AND status IN ('queued','running','paused','interrupted') LIMIT 1`).get(conversationId))
+  }
+
+  queuedJobs(): JobRecord[] {
+    return rows(this.db.prepare(`SELECT * FROM jobs WHERE status = 'queued' ORDER BY seq`).all()).map(mapJob)
+  }
+
+  updateJob(id: string, patch: Partial<Pick<JobRecord, 'status' | 'runId' | 'startedAt' | 'endedAt' | 'note' | 'attempt' | 'resume' | 'binding'>>): void {
+    const columns = { status:'status',runId:'run_id',startedAt:'started_at',endedAt:'ended_at',note:'note',attempt:'attempt',resume:'resume',binding:'binding' }
+    const keys = (Object.keys(patch) as (keyof typeof columns)[]).filter(key => Object.hasOwn(columns,key))
+    if (!keys.length) return
+    this.db.prepare(`UPDATE jobs SET ${keys.map(key => `${columns[key]} = ?`).join(',')} WHERE id = ?`).run(...keys.map(key => key === 'resume' ? (patch[key] ? 1 : 0) : patch[key]),id)
+  }
+
+  attachJobRun(id: string, runId: string): void {
+    this.transaction(() => {
+      this.db.prepare(`UPDATE jobs SET run_id = ? WHERE id = ?`).run(runId,id)
+      this.db.prepare(`INSERT OR IGNORE INTO job_runs(job_id,run_id) VALUES (?,?)`).run(id,runId)
+    })
+  }
+
+  recoverJobs(now: number): void {
+    this.transaction(() => {
+      this.db.prepare(`UPDATE jobs SET status = 'interrupted', ended_at = ?, note = 'Riot Bot restarted during this job. Resume to review saved work; previous actions are not automatically replayed.' WHERE status = 'running'`).run(now)
+      this.db.prepare(`UPDATE jobs SET status = 'paused', note = 'Queue restored after restart. Choose Resume when you want this work to start.' WHERE status = 'queued'`).run()
+    })
+  }
+
+  pauseQueuedJobs(botId?: string, note = 'Queue paused. Choose Resume to continue.'): void {
+    if (botId) this.db.prepare(`UPDATE jobs SET status = 'paused', note = ? WHERE bot_id = ? AND status = 'queued'`).run(note,botId)
+    else this.db.prepare(`UPDATE jobs SET status = 'paused', note = ? WHERE status = 'queued'`).run(note)
+  }
+
+  pendingJobCount(botId: string): number {
+    return Number(row(this.db.prepare(`SELECT COUNT(*) AS count FROM jobs WHERE bot_id = ? AND status IN ('queued','running','paused','interrupted')`).get(botId))?.count ?? 0)
+  }
+
+  jobFilePaths(jobId: string): string[] {
+    return rows(this.db.prepare(`SELECT DISTINCT file_edits.path FROM file_edits JOIN job_runs ON job_runs.run_id = file_edits.run_id WHERE job_runs.job_id = ? AND file_edits.undone_at IS NULL`).all(jobId)).map(item => text(item,'path'))
+  }
+
+  listArtifacts(botId: string): ArtifactRecord[] {
+    return rows(this.db.prepare(`SELECT * FROM artifacts WHERE bot_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 200`).all(botId)).map(mapArtifact)
+  }
+
+  getArtifact(id: string, botId: string): ArtifactRecord | null {
+    const found = row(this.db.prepare(`SELECT * FROM artifacts WHERE id = ? AND bot_id = ?`).get(id,botId))
+    return found ? mapArtifact(found) : null
+  }
+
+  addArtifact(input: Omit<ArtifactRecord, 'version'>): ArtifactRecord {
+    const previous = row(this.db.prepare(`SELECT * FROM artifacts WHERE bot_id = ? AND workspace_root = ? AND relative_path = ? ORDER BY version DESC LIMIT 1`).get(input.botId,input.workspaceRoot,input.relativePath))
+    if (previous && text(previous,'sha256') === input.sha256) return mapArtifact(previous)
+    const version = previous ? num(previous,'version') + 1 : 1
+    this.db.prepare(`INSERT INTO artifacts (id,bot_id,job_id,run_id,name,relative_path,workspace_root,storage_key,bytes,sha256,version,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(input.id,input.botId,input.jobId,input.runId,input.name,input.relativePath,input.workspaceRoot,input.storageKey,input.bytes,input.sha256,version,input.createdAt)
+    return { ...input,version }
   }
 
   private ensureModelCatalog(): void {
@@ -1247,12 +1387,14 @@ export class Database {
   }
 
   latestRun(conversationId: string): RunRecord | null {
-    const found = row(this.db.prepare(`SELECT * FROM runs WHERE conversation_id = ? ORDER BY started_at DESC LIMIT 1`).get(conversationId))
+    const found = row(this.db.prepare(`SELECT * FROM runs WHERE conversation_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1`).get(conversationId))
     return found ? mapRun(found) : null
   }
 
-  activeRun(): RunRecord | null {
-    const found = row(this.db.prepare(`SELECT * FROM runs WHERE status = 'running' ORDER BY started_at DESC LIMIT 1`).get())
+  activeRun(botId?: string): RunRecord | null {
+    const found = row(botId
+      ? this.db.prepare(`SELECT * FROM runs WHERE status = 'running' AND bot_id = ? ORDER BY started_at DESC LIMIT 1`).get(botId)
+      : this.db.prepare(`SELECT * FROM runs WHERE status = 'running' ORDER BY started_at DESC LIMIT 1`).get())
     return found ? mapRun(found) : null
   }
 
@@ -1526,8 +1668,10 @@ export class Database {
     return found ? mapApproval(found) : null
   }
 
-  pendingApproval(): ApprovalRecord | null {
-    const found = row(this.db.prepare(`SELECT * FROM approvals WHERE status = 'pending' ORDER BY created_at DESC LIMIT 1`).get())
+  pendingApproval(botId?: string): ApprovalRecord | null {
+    const found = row(botId
+      ? this.db.prepare(`SELECT approvals.* FROM approvals JOIN runs ON runs.id = approvals.run_id WHERE approvals.status = 'pending' AND runs.bot_id = ? ORDER BY approvals.created_at DESC LIMIT 1`).get(botId)
+      : this.db.prepare(`SELECT * FROM approvals WHERE status = 'pending' ORDER BY created_at DESC LIMIT 1`).get())
     return found ? mapApproval(found) : null
   }
 
@@ -1873,6 +2017,25 @@ function mapTool(record: Row): ToolRow {
     endedAt: nullableNum(record, 'ended_at'),
     outcome: record.outcome == null ? null : text(record, 'outcome'),
     error: record.error == null ? null : text(record, 'error')
+  }
+}
+
+function mapJob(record: Row): JobRecord {
+  const attachmentIds = JSON.parse(text(record,'attachment_ids_json') || '[]') as string[]
+  return {
+    id:text(record,'id'),botId:text(record,'bot_id'),conversationId:text(record,'conversation_id'),
+    text:text(record,'text'),attachmentIds,attachmentCount:attachmentIds.length,binding:text(record,'binding'),
+    status:text(record,'status') as JobRecord['status'],runId:record.run_id == null ? null : text(record,'run_id'),
+    createdAt:num(record,'created_at'),startedAt:nullableNum(record,'started_at'),endedAt:nullableNum(record,'ended_at'),
+    note:text(record,'note'),attempt:num(record,'attempt'),resume:bool(record,'resume'),awaitingApproval:bool(record,'awaiting_approval')
+  }
+}
+
+function mapArtifact(record: Row): ArtifactRecord {
+  return {
+    id:text(record,'id'),botId:text(record,'bot_id'),jobId:record.job_id == null ? null : text(record,'job_id'),runId:record.run_id == null ? null : text(record,'run_id'),
+    name:text(record,'name'),relativePath:text(record,'relative_path'),workspaceRoot:text(record,'workspace_root'),storageKey:text(record,'storage_key'),
+    bytes:num(record,'bytes'),sha256:text(record,'sha256'),version:num(record,'version'),createdAt:num(record,'created_at')
   }
 }
 

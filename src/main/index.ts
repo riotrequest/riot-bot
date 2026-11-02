@@ -1,8 +1,8 @@
-import { app, BrowserWindow, clipboard, net, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, clipboard, Menu, nativeImage, net, Notification, protocol, session, shell, Tray } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import { RiotApp } from '../core/app'
+import { RiotService } from '../core/service'
 import { ConfigError } from '../core/errors'
 import type { Logger } from '../core/logger'
 import { createOpenAICompatibleProvider, MockProvider } from '../core/provider'
@@ -21,10 +21,38 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
 
 let window: BrowserWindow | null = null
-let riot: RiotApp | null = null
+let riot: RiotService | null = null
+let tray: Tray | null = null
 let quitting = false
+let quitReady = false
 
 const devUrl = process.env.ELECTRON_RENDERER_URL
+
+function showWindow(): void {
+  if (!window || window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+}
+
+function createTray(): void {
+  // A small bitmap keeps the tray independent of packaged resource paths.
+  const pixels = Buffer.alloc(24 * 24 * 4)
+  for (let y = 2; y < 22; y++) for (let x = 2; x < 22; x++) {
+    const offset = (y * 24 + x) * 4
+    const mark = x >= 7 && x <= 10 && y >= 6 && y <= 18 || y >= 6 && y <= 9 && x >= 9 && x <= 16 || x >= 14 && x <= 16 && y >= 9 && y <= 12 || y >= 11 && y <= 13 && x >= 9 && x <= 16 || y >= 14 && y <= 18 && x >= y - 2 && x <= y + 1
+    pixels.set(mark ? [245, 235, 230, 255] : [74, 84, 212, 255], offset)
+  }
+  tray = new Tray(nativeImage.createFromBitmap(pixels, { width: 24, height: 24 }))
+  tray.setToolTip('Riot Bot · Ready')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Riot Bot', click: showWindow },
+    { label: 'Stop all work', click: () => riot?.stopAll() },
+    { type: 'separator' },
+    { label: 'Quit Riot Bot', click: () => app.quit() }
+  ]))
+  tray.on('double-click', showWindow)
+}
 
 function rendererDirectory(): string {
   return path.join(__dirname, '../renderer')
@@ -78,6 +106,12 @@ async function createWindow(): Promise<void> {
     }
   })
   window.once('ready-to-show', () => window?.show())
+  window.on('close', (event) => {
+    if (quitting) return
+    event.preventDefault()
+    window?.hide()
+  })
+  window.on('closed', () => { window = null })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event, url) => {
     if (!allowedNavigation(url)) event.preventDefault()
@@ -95,7 +129,7 @@ app.whenReady().then(async () => {
   const logger = fileLogger(path.join(userData, 'riot-bot.log'))
   const credentials = await ElectronCredentialStore.open(userData)
   const providerFetch: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
-  riot = new RiotApp({
+  riot = new RiotService({
     dbPath: path.join(userData, 'riot-bot.sqlite'),
     provider: new MockProvider(),
     credentials,
@@ -121,7 +155,24 @@ app.whenReady().then(async () => {
     }
   })
   riot.boot()
+  createTray()
+  const notifiedJobs = new Set<string>()
   riot.onEvent((event) => {
+    if (event.type === 'jobs-changed' && riot) {
+      const jobs = riot.listJobs('app')
+      const running = jobs.filter((job) => job.status === 'running')
+      tray?.setToolTip(`Riot Bot · ${running.length ? `${running.length} working` : 'Ready'}`)
+      for (const job of jobs) {
+        const state = job.awaitingApproval ? 'approval' : job.status
+        const key = `${job.id}:${job.attempt}:${state}`
+        if (notifiedJobs.has(key) || !['approval', 'completed', 'failed', 'paused'].includes(state)) continue
+        notifiedJobs.add(key)
+        if (window?.isVisible() || quitting || !Notification.isSupported()) continue
+        const notification = new Notification({ title: 'Riot Bot', body: state === 'approval' ? 'A bot needs your approval. Open Riot Bot to review it.' : state === 'completed' ? 'A job finished. Open Riot Bot to see the result.' : 'A job needs attention. Open Riot Bot to review it.' })
+        notification.on('click', showWindow)
+        notification.show()
+      }
+    }
     if (!window || window.isDestroyed()) return
     window.webContents.send('app:event', event)
   })
@@ -150,19 +201,17 @@ app.whenReady().then(async () => {
   app.quit()
 })
 
-app.on('second-instance', () => {
-  if (!window) return
-  if (window.isMinimized()) window.restore()
-  window.focus()
-})
+app.on('second-instance', showWindow)
+app.on('activate', showWindow)
 
 app.on('before-quit', (event) => {
-  if (!riot || quitting) return
+  if (!riot || quitReady) return
   event.preventDefault()
+  if (quitting) return
   quitting = true
-  void riot.close().finally(() => app.quit())
+  tray?.destroy()
+  tray = null
+  void riot.close().catch(() => console.error('Riot Bot could not finish shutdown cleanly. Unfinished jobs will need review on restart.')).finally(() => { quitReady = true;app.quit() })
 })
 
-app.on('window-all-closed', () => {
-  if (!quitting) app.quit()
-})
+app.on('window-all-closed', () => { /* The tray owns the desktop service until explicit Quit. */ })

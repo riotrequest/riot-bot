@@ -68,7 +68,11 @@ export class CodexService {
   }
 
   status(): CodexStatus { return structuredClone(this.state) }
-  sessionKey(): string { return this.connection }
+  sessionKey(): string {
+    const marker = path.join(this.options.home,'connection-id')
+    if (fs.existsSync(marker)) this.connection = fs.readFileSync(marker,'utf8').trim() || this.connection
+    return this.connection
+  }
 
   private publish(patch: Partial<CodexStatus>): CodexStatus {
     this.state = { ...this.state, ...patch }
@@ -248,6 +252,7 @@ export class CodexService {
       const status = await this.refresh()
       if (input.signal.aborted) throw new StopError('Stopped before starting Codex.')
       if (!status.connected) throw new ConfigError('Connect Codex with ChatGPT in Settings first. No API-key fallback was used.')
+      if (status.models.length && !status.models.some(model=>model.id===input.model)) throw new PauseError(`The model ${input.model} is not listed for this Codex account. Choose an available Codex model in Settings. No native turn or API fallback was started.`)
       if (process.platform === 'win32' && input.tools) {
         const readiness = await this.request('windowsSandbox/readiness')
         if (readiness.status !== 'ready') throw new PauseError('The native Windows sandbox is not ready. Update the official Codex CLI and retry. No turn was started.')
