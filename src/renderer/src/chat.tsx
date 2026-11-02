@@ -139,7 +139,10 @@ function TurnView(props: {
 }) {
   const prose = props.turn.rest.filter((message) => message.role === 'assistant' && message.content.trim())
   const tools = props.turn.rest.filter((message) => message.role === 'tool' && message.toolName !== 'react')
-  const files = props.turn.rest.filter((message) => fileChange(message.toolName, message.content))
+  const files = [...new Map(props.turn.rest.flatMap(message => {
+    const change = fileChange(message.toolName, message.content)
+    return change ? [[change.editId, message] as const] : []
+  })).values()]
   const notices = props.turn.rest.filter((message) => message.role === 'notice')
   const status = props.running ? props.statusLabel || 'Working…' : props.outcome ? actionStatus(tools.length, props.outcome) : `${tools.length} recorded actions · outcome unavailable`
   const incomplete = props.outcome && props.outcome !== 'completed' && props.outcome !== 'running'
@@ -177,6 +180,7 @@ function TurnView(props: {
                   onOpenLink={(url) => {
                     void props.api.openExternal(url).catch((reason: unknown) => props.onError(reason instanceof Error ? reason.message : 'That link could not be opened.'))
                   }}
+                  onOpenFile={(path) => void props.api.revealWorkspaceFile(path).catch((reason: unknown) => props.onError(reason instanceof Error ? reason.message : 'That file could not be shown.'))}
                 />
                 {incomplete && message.id === prose.at(-1)?.id && <p className="interrupted">{props.outcome === 'paused' ? 'Paused · partial reply' : props.outcome === 'failed' ? 'Failed · partial reply' : 'Interrupted · partial reply'}</p>}
               </article>
@@ -186,7 +190,7 @@ function TurnView(props: {
               if (!change) return null
               return (
                 <div key={message.id} className="file-change">
-                  <p>{message.toolName === 'write_file' ? 'File change ready to undo.' : 'Edit ready to undo.'}</p>
+                  <p>{change.path ? <button type="button" className="linkish" title="Show file in folder" onClick={() => void props.api.revealWorkspaceFile(change.path!, change.editId).catch(reason => props.onError(reason instanceof Error ? reason.message : 'That file could not be shown.'))}>{change.path}</button> : 'Saved file change'}</p>
                   <button type="button" onClick={() => props.onUndo(change.editId)}>
                     Undo this edit
                   </button>

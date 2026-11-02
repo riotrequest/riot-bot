@@ -104,6 +104,7 @@ app.whenReady().then(async () => {
     openFolder: (folder) => {
       void shell.openPath(folder)
     },
+    revealFile: (file) => shell.showItemInFolder(file),
     writeClipboard: (text) => {
       clipboard.writeText(text)
     },

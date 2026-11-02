@@ -4,7 +4,7 @@ Riot Bot is a personal Windows desktop assistant. Each bot has one ongoing conve
 
 ## Review fixes — November 1, 2026
 
-Tool arguments are checked against their definitions before any action in a batch runs. Missing file contents, malformed JSON, unknown tools, and tool requests cut off by the reply limit pause the task without executing the batch. Turning tools off is enforced in the main process, including while a terminal command waits for approval.
+Tool arguments are checked against their definitions before any action in a batch runs. Missing file contents, malformed JSON, and unknown tools pause without executing the batch. A cut-off tool batch is discarded and retried in smaller complete pieces within the task limits. Turning tools off is enforced in the main process, including while a terminal command waits for approval.
 
 Incomplete provider streams fail instead of reporting success. Partial replies are kept, and a failed request is not automatically retried after text has streamed. Provider checks require observed streaming and an actual cancellation before marking those steps passed. Task deadlines abort in-flight requests; Stop also cancels a model-catalog lookup. Closing waits for replies, provider checks, and bot setup before closing the database.
 
@@ -65,6 +65,10 @@ The app-wide daily spending ceiling applies to every bot. A bot’s own daily li
 ## Chat
 
 Short replies stay compact. Longer answers use Markdown: paragraphs, headings, lists, quotes, tables, and code. A finished article is the article itself. A word count is added only when you ask for one. An `http` or `https` link opens in your own browser after a public-address check. It is not loaded in the app window. Images in model Markdown are not loaded.
+
+Project work defaults to saved files and a short summary with file links. Clicking a workspace filename reveals it in its folder, without running it. File links are checked in the main process against the selected bot’s workspace, including symlink/junction checks. Full source is requested explicitly; large code blocks are collapsed behind **View source** and remain available to expand or copy. Workspace editing must be enabled to save files; a disabled write pauses with **Open Settings** rather than falling back to a source dump.
+
+An API reply that reaches its per-response cap continues automatically into the same saved message. Incomplete tool batches never execute; the model is asked for smaller complete chunks. `write_file` can append chunks, retaining one Undo record for that file write. Every continuation still passes the same time, call, and spending checks, and Stop remains effective. If a limit prevents finishing, the task is paused with its partial work preserved. Previously cut-off replies that were incorrectly marked completed are relabeled paused on upgrade. None are automatically replayed.
 
 Casual acknowledgements can be a short reply, an emoji reaction on the message, or both. The reaction is chosen in the same model turn. A reaction does not replace an answer to a question. **Copy** copies the assistant’s Markdown, without the avatar, tool log, or status line.
 
@@ -139,9 +143,9 @@ The browser is not isolated from your local network. Typed addresses must be `ht
 
 ## Limits
 
-Context fitting is automatic. Riot Bot uses the model’s documented context length when the provider publishes one, or a capacity you enter under **Advanced context**. For OpenRouter, that published length is read from the public model list and cached. It is not requested again on every turn, and it is not a completion. If neither source is available, automatic mode uses a labeled conservative limit of 32,768 tokens. That number is not a claim about the model. The reply token limit, default 2048, is reserved once, with the same 20% estimate margin used for fitting. Older chat is compacted toward about 12,000 fitted input tokens. A larger window does not send the whole transcript.
+Context fitting is automatic. Riot Bot uses the model’s documented context length when the provider publishes one, or a capacity you enter under **Advanced model limits**. For OpenRouter, that published length is read from the public model list and cached. It is not requested again on every turn, and it is not a completion. If neither source is available, automatic mode uses a labeled conservative limit of 32,768 tokens. That number is not a claim about the model. The per-response chunk allowance, default 2048, is reserved once per call with the same 20% estimate margin used for fitting. It is not the limit on the complete answer: replies can continue across calls. Older chat is compacted toward about 12,000 fitted input tokens. A larger window does not send the whole transcript.
 
-The manual input working budget, default 8000, applies only when context fitting is set to manual. It stays under **Advanced context**. It is not the control for an ordinary page.
+The manual input working budget, default 8000, applies only when context fitting is set to manual. It stays under **Advanced model limits**, with the per-response allowance and model-call cap. Ordinary use does not require tuning these controls.
 
 Other defaults: 12 model calls per task and 10 minutes. Dollar limits are off until you enter both a spend cap and a price per million input tokens and output tokens. The app daily ceiling applies across bots. If a dollar cap is on and a price is missing, the call is refused. Call and token limits work without prices. Figures are labeled estimated or reported. They are not a provider invoice. A cancelled or failed call that already left the app keeps a conservative estimate when the provider does not report usage. Compaction, the one context-length retry, and tool follow-ups share that same budget. Riot Bot does not raise a spending limit to make a request fit.
 

@@ -493,7 +493,7 @@ export class Database {
       this.ensureInitialBot()
       this.ensureAttachments()
       this.ensureCodexSessions()
-      this.db.exec('PRAGMA user_version = 7')
+      this.db.exec('PRAGMA user_version = 8')
       this.ensureModelCatalog()
       return
     }
@@ -526,6 +526,18 @@ export class Database {
       })
     }
     if (this.userVersion() < 7) this.db.exec('PRAGMA user_version = 7')
+    if (this.userVersion() < 8) {
+      const oldNote = 'The reply hit the output token limit and may be cut off. Raise the reply token limit in Settings if you need a longer answer.'
+      const note = 'This earlier reply was cut off before it finished. The partial response is saved. Send another message to continue with automatic output handling.'
+      this.transaction(() => {
+        if (this.tableExists('runs') && this.columnExists('messages', 'run_id')) {
+          this.db.prepare(`UPDATE runs SET status = 'paused', note = ? WHERE status = 'completed' AND id IN (SELECT run_id FROM messages WHERE role = 'notice' AND content = ?)`).run(note, oldNote)
+          if (this.tableExists('tasks')) this.db.prepare(`UPDATE tasks SET status = 'paused' WHERE status = 'completed' AND run_id IN (SELECT id FROM runs WHERE status = 'paused' AND note = ?)`).run(note)
+        }
+        if (this.tableExists('messages')) this.db.prepare(`UPDATE messages SET content = ? WHERE role = 'notice' AND content = ?`).run(note, oldNote)
+        this.db.exec('PRAGMA user_version = 8')
+      })
+    }
   }
 
   private ensureCodexSessions(): void {
@@ -1479,6 +1491,14 @@ export class Database {
   getEdit(id: string): FileEditRecord | null {
     const found = row(this.db.prepare(`SELECT * FROM file_edits WHERE id = ?`).get(id))
     return found ? mapEdit(found) : null
+  }
+
+  extendFileEdit(runId: string, file: string, before: string | null, after: string): string | null {
+    const found = row(this.db.prepare(`SELECT id, after_text FROM file_edits WHERE run_id = ? AND path = ? AND undone_at IS NULL ORDER BY rowid DESC LIMIT 1`).get(runId, file))
+    if (!found || found.after_text !== before) return null
+    const id = text(found, 'id')
+    this.db.prepare('UPDATE file_edits SET after_text = ? WHERE id = ?').run(after, id)
+    return id
   }
 
   markEditUndone(id: string, now: number): void {

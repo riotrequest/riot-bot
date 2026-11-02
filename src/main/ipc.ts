@@ -56,6 +56,7 @@ export function registerIpc(getApp: () => RiotApp, getWindow: () => BrowserWindo
   handle('bots:openWorkspace', (app) => {
     app.openWorkspace()
   })
+  handle('workspace:reveal', (app, args) => app.revealWorkspaceFile(requireText(args[0], 'Choose a workspace file.'), args[1] == null ? undefined : requireId(args[1])))
   handle('bots:avatar', (app, args) => app.setAvatar(avatarInput(args[0])))
   handle('reactions:remove', (app, args) => {
     app.removeReaction(requireId(args[0]))

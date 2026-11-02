@@ -10,7 +10,7 @@ import { dollarBudgetEnabled, estimateCostUsd, estimateMessagesTokens, estimateT
 
 export interface GatewayInput {
   runId: string
-  purpose: 'chat' | 'tool_continuation' | 'compaction' | 'bot_setup'
+  purpose: 'chat' | 'tool_continuation' | 'reply_continuation' | 'compaction' | 'bot_setup'
   messages: ChatMessage[]
   tools?: ToolDefinition[]
   signal: AbortSignal
@@ -77,7 +77,7 @@ export class Gateway {
         this.deps.logger.info('model finished', {
           runId: input.runId,
           purpose: input.purpose,
-          outcome: 'completed',
+          outcome: response.finishReason === 'length' ? 'truncated' : 'completed',
           provider: this.deps.provider().name,
           model: settings.model
         })
@@ -253,7 +253,7 @@ export class Gateway {
     }
     this.deps.db.finishModelRequest(begun.requestId, {
       endedAt: this.deps.now(),
-      outcome: 'completed',
+      outcome: response.finishReason === 'length' ? 'truncated' : 'completed',
       inputTokens,
       outputTokens,
       cacheTokens: response.usage?.cacheTokens ?? null,

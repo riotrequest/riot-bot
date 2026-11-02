@@ -913,10 +913,6 @@ function SettingsPane(props: {
         <textarea value={draft.pinnedInstructions} rows={4} onChange={(event) => setDraft({ ...draft, pinnedInstructions: event.target.value })} />
       </label>
       <div className="grid">
-        {draft.provider !== 'codex' && <>
-        <NumberField label="Model calls per task" value={draft.maxModelCallsPerTask} onChange={(value) => setDraft({ ...draft, maxModelCallsPerTask: value })} />
-        <NumberField label="Reply token limit" value={draft.maxOutputTokens} onChange={(value) => setDraft({ ...draft, maxOutputTokens: value })} />
-        </>}
         <NumberField label="Task minutes" value={Math.round(draft.maxTaskDurationMs / 60000)} onChange={(value) => setDraft({ ...draft, maxTaskDurationMs: value * 60 * 1000 })} />
         {draft.provider !== 'codex' && <>
         <OptionalMoney label="Estimated spend per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={(value) => setDraft({ ...draft, maxEstimatedSpendPerTaskUsd: value })} />
@@ -928,11 +924,13 @@ function SettingsPane(props: {
       </div>
       {draft.provider === 'codex' ? <p className="help">Codex manages its native tool loop, streaming, and context compaction. Riot’s API call, reply-token, context, and dollar limits do not control native turns. The task timer and Stop still apply. Native turns use your signed-in account’s Codex limits and any usage settings you have enabled there. Riot never switches to an API key automatically.</p> : <>
       <p className="help">
-        Automatic context fitting uses the model’s documented window when Riot Bot has it, or a capacity you enter below. It does not ask you to raise a token budget for an ordinary page. A larger window does not send the whole transcript, and it does not raise a spending limit. Browser search has no separate search fee. Reading pages still uses the task’s model budget.
+        Replies continue automatically when needed, and large files can be written in chunks. Context is managed automatically. Your task time and spending limits still apply. Browser search has no separate search fee.
       </p>
       <details className="tool">
-        <summary>Advanced context</summary>
+        <summary>Advanced model limits</summary>
         <div className="grid">
+          <NumberField label="Model calls per task" value={draft.maxModelCallsPerTask} onChange={(value) => setDraft({ ...draft, maxModelCallsPerTask: value })} />
+          <NumberField label="Reply chunk token limit" value={draft.maxOutputTokens} onChange={(value) => setDraft({ ...draft, maxOutputTokens: value })} />
           <label>
             Context fitting
             <select value={draft.contextMode} onChange={(event) => setDraft({ ...draft, contextMode: event.target.value === 'manual' ? 'manual' : 'automatic' })}>
@@ -1760,6 +1758,7 @@ function NewBotForm(props: { settings: PublicSettings; onCreate: (draft: BotDraf
 }
 
 function labelPurpose(purpose: string): string {
+  if (purpose === 'reply_continuation') return 'Automatic continuation'
   if (purpose === 'codex_turn') return 'Native Codex turn'
   if (purpose === 'compaction') return 'Summary'
   if (purpose === 'tool_continuation') return 'Follow-up'

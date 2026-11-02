@@ -67,10 +67,11 @@ export function actionStatus(actionCount: number, outcome: 'completed' | 'failed
   return `Interrupted · ${actionCount} ${noun} finished · View details`
 }
 
-export function fileChange(toolName: string | undefined, content: string): { editId: string } | null {
+export function fileChange(toolName: string | undefined, content: string): { editId: string; path?: string } | null {
   if (toolName !== 'write_file' && toolName !== 'edit_file') return null
   const editId = /edit-id:([0-9a-f-]{8,80})/i.exec(content)?.[1]
-  return editId ? { editId } : null
+  const path = /^(?:Created|Updated) ([^\r\n]+)/.exec(content)?.[1]
+  return editId ? { editId, ...(path ? { path } : {}) } : null
 }
 
 export function isLongForm(text: string): boolean {

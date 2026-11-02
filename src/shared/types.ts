@@ -392,6 +392,7 @@ export interface RiotBridge {
   selectBot(id: string): Promise<Snapshot>
   updateBot(patch: { name?: string; purpose?: string; instructions?: string }): Promise<Bot>
   openWorkspace(): Promise<void>
+  revealWorkspaceFile(path: string, editId?: string): Promise<void>
   setAvatar(input: { kind: 'builtin' | 'emoji'; value: string; background: string } | { kind: 'image'; background: string; bytes: number[] }): Promise<Bot>
   removeReaction(id: string): Promise<void>
   updatePreferences(patch: Partial<AppPreferences>): Promise<AppPreferences>

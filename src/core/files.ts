@@ -103,13 +103,14 @@ export function readTextFile(workspace: string, requested: string, maxBytes: num
   return buffer.toString('utf8')
 }
 
-export function writeTextFile(workspace: string, requested: string, content: string, editing: boolean): FileChange | { error: string } {
+export function writeTextFile(workspace: string, requested: string, content: string, editing: boolean, append = false): FileChange | { error: string } {
   if (!editing) {
     return { error: 'File editing is off. Turn it on in Settings before Riot Bot creates or changes files.' }
   }
   if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) return { error: 'That file is above the 1 MB write limit.' }
   const full = resolveWorkspacePath(workspace, requested)
   const exists = fs.existsSync(full)
+  if (append && !exists) return { error: 'Create the file before appending another chunk.' }
   let before: string | null = null
   if (exists) {
     const stat = fs.lstatSync(full)
@@ -131,6 +132,8 @@ export function writeTextFile(workspace: string, requested: string, content: str
   } else if (!fs.existsSync(path.dirname(full)) || !fs.statSync(path.dirname(full)).isDirectory()) {
     return { error: 'The folder for that file does not exist yet.' }
   }
+  if (append) content = (before ?? '') + content
+  if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) return { error: 'The complete file would exceed the 1 MB write limit.' }
   fs.writeFileSync(full, content, 'utf8')
   return { path: full, beforeText: before, afterText: content, createdFile: !exists, diff: previewDiff(full, before ?? '', content) }
 }

@@ -11,6 +11,7 @@ const api: RiotBridge = {
   selectBot: (id) => ipcRenderer.invoke('bots:select', id),
   updateBot: (patch) => ipcRenderer.invoke('bots:update', patch),
   openWorkspace: () => ipcRenderer.invoke('bots:openWorkspace'),
+  revealWorkspaceFile: (path, editId) => ipcRenderer.invoke('workspace:reveal', path, editId),
   setAvatar: (input) => ipcRenderer.invoke('bots:avatar', input),
   removeReaction: (id) => ipcRenderer.invoke('reactions:remove', id),
   updatePreferences: (patch) => ipcRenderer.invoke('preferences:update', patch),

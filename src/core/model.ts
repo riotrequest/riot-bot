@@ -89,8 +89,8 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'write_file',
-    description: 'Create or replace a workspace file. Requires editing. The change can be undone.',
-    parameters: objectSchema({ path: stringProp('Workspace file.'), content: stringProp('Full new contents.') }, ['path', 'content'])
+    description: 'Write a workspace file. Requires editing. For large files, write a small first chunk, then append small complete chunks. Each change can be undone.',
+    parameters: objectSchema({ path: stringProp('Workspace file.'), content: stringProp('New contents, or the next complete chunk when append is true.'), append: { type: 'boolean', description: 'Add to an existing UTF-8 file instead of replacing it. Default false.' } }, ['path', 'content'])
   },
   {
     name: 'edit_file',

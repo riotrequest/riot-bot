@@ -11,7 +11,7 @@ export function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'riot-bot-'))
 }
 
-export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fetchImpl' | 'lookupHost' | 'createProvider' | 'workspaceRoot' | 'openFolder' | 'writeClipboard' | 'browserOpener' | 'now' | 'codex'>> & { provider?: MockProvider; dbPath?: string }) {
+export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fetchImpl' | 'lookupHost' | 'createProvider' | 'workspaceRoot' | 'openFolder' | 'revealFile' | 'writeClipboard' | 'browserOpener' | 'now' | 'codex'>> & { provider?: MockProvider; dbPath?: string }) {
   const dir = options?.dbPath ? path.dirname(options.dbPath) : tempDir()
   const dbPath = options?.dbPath ?? path.join(dir, 'riot.sqlite')
   const provider = options?.provider ?? new MockProvider()
@@ -29,6 +29,7 @@ export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fet
     createProvider: options?.createProvider,
     workspaceRoot: options?.workspaceRoot ?? path.join(dir, 'workspaces'),
     openFolder: options?.openFolder,
+    revealFile: options?.revealFile,
     writeClipboard: options?.writeClipboard,
     browserOpener: options?.browserOpener,
     now: options?.now
