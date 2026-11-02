@@ -356,6 +356,11 @@ export interface Snapshot {
 
 export type JobStatus = 'queued' | 'running' | 'completed' | 'paused' | 'failed' | 'interrupted' | 'cancelled'
 
+export interface DeleteBotResult {
+  snapshot: Snapshot
+  cleanupWarning: string | null
+}
+
 export interface JobView {
   id: string
   botId: string
@@ -427,6 +432,7 @@ export interface RiotBridge {
   disconnectCodex(): Promise<CodexStatus>
   createBot(draft: BotDraft): Promise<BotCreateResult>
   selectBot(id: string): Promise<Snapshot>
+  deleteBot(id: string, confirmationName: string): Promise<DeleteBotResult>
   updateBot(patch: { name?: string; purpose?: string; instructions?: string }): Promise<Bot>
   openWorkspace(): Promise<void>
   revealWorkspaceFile(path: string, editId?: string): Promise<void>

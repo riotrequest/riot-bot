@@ -24,6 +24,12 @@ Capture is bounded to 1,000 inventoried files, 2,000 folders, 12 folder levels, 
 
 Show saved file uses Explorer to reveal the stored version without executing it. Deleting a conversation does not remove its saved Library files. There is no automatic retention deletion in this version. Include `artifacts` in private app-data backups, and separately back up your workspaces.
 
+## Deleting a bot
+
+Open that bot’s **Menu → Delete Bot** and type its exact name. Active work must stop first; queued work is discarded. Deletion removes the bot and its Riot conversations, messages, reactions, attachments, memories, skills/versions, proposals, job records, file-edit backups, Library files, avatar and browser profile. It keeps the project workspace, other bots, shared credentials, existing backups and the shared Codex profile (including native session history). Usage requests and reservations are detached and stripped of conversation/context/error data so the app-wide spend ceiling and usage totals remain correct.
+
+The per-bot executor closes before data is removed. Database deletion runs in one transaction, and Quit waits for deletion to settle. File cleanup is limited to validated per-bot paths under Riot’s app-data directory, refuses parent junctions, and protects overlapping workspace paths. If a cache cannot be removed, the UI reports the remaining paths. Deletion is logical removal from Riot, not forensic erasure of SQLite pages, backups or provider-managed history. Deleting the last bot leaves a persistent empty state with no automatic model calls.
+
 ## Static website checks
 
 `verify_website` (`riot_verify_website` in Codex) accepts a workspace HTML entry, requires editing for its output and uses an available Chromium, Chrome or Edge installation. It runs no shell command, package install, build script or development server. If a browser cannot launch, it reports that the check did not run.

@@ -891,8 +891,7 @@ export class Database {
     const app = this.appConfig()
     const bot = botId ? this.getBot(botId) : null
     if (!bot) {
-      const legacy = this.legacySettings()
-      return { ...legacy, maxEstimatedSpendPerDayUsd: app.maxEstimatedSpendPerDayUsd, botId: '' }
+      return { ...DEFAULT_SETTINGS, maxEstimatedSpendPerDayUsd: app.maxEstimatedSpendPerDayUsd, botId: '' }
     }
     const merged = sanitizeSettings({
       ...bot.settings,
@@ -948,6 +947,27 @@ export class Database {
   setActiveBot(id: string): void {
     if (!this.getBot(id)) throw new Error('That bot is not here.')
     this.saveAppConfig({ ...this.appConfig(), activeBotId: id })
+  }
+
+  deleteBot(id: string): void {
+    if (!this.getBot(id)) throw new Error('That bot is not here.')
+    this.transaction(()=>{
+      // Preserve anonymous billing evidence so deleting a bot cannot reset the app ceiling.
+      this.db.prepare(`UPDATE model_requests SET run_id = '', error = NULL, context_json = NULL WHERE run_id IN (SELECT id FROM runs WHERE bot_id = ?)`).run(id)
+      this.db.prepare(`UPDATE budget_reservations SET run_id = '' WHERE run_id IN (SELECT id FROM runs WHERE bot_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM file_edits WHERE run_id IN (SELECT id FROM runs WHERE bot_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM message_reactions WHERE bot_id = ?`).run(id)
+      for (const conversation of this.listConversations(id)) this.purgeConversation(conversation.id)
+      this.db.prepare(`DELETE FROM memories_fts WHERE memory_id IN (SELECT id FROM memories WHERE bot_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM memories WHERE bot_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM skills_fts WHERE skill_id IN (SELECT id FROM skills WHERE bot_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM skill_versions WHERE skill_id IN (SELECT id FROM skills WHERE bot_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM skill_proposals WHERE bot_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM skills WHERE bot_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM bots WHERE id = ?`).run(id)
+      const config = this.appConfig()
+      if (config.activeBotId===id) this.saveAppConfig({...config,activeBotId:this.listBots()[0]?.id ?? ''})
+    })
   }
 
   listBots(): BotRecord[] {
@@ -1063,20 +1083,7 @@ export class Database {
 
   deleteConversation(id: string): void {
     const conversation = this.getConversation(id)
-    this.transaction(() => {
-      const messageIds = rows(this.db.prepare(`SELECT id FROM messages WHERE conversation_id = ?`).all(id)).map((item) => text(item, 'id'))
-      for (const messageId of messageIds) {
-        this.db.prepare(`DELETE FROM messages_fts WHERE message_id = ?`).run(messageId)
-      }
-      this.db.prepare(`DELETE FROM tool_calls WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
-      this.db.prepare(`DELETE FROM model_requests WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
-      this.db.prepare(`DELETE FROM budget_reservations WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
-      this.db.prepare(`DELETE FROM approvals WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
-      this.db.prepare(`DELETE FROM tasks WHERE conversation_id = ?`).run(id)
-      this.db.prepare(`DELETE FROM messages WHERE conversation_id = ?`).run(id)
-      this.db.prepare(`DELETE FROM runs WHERE conversation_id = ?`).run(id)
-      this.db.prepare(`DELETE FROM conversations WHERE id = ?`).run(id)
-    })
+    this.transaction(() => this.purgeConversation(id))
     if (!conversation) return
     const bot = this.getBot(conversation.botId)
     if (!bot || bot.ongoingConversationId !== id) return
@@ -1087,6 +1094,22 @@ export class Database {
     }
     const created = this.createConversation('New Chat', Date.now(), bot.id)
     this.setOngoingConversation(bot.id, created.id)
+  }
+
+  private purgeConversation(id: string): void {
+      const messageIds = rows(this.db.prepare(`SELECT id FROM messages WHERE conversation_id = ?`).all(id)).map((item) => text(item, 'id'))
+      for (const messageId of messageIds) {
+        this.db.prepare(`DELETE FROM messages_fts WHERE message_id = ?`).run(messageId)
+      }
+      this.db.prepare(`DELETE FROM tool_calls WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM model_requests WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM budget_reservations WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM approvals WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM tasks WHERE conversation_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM file_edits WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`).run(id)
+      this.db.prepare(`DELETE FROM messages WHERE conversation_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM runs WHERE conversation_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM conversations WHERE id = ?`).run(id)
   }
 
   touchConversation(id: string, now: number, title?: string): void {

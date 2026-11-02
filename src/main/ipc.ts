@@ -59,6 +59,7 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('artifacts:reveal', (app,args) => app.revealArtifact(requireId(args[0])))
   handle('bots:create', (app, args) => app.createBot(botDraft(args[0])))
   handle('bots:select', (app, args) => app.selectBot(requireId(args[0])))
+  handle('bots:delete', (app,args) => app.deleteBot(requireId(args[0]),requireText(args[1],'Type the bot’s name to confirm deletion.')))
   handle('bots:update', (app, args) => app.updateBot(botPatch(args[0])))
   handle('bots:openWorkspace', (app) => {
     app.openWorkspace()

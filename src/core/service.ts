@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { ApiProviderId, AppEvent, ArtifactView, CodexStatus, CredentialSaveResult, CredentialStatus, JobView, PublicSettings, RunState, Snapshot } from '../shared/types'
+import type { ApiProviderId, AppEvent, ArtifactView, CodexStatus, CredentialSaveResult, CredentialStatus, DeleteBotResult, JobView, PublicSettings, RunState, Snapshot } from '../shared/types'
 import { RiotApp, type RiotAppOptions } from './app'
 import { artifactFile, artifactView, captureArtifacts, workspaceInventory } from './artifacts'
 import { MAX_ATTACHMENTS } from './attachments'
@@ -8,6 +8,7 @@ import type { JobRecord } from './db'
 import { ConfigError } from './errors'
 import { inside } from './path-safety'
 import { publicErrorMessage } from './redact'
+import { removeBotFiles } from './bot-data'
 import type { Settings } from './settings'
 
 export interface RiotServiceOptions extends RiotAppOptions {
@@ -26,6 +27,8 @@ export class RiotService extends RiotApp {
   private readonly options: RiotServiceOptions
   private readonly executors = new Map<string,RiotApp>()
   private readonly activeJobs = new Map<string,ActiveJob>()
+  private readonly deletingBots = new Set<string>()
+  private readonly pendingDeletions = new Set<Promise<DeleteBotResult>>()
   private readonly serviceListeners = new Set<(event: AppEvent)=>void>()
   private readonly libraryRoot: string
   private ready = false
@@ -78,7 +81,7 @@ export class RiotService extends RiotApp {
     const runningBotIds = [...new Set([...this.activeJobs.keys(),...(snapshot.runningBotId ? [snapshot.runningBotId] : [])])]
     const executor = snapshot.bot ? this.executors.get(snapshot.bot.id) : undefined
     return {
-      ...snapshot,jobs,artifacts:this.listArtifacts(),runningBotIds,
+      ...snapshot,jobs,artifacts:snapshot.bot ? this.listArtifacts() : [],runningBotIds,
       runningBotId:runningBotIds.includes(snapshot.bot?.id ?? '') ? snapshot.bot!.id : runningBotIds[0] ?? null,
       browser:executor ? executor.getSnapshot().browser : snapshot.browser,
       pendingApproval:executor ? executor.pendingApproval() : snapshot.pendingApproval
@@ -88,6 +91,7 @@ export class RiotService extends RiotApp {
   queueMessage(conversationId: string, text: string, attachmentIds: string[] = []): JobView {
     this.assertOpen()
     const botId = this.currentBotId()
+    if (this.deletingBots.has(botId)) throw new ConfigError('This bot is being deleted.')
     if (!this.db.conversationForBot(botId,conversationId)) throw new ConfigError('That conversation is not in this bot.')
     if (conversationId!==this.db.getBot(botId)?.ongoingConversationId) throw new ConfigError('Send new work in the ongoing chat.')
     const body = text.trim() || (attachmentIds.length ? 'Please examine the attached files.' : '')
@@ -110,10 +114,12 @@ export class RiotService extends RiotApp {
   }
 
   listJobs(scope: 'bot'|'app' = 'bot'): JobView[] {
+    if (scope==='bot' && !this.db.activeBotId()) return []
     return this.db.listJobs(scope==='app' ? undefined : this.currentBotId()).map(jobView)
   }
 
   listArtifacts(query = ''): ArtifactView[] {
+    if (!this.db.activeBotId()) return []
     const search = query.trim().toLowerCase()
     return this.db.listArtifacts(this.currentBotId()).filter(item=>!search||item.relativePath.toLowerCase().includes(search)).map(artifactView)
   }
@@ -151,7 +157,8 @@ export class RiotService extends RiotApp {
   }
 
   override stop(): void {
-    const botId = this.currentBotId()
+    const botId = this.db.activeBotId()
+    if (!botId) { super.stop();return }
     const active = this.activeJobs.get(botId)
     if (active) this.cancelJob(active.id)
     else this.db.pauseQueuedJobs(botId)
@@ -189,6 +196,30 @@ export class RiotService extends RiotApp {
   override updateBot(patch: { name?: string; purpose?: string; instructions?: string }) {
     if (patch.instructions !== undefined && this.activeJobs.has(this.currentBotId())) throw new ConfigError('Stop this bot’s job before changing its instructions.')
     return super.updateBot(patch)
+  }
+
+  async deleteBot(id: string, confirmationName: string): Promise<DeleteBotResult> {
+    this.assertOpen()
+    const bot = this.db.getBot(id)
+    if (!bot || id!==this.db.activeBotId()) throw new ConfigError('Select the bot you want to delete first.')
+    if (confirmationName!==bot.name) throw new ConfigError('Type the bot’s exact name to confirm deletion.')
+    if (this.activeJobs.has(id) || this.db.activeRun(id)) throw new ConfigError('Stop this bot’s running work before deleting it.')
+    if (this.deletingBots.has(id)) throw new ConfigError('This bot is already being deleted.')
+    this.deletingBots.add(id)
+    const task = this.removeBot(id,bot.workspacePath)
+    this.pendingDeletions.add(task)
+    try { return await task } finally {this.pendingDeletions.delete(task);this.deletingBots.delete(id);this.schedulePump()}
+  }
+
+  private async removeBot(id: string, workspace: string): Promise<DeleteBotResult> {
+    const executor = this.executors.get(id)
+    this.executors.delete(id)
+    await executor?.close()
+    this.db.deleteBot(id)
+    const failed = await removeBotFiles(path.dirname(this.options.dbPath),id,workspace).catch(()=>[path.dirname(this.options.dbPath)])
+    this.jobsChanged()
+    this.broadcast({type:'artifacts-changed'})
+    return {snapshot:this.getSnapshot(),cleanupWarning:failed.length ? `The bot was removed, but these app-data paths could not be cleared: ${failed.join(', ')}. The project folder was kept.` : null}
   }
 
   override setCredential(provider: ApiProviderId, secret: string): CredentialSaveResult {
@@ -238,6 +269,7 @@ export class RiotService extends RiotApp {
     for (const executor of this.executors.values()) executor.stop()
     super.stop()
     await Promise.allSettled([...this.activeJobs.values()].map(job=>job.finished))
+    await Promise.allSettled([...this.pendingDeletions])
     await Promise.allSettled([...this.executors.values()].map(executor=>executor.close()))
     this.executors.clear()
     this.activeJobs.clear()
@@ -279,7 +311,7 @@ export class RiotService extends RiotApp {
     const limit = Math.max(1,Math.min(4,this.options.maxConcurrentJobs ?? 2))
     for (const job of this.db.queuedJobs()) {
       if (this.activeJobs.size>=limit) break
-      if (this.activeJobs.has(job.botId)) continue
+      if (this.activeJobs.has(job.botId) || this.deletingBots.has(job.botId)) continue
       const settings = this.db.getSettings(job.botId)
       if (executionBinding(settings)!==job.binding) {
         this.db.updateJob(job.id,{status:'paused',note:'This bot’s setup changed after the job was queued. Review it, then choose Resume.'})

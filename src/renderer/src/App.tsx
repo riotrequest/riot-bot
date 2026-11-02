@@ -72,6 +72,7 @@ function Shell({ api }: { api: RiotBridge }) {
   const [busy, setBusy] = useState(false)
   const [ongoingId, setOngoingId] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null)
   const [browserNote, setBrowserNote] = useState('')
   const conversationId = useRef<string | null>(null)
   const viewedBotId = useRef<string | null>(null)
@@ -286,6 +287,8 @@ function Shell({ api }: { api: RiotBridge }) {
           <BotMenu
             api={api}
             bot={bot}
+            running={running}
+            onDelete={() => setDeleteTarget(bot)}
             note={browserNote}
             onNote={setBrowserNote}
             onError={(next) => setError(next)}
@@ -482,6 +485,16 @@ function Shell({ api }: { api: RiotBridge }) {
           />
         )}
       </section>
+      {deleteTarget && <DeleteBotDialog bot={deleteTarget} onCancel={() => setDeleteTarget(null)} onDelete={async (confirmationName) => {
+        const result = await api.deleteBot(deleteTarget.id,confirmationName)
+        delete drafts.current[deleteTarget.id]
+        setDeleteTarget(null)
+        setMenuOpen(false)
+        setDraft('')
+        await reload()
+        setScreen(result.snapshot.bot ? 'chat' : 'new-bot')
+        setError(result.cleanupWarning)
+      }} />}
     </div>
   )
 }
@@ -1505,6 +1518,8 @@ function screenTitle(screen: Screen): string {
 function BotMenu(props: {
   api: RiotBridge
   bot: Bot
+  running: boolean
+  onDelete: () => void
   note: string
   onNote: (value: string) => void
   onError: (message: string) => void
@@ -1544,6 +1559,8 @@ function BotMenu(props: {
 
   return (
     <div className="bot-menu">
+      <div className="bot-menu-heading"><strong>Bot settings</strong><button className="danger" type="button" disabled={props.running} onClick={props.onDelete}>Delete Bot</button></div>
+      {props.running && <p className="help">Stop this bot’s work before deleting it.</p>}
       <label>
         Name
         <input value={name} onChange={(event) => setName(event.target.value)} />
@@ -1618,6 +1635,25 @@ function BotMenu(props: {
       {props.note && <p className="help">{props.note}</p>}
     </div>
   )
+}
+
+function DeleteBotDialog(props: {bot: Bot;onCancel: () => void;onDelete: (name: string) => Promise<void>}) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [confirmation,setConfirmation] = useState('')
+  const [busy,setBusy] = useState(false)
+  const [error,setError] = useState('')
+  useEffect(()=>{const element=dialog.current;element?.showModal();return()=>element?.close()},[])
+  return <dialog ref={dialog} className="delete-bot-dialog" aria-labelledby="delete-bot-title" onCancel={(event)=>{event.preventDefault();if(!busy)props.onCancel()}}>
+    <form onSubmit={(event)=>{event.preventDefault();if(busy||confirmation!==props.bot.name)return;setBusy(true);setError('');void props.onDelete(confirmation).catch((reason:unknown)=>{setError(messageOf(reason));setBusy(false)})}}>
+      <h2 id="delete-bot-title">Delete {props.bot.name}?</h2>
+      <p>This removes this bot’s chats, memories, skills, queued jobs, saved Library files, avatar and browser profile from Riot.</p>
+      <p>Your project folder and shared provider sign-ins stay. Usage totals and Codex’s own managed session history remain.</p>
+      <p className="help">Project folder: {props.bot.workspacePath || 'None'}</p>
+      <label><span>Type <strong>{props.bot.name}</strong> to confirm</span><input autoFocus aria-label="Bot name to confirm deletion" value={confirmation} disabled={busy} onChange={(event)=>setConfirmation(event.target.value)} /></label>
+      {error && <p className="delete-error" role="alert">{error}</p>}
+      <div className="row"><button type="button" disabled={busy} onClick={props.onCancel}>Cancel</button><button type="submit" className="danger" disabled={busy||confirmation!==props.bot.name}>{busy ? 'Deleting…' : 'Delete Bot'}</button></div>
+    </form>
+  </dialog>
 }
 
 function EarlierPane(props: {

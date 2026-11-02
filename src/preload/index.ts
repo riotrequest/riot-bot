@@ -9,6 +9,7 @@ const api: RiotBridge = {
   disconnectCodex: () => ipcRenderer.invoke('codex:disconnect'),
   createBot: (draft) => ipcRenderer.invoke('bots:create', draft),
   selectBot: (id) => ipcRenderer.invoke('bots:select', id),
+  deleteBot: (id, confirmationName) => ipcRenderer.invoke('bots:delete', id, confirmationName),
   updateBot: (patch) => ipcRenderer.invoke('bots:update', patch),
   openWorkspace: () => ipcRenderer.invoke('bots:openWorkspace'),
   revealWorkspaceFile: (path, editId) => ipcRenderer.invoke('workspace:reveal', path, editId),
