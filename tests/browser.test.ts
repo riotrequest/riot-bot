@@ -23,7 +23,7 @@ describe('browser policy', () => {
   it('requires confirmation for an ambiguous form button while allowing search and links', () => {
     expect(clickNeedsApproval({ role: 'button', name: 'Continue', inputType: 'submit' }, 'https://example.com/form', DEFAULT_SEARCH_TEMPLATE)).toBe(true)
     expect(clickNeedsApproval({ role: 'link', name: 'Docs', inputType: '' }, 'https://example.com', DEFAULT_SEARCH_TEMPLATE)).toBe(false)
-    expect(clickNeedsApproval({ role: 'button', name: 'Search', inputType: 'submit' }, 'https://html.duckduckgo.com/html/', DEFAULT_SEARCH_TEMPLATE)).toBe(false)
+    expect(clickNeedsApproval({ role: 'button', name: 'Search', inputType: 'submit' }, 'https://search.brave.com/search', DEFAULT_SEARCH_TEMPLATE)).toBe(false)
   })
 
   it('extracts observed search results and blocks private destinations', () => {
@@ -165,14 +165,14 @@ describe('browser sessions', () => {
     expect(app.getSnapshot().browser.open).toBe(true)
 
     const waiting = app.takeoverBrowser()
-    expect(waiting).toMatch(/Waiting for you/)
+    expect(waiting).toMatch(/Browser control is with you/)
     provider.handler = (input) => {
       if (input.messages.at(-1)?.role === 'tool') return { content: 'Paused for you.', toolCalls: [] }
       return { content: '', toolCalls: [{ id: 'read-1', name: 'read_page', arguments: '{}' }] }
     }
     const paused = await app.sendMessage(app.getSnapshot().current?.conversation.id ?? '', 'Read the page')
     expect(paused.status).toBe('paused')
-    expect(paused.note).toMatch(/Waiting for you to sign in/)
+    expect(paused.note).toMatch(/Browser control is with you/)
     expect(app.resumeBrowser()).toMatch(/continue/)
     await app.closeBrowser()
     await app.close()
@@ -347,6 +347,7 @@ class FakePage implements LaunchedPage {
   async html(): Promise<string> {
     return '<a class="result__a" href="https://example.com/story">Example story</a><a class="result__snippet" href="https://example.com/story">A snippet from the page.</a>'
   }
+  async braveResults() { return [{ title: 'Example story', url: 'https://example.com/story', snippet: 'A snippet from the page.' }] }
   async observe(): Promise<RawControl[]> {
     return this.controls
   }

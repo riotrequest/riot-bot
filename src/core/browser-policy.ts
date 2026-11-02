@@ -1,12 +1,34 @@
 import { isBlockedHostname, isPrivateAddress, validatePublicUrl } from './web'
 
-export const DEFAULT_SEARCH_TEMPLATE = 'https://html.duckduckgo.com/html/?q={query}'
+export const DEFAULT_SEARCH_TEMPLATE = 'https://search.brave.com/search?q={query}'
+export const DUCKDUCKGO_SEARCH_TEMPLATE = 'https://html.duckduckgo.com/html/?q={query}'
 export const GOOGLE_SEARCH_TEMPLATE = 'https://www.google.com/search?q={query}&hl=en&gl=us&pws=0'
 export const CHROMIUM_DOWNLOAD_NOTE =
   'Riot Bot can use installed Chrome or Edge with a separate bot profile. Chromium is an optional download of a few hundred megabytes. It starts only when you choose Install Chromium and is not a model charge.'
 
 export function googleSearchRequested(text: string): boolean {
-  return /\bgoogle\s+(?:search|results?|rank(?:ing)?|position)\b|\b(?:on|using|with)\s+google\b/i.test(text)
+  if (/\b(?:forget|skip|avoid|don['’]?t use|instead of)\s+google\b|\b(?:brave|duckduckgo)\s+(?:instead|rather)\b/i.test(text)) return false
+  return /\bgoogle\s+(?:search|results?|rank(?:ing)?|position)\b|\b(?:search|on|using|with|use)\s+google\b/i.test(text)
+}
+
+export function requestedSearchEngine(text: string): SearchEngine | null {
+  if (/\b(?:forget|skip|avoid|don['’]?t use|instead of)\s+google\b/i.test(text)) return /\bduckduckgo\b/i.test(text) ? 'duckduckgo' : 'brave'
+  if (googleSearchRequested(text)) return 'google'
+  if (/\bbrave\b/i.test(text) && /\b(search|use|using|with|instead)\b/i.test(text)) return 'brave'
+  if (/\bduckduckgo\b/i.test(text) && /\b(search|use|using|with|instead)\b/i.test(text)) return 'duckduckgo'
+  return null
+}
+
+export type SearchEngine = 'google' | 'brave' | 'duckduckgo'
+
+export function searchEngineFor(url: string): SearchEngine | null {
+  try {
+    const host = new URL(url).hostname
+    if (host === 'google.com' || host === 'www.google.com') return 'google'
+    if (host === 'search.brave.com') return 'brave'
+    if (host === 'html.duckduckgo.com' || host === 'duckduckgo.com') return 'duckduckgo'
+  } catch { /* not a search URL */ }
+  return null
 }
 
 export const MAX_BROWSER_ACTIONS = 12
@@ -121,7 +143,7 @@ export function extractSearchResults(html: string, limit = BROWSER_RESULT_LIMIT)
 
 export function looksLikeSearchBlock(title: string, text: string, resultCount: number): boolean {
   if (resultCount > 0) return false
-  return /captcha|unusual traffic|are you a robot|verify you are human|access denied|enable javascript/i.test(`${title}\n${text.slice(0, 1500)}`)
+  return /captcha|unusual traffic|are you a robot|verify (?:that )?you are human|access denied|enable javascript|complete the (?:following )?challenge|proof.of.work/i.test(`${title}\n${text.slice(0, 1500)}`)
 }
 
 export function clickNeedsApproval(control: { role: string; name: string; inputType: string }, pageUrl: string, template: string): boolean {

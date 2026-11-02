@@ -32,7 +32,7 @@ import type {
 } from '../shared/types'
 import { BROWSER_ACTION_WARNING, COST_DISCLAIMER, TERMINAL_WARNING } from '../shared/types'
 import { BrowserService, type BrowserAction, type BrowserOpener } from './browser'
-import { googleSearchRequested } from './browser-policy'
+import { requestedSearchEngine } from './browser-policy'
 import { assignBuiltin, avatarFile, cleanAvatarChoice, readAvatarFile, thumbnailPng, type AvatarChoice } from './avatar'
 import { MAX_ATTACHMENTS, prepareAttachment } from './attachments'
 import { buildContext, type BuiltContext, type SkillCatalogItem } from './context'
@@ -1661,8 +1661,8 @@ export class RiotApp {
     const settings = this.currentSettings()
     const action = browserAction(name, args)
     if (!action) return `Unknown browser action ${name}.`
-    if (action.type === 'search' && googleSearchRequested(this.latestUserText())) action.engine = 'google'
-    if (this.browsers.view(this.scopeBot()).takeover) this.setSteps(conversationId, runId, taskId, done, ['Waiting for you to sign in…'])
+    if (action.type === 'search') action.engine = requestedSearchEngine(this.db.latestMessage(conversationId)?.content ?? '') ?? action.engine
+    if (this.browsers.view(this.scopeBot()).takeover) this.setSteps(conversationId, runId, taskId, done, ['Checking browser handoff…'])
     return this.browsers.act({
       botId: this.scopeBot(),
       runId,
@@ -2061,7 +2061,7 @@ function titleFrom(text: string): string {
 function browserAction(name: string, args: Record<string, unknown>): BrowserAction | null {
   switch (name) {
     case 'web_search':
-      return { type: 'search', query: str(args.query), engine: args.engine === 'google' ? 'google' : 'default' }
+      return { type: 'search', query: str(args.query), engine: args.engine === 'google' || args.engine === 'brave' || args.engine === 'duckduckgo' ? args.engine : 'default' }
     case 'list_tabs':
       return { type: 'tabs' }
     case 'open_url':

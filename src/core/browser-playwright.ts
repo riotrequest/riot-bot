@@ -139,6 +139,8 @@ export async function openPlaywrightBrowser(input: { profileDir: string; proxyUr
     }
   })
   const pages = new Map<Page, PlaywrightPage>()
+  let closed = false
+  context.on('close', () => { closed = true })
   let current: PlaywrightPage | null = null
   const wrap = (page: Page): PlaywrightPage => {
     const existing = pages.get(page)
@@ -159,6 +161,7 @@ export async function openPlaywrightBrowser(input: { profileDir: string; proxyUr
   })
   return {
     name: channel === 'chrome' ? 'Google Chrome' : channel === 'msedge' ? 'Microsoft Edge' : 'Chromium',
+    isClosed: () => closed,
     focus: () => current?.focus() ?? Promise.resolve(),
     pages: () => [...pages.values()],
     current: () => current,
@@ -187,7 +190,7 @@ function watch(page: Page): void {
   })
 }
 
-class PlaywrightPage implements LaunchedPage {
+export class PlaywrightPage implements LaunchedPage {
   private locators: Locator[] = []
 
   constructor(private readonly page: Page) {}
@@ -197,16 +200,16 @@ class PlaywrightPage implements LaunchedPage {
   }
 
   async googleResults(limit: number): Promise<SearchHit[]> {
-    await this.page.locator('#rso').waitFor({ state: 'attached', timeout: 3000 }).catch(() => undefined)
-    const observed = await this.page.locator('#rso').evaluateAll((roots, max) => {
-      const root = roots[0]
+    await this.page.locator('#rso h3, #search h3, main h3').first().waitFor({ state: 'attached', timeout: 3000 }).catch(() => undefined)
+    const observed = await this.page.evaluate((max) => {
+      const root = ['#rso', '#search', 'main'].map((selector) => document.querySelector(selector)).find((element) => element?.querySelector('h3'))
       if (!root) return []
       const cards = new Set<Element>()
       const results: { title: string; url: string; snippet: string; displayUrl: string }[] = []
       for (const heading of root.querySelectorAll('h3')) {
         const anchor = heading.closest('a[href]') as HTMLAnchorElement | null
         const card = heading.closest('div.MjjYud, div.g, div[data-sokoban-container]')
-        if (!anchor || !card || cards.has(card) || heading.closest('#tads, #bottomads, [data-text-ad], [data-attrid]')) continue
+        if (!anchor || !card || cards.has(card) || heading.closest('#tads, #bottomads, [data-text-ad], [data-attrid], [data-ad-client]')) continue
         cards.add(card)
         results.push({ title: heading.textContent?.trim().slice(0, 180) ?? '', url: anchor.href, displayUrl: card.querySelector('cite')?.textContent?.trim().slice(0, 250) ?? '', snippet: (card as HTMLElement).innerText.replace(/\s+/g, ' ').trim().slice(0, 350) })
         if (results.length >= max * 3) break
@@ -217,6 +220,22 @@ class PlaywrightPage implements LaunchedPage {
       const url = googleResultTarget(hit.url)
       return url ? [{ ...hit, url }] : []
     }).slice(0, limit)
+  }
+
+  async braveResults(limit: number): Promise<SearchHit[]> {
+    const selector = '.snippet[data-type="web"]'
+    await this.page.locator(selector).first().waitFor({ state: 'attached', timeout: 3000 }).catch(() => undefined)
+    const observed = await this.page.locator(selector).evaluateAll((cards, max) => cards.flatMap((card) => {
+      const title = card.querySelector('.title')
+      const anchor = title?.closest('a[href]') as HTMLAnchorElement | null
+      if (!title || !anchor || title.closest('.snippet') !== card || card.closest('[data-type="ad"], [data-text-ad], .ad')) return []
+      return [{ title: title.textContent?.trim().slice(0, 180) ?? '', url: anchor.href,
+        displayUrl: card.querySelector('cite')?.textContent?.trim().slice(0, 250) ?? '',
+        snippet: card.querySelector('.generic-snippet .content')?.textContent?.replace(/\s+/g, ' ').trim().slice(0, 350) ?? '' }]
+    }).slice(0, max), limit)
+    return observed.filter((hit) => {
+      try { checkNavigationUrl(hit.url); return new URL(hit.url).hostname !== 'search.brave.com' } catch { return false }
+    })
   }
 
   url(): string {

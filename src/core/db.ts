@@ -2,6 +2,7 @@ import fs from 'fs'
 import { COST_DISCLAIMER, type AttachmentView, type Conversation, type Memory, type RunState } from '../shared/types'
 import type { PreparedAttachment } from './attachments'
 import type { MessageAttachment } from './model'
+import { DEFAULT_SEARCH_TEMPLATE, DUCKDUCKGO_SEARCH_TEMPLATE } from './browser-policy'
 import { assignBuiltin } from './avatar'
 import { newId } from './ids'
 import { snippetAround, toFtsOrQuery, toFtsQuery } from './search'
@@ -491,7 +492,7 @@ export class Database {
       this.db.exec(BOT_SCHEMA)
       this.ensureInitialBot()
       this.ensureAttachments()
-      this.db.exec('PRAGMA user_version = 5')
+      this.db.exec('PRAGMA user_version = 6')
       this.ensureModelCatalog()
       return
     }
@@ -515,6 +516,13 @@ export class Database {
     this.ensureModelCatalog()
     this.ensureAttachments()
     if (this.userVersion() < 5) this.db.exec('PRAGMA user_version = 5')
+    if (this.userVersion() < 6) {
+      this.transaction(() => {
+        this.db.prepare(`UPDATE bots SET settings_json = json_set(settings_json, '$.searchUrlTemplate', ?)
+          WHERE json_extract(settings_json, '$.searchUrlTemplate') = ?`).run(DEFAULT_SEARCH_TEMPLATE, DUCKDUCKGO_SEARCH_TEMPLATE)
+        this.db.exec('PRAGMA user_version = 6')
+      })
+    }
   }
 
   private ensureAttachments(): void {

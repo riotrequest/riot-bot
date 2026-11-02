@@ -495,6 +495,7 @@ class DocsPage implements LaunchedPage {
   async html(): Promise<string> {
     return '<a class="result__a" href="https://playwright.dev/docs/browser-contexts">Browser contexts</a><a class="result__snippet" href="https://playwright.dev/docs/browser-contexts">Contexts isolate cookies.</a>'
   }
+  async braveResults() { return [{ title: 'Browser contexts', url: 'https://playwright.dev/docs/browser-contexts', snippet: 'Contexts isolate cookies.' }] }
   async observe(): Promise<RawControl[]> {
     return [{ role: 'link', name: 'Browser contexts', inputType: '', href: 'https://playwright.dev/docs/browser-contexts' }]
   }
