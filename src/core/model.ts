@@ -30,6 +30,7 @@ export interface MessageAttachment {
 export interface ModelUsage {
   inputTokens?: number
   outputTokens?: number
+  reasoningTokens?: number
   cacheTokens?: number
   reportedCostUsd?: number
 }
@@ -79,8 +80,8 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'search_files',
-    description: 'Search workspace files for current contents. Skip when memory or history already answers.',
-    parameters: objectSchema({ query: stringProp('Text to find.'), path: stringProp('Optional workspace folder.') }, ['query'])
+    description: 'Search text in a workspace file or folder. Returns the first matching line and a short excerpt per file. Skip when memory or history already answers.',
+    parameters: objectSchema({ query: stringProp('Text to find.'), path: stringProp('Optional workspace file or folder.') }, ['query'])
   },
   {
     name: 'read_file',
@@ -89,7 +90,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'write_file',
-    description: 'Write a workspace file. Requires editing. For large files, write a small first chunk, then append small complete chunks. Each change can be undone.',
+    description: 'Write a workspace file, creating parent folders as needed. Requires editing. Write a complete file when it fits; for larger files, append complete chunks. Each file change can be undone.',
     parameters: objectSchema({ path: stringProp('Workspace file.'), content: stringProp('New contents, or the next complete chunk when append is true.'), append: { type: 'boolean', description: 'Add to an existing UTF-8 file instead of replacing it. Default false.' } }, ['path', 'content'])
   },
   {
@@ -224,7 +225,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'read_tool_result',
-    description: 'Read a section of a stored tool result. Use this when a result says text was stored locally.',
+    description: 'Read a bounded section of a stored result. Omit offset to continue from the last section. An end marker means this section reaches the source end. Use query or explicit offset to revisit it.',
     parameters: objectSchema(
       {
         id: stringProp('Tool result id.'),

@@ -19,6 +19,12 @@ export class PauseError extends AppError {
   }
 }
 
+export class ToolArgumentsError extends PauseError {
+  constructor(readonly detail: string) {
+    super(`The model returned invalid tool arguments. No actions from that batch were executed. ${detail}`)
+  }
+}
+
 export class StopError extends AppError {
   constructor(message: string) {
     super(message)

@@ -352,7 +352,7 @@ export function toChatMessage(message: MessageRecord, toolPreviewChars?: number)
   if (message.role === 'tool') {
     return {
       role: 'tool',
-      content: previewToolContent(message, toolPreviewChars),
+      content: previewToolContent(message, message.toolName === 'read_tool_result' || message.toolName === 'read_attachment' ? undefined : toolPreviewChars),
       toolCallId: message.toolCallId ?? undefined,
       name: message.toolName ?? undefined
     }

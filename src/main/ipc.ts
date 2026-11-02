@@ -19,6 +19,7 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'modelContextTokens',
   'maxModelCallsPerTask',
   'maxOutputTokens',
+  'replyMode',
   'maxToolOutputChars',
   'maxTaskDurationMs',
   'maxEstimatedSpendPerTaskUsd',

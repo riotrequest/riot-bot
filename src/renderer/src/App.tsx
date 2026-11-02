@@ -930,7 +930,8 @@ function SettingsPane(props: {
         <summary>Advanced model limits</summary>
         <div className="grid">
           <NumberField label="Model calls per task" value={draft.maxModelCallsPerTask} onChange={(value) => setDraft({ ...draft, maxModelCallsPerTask: value })} />
-          <NumberField label="Reply chunk token limit" value={draft.maxOutputTokens} onChange={(value) => setDraft({ ...draft, maxOutputTokens: value })} />
+          <label>Reply allowance<select value={draft.replyMode} onChange={event => setDraft({ ...draft, replyMode: event.target.value === 'manual' ? 'manual' : 'automatic' })}><option value="automatic">Automatic · includes model reasoning</option><option value="manual">Manual cap</option></select></label>
+          {draft.replyMode === 'manual' && <NumberField label="Reply chunk token limit" value={draft.maxOutputTokens} onChange={(value) => setDraft({ ...draft, maxOutputTokens: value })} />}
           <label>
             Context fitting
             <select value={draft.contextMode} onChange={(event) => setDraft({ ...draft, contextMode: event.target.value === 'manual' ? 'manual' : 'automatic' })}>
@@ -950,7 +951,7 @@ function SettingsPane(props: {
               onChange={(event) => setDraft({ ...draft, modelContextTokens: event.target.value === '' ? null : Number(event.target.value) })}
             />
           </label>
-          <NumberField label="Stored tool output characters" value={draft.maxToolOutputChars} onChange={(value) => setDraft({ ...draft, maxToolOutputChars: value })} />
+          <NumberField label="Tool detail preview characters" value={draft.maxToolOutputChars} onChange={(value) => setDraft({ ...draft, maxToolOutputChars: value })} />
           <label>
             Search URL template
             <input value={draft.searchUrlTemplate} onChange={(event) => setDraft({ ...draft, searchUrlTemplate: event.target.value })} />
@@ -1664,7 +1665,7 @@ function NewBotForm(props: { settings: PublicSettings; onCreate: (draft: BotDraf
           .finally(() => setBusy(false))
       }}
     >
-      <p className="help">A bot keeps its own chats, memories, skills, and workspace. {provider === 'codex' ? 'Codex bots use a local default name when left blank; setup does not start a native turn.' : 'If you leave the name blank and a model is configured, one short setup request suggests a name and instructions.'}</p>
+      <p className="help">A bot keeps its own chats, memories, skills, and workspace. It can create files in its new workspace. {provider === 'codex' ? 'Codex bots use a local default name when left blank; setup does not start a native turn.' : 'If you leave the name blank and a model is configured, one short setup request suggests a name and instructions.'}</p>
       <label>
         What should this bot help with?
         <textarea value={purpose} rows={3} onChange={(event) => setPurpose(event.target.value)} />

@@ -493,7 +493,7 @@ export class Database {
       this.ensureInitialBot()
       this.ensureAttachments()
       this.ensureCodexSessions()
-      this.db.exec('PRAGMA user_version = 8')
+      this.db.exec('PRAGMA user_version = 9')
       this.ensureModelCatalog()
       return
     }
@@ -538,6 +538,12 @@ export class Database {
         this.db.exec('PRAGMA user_version = 8')
       })
     }
+    if (this.userVersion() < 9) this.transaction(() => {
+      this.db.prepare(`UPDATE bots SET settings_json = json_set(settings_json, '$.replyMode', CASE WHEN COALESCE(json_extract(settings_json, '$.maxOutputTokens'), 2048) = 2048 THEN 'automatic' ELSE 'manual' END) WHERE json_type(settings_json, '$.replyMode') IS NULL`).run()
+      this.db.prepare(`UPDATE bots SET settings_json = json_set(settings_json, '$.maxModelCallsPerTask', 24) WHERE json_extract(settings_json, '$.maxModelCallsPerTask') = 12 AND json_extract(settings_json, '$.replyMode') = 'automatic'`).run()
+      this.db.prepare('UPDATE model_catalog SET fetched_at = 0').run()
+      this.db.exec('PRAGMA user_version = 9')
+    })
   }
 
   private ensureCodexSessions(): void {
@@ -617,6 +623,7 @@ export class Database {
       fetched_at INTEGER NOT NULL,
       PRIMARY KEY (provider, model)
     )`)
+    this.addColumn('model_catalog', 'max_output_tokens', 'INTEGER')
   }
 
   private userVersion(): number {
@@ -1053,25 +1060,26 @@ export class Database {
     return found ? mapMessage(found) : null
   }
 
-  getModelCatalog(provider: string, model: string): { contextTokens: number | null; source: string; fetchedAt: number } | null {
-    const found = row(this.db.prepare(`SELECT context_tokens, source, fetched_at FROM model_catalog WHERE provider = ? AND model = ?`).get(provider, model))
+  getModelCatalog(provider: string, model: string): { contextTokens: number | null; maxOutputTokens?: number; source: string; fetchedAt: number } | null {
+    const found = row(this.db.prepare(`SELECT context_tokens, max_output_tokens, source, fetched_at FROM model_catalog WHERE provider = ? AND model = ?`).get(provider, model))
     if (!found) return null
     const tokens = found.context_tokens
     return {
       contextTokens: tokens == null ? null : Number(tokens),
+      ...(found.max_output_tokens != null ? { maxOutputTokens: Number(found.max_output_tokens) } : {}),
       source: text(found, 'source'),
       fetchedAt: Number(found.fetched_at)
     }
   }
 
-  saveModelCatalog(provider: string, model: string, contextTokens: number | null, source: string, fetchedAt: number): void {
+  saveModelCatalog(provider: string, model: string, contextTokens: number | null, source: string, fetchedAt: number, maxOutputTokens: number | null = null): void {
     this.db
       .prepare(
-        `INSERT INTO model_catalog (provider, model, context_tokens, source, fetched_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(provider, model) DO UPDATE SET context_tokens = excluded.context_tokens, source = excluded.source, fetched_at = excluded.fetched_at`
+        `INSERT INTO model_catalog (provider, model, context_tokens, source, fetched_at, max_output_tokens)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(provider, model) DO UPDATE SET context_tokens = excluded.context_tokens, source = excluded.source, fetched_at = excluded.fetched_at, max_output_tokens = excluded.max_output_tokens`
       )
-      .run(provider, model, contextTokens, source, fetchedAt)
+      .run(provider, model, contextTokens, source, fetchedAt, maxOutputTokens)
   }
 
   deleteMessage(id: string): void {

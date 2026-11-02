@@ -69,7 +69,7 @@ export function actionStatus(actionCount: number, outcome: 'completed' | 'failed
 
 export function fileChange(toolName: string | undefined, content: string): { editId: string; path?: string } | null {
   if (toolName !== 'write_file' && toolName !== 'edit_file') return null
-  const editId = /edit-id:([0-9a-f-]{8,80})/i.exec(content)?.[1]
+  const editId = /edit-id:([0-9a-f-]{8,80})\s*$/i.exec(content)?.[1]
   const path = /^(?:Created|Updated) ([^\r\n]+)/.exec(content)?.[1]
   return editId ? { editId, ...(path ? { path } : {}) } : null
 }

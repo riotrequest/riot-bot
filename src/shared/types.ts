@@ -27,6 +27,7 @@ export interface PublicSettings {
   modelContextTokens: number | null
   maxModelCallsPerTask: number
   maxOutputTokens: number
+  replyMode: 'automatic' | 'manual'
   maxToolOutputChars: number
   maxTaskDurationMs: number
   maxEstimatedSpendPerTaskUsd: number | null

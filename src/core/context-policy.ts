@@ -105,7 +105,7 @@ export function selectToolGroups(text: string, browserOpen: boolean, extra: Iter
   const hay = text.toLowerCase()
   const enabled = new Set(extra)
   const groups: ToolGroupName[] = []
-  if (enabled.has('files') || /\b(file|folder|code|edit|workspace|readme|src)\b/.test(hay)) groups.push('files')
+  if (enabled.has('files') || /\b(file|folder|code|edit|workspace|readme|src|html|css|javascript|typescript|python|project|repo)\b/.test(hay) || /\b(build|create|redesign|develop|update|fix)\b.{0,80}\b(website|site|page|app)\b/.test(hay)) groups.push('files')
   if (enabled.has('terminal') || /\b(terminal|command|shell|powershell|npm|git)\b/.test(hay)) groups.push('terminal')
   if (enabled.has('browser') || browserOpen || /\b(browser|click|tab|website|web page|open the|open a|open this)\b/.test(hay)) groups.push('browser')
   return groups
@@ -116,15 +116,17 @@ export async function lookupProviderContext(input: {
   model: string
   fetchImpl: typeof fetch
   signal?: AbortSignal
-}): Promise<{ contextTokens: number | null; source: 'provider' | 'unavailable' }> {
+}): Promise<{ contextTokens: number | null; maxOutputTokens?: number; source: 'provider' | 'unavailable' }> {
   if (input.provider !== 'openrouter' || !input.model.trim()) return { contextTokens: null, source: 'unavailable' }
   const timeout = AbortSignal.timeout(10_000)
   const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout
   const response = await input.fetchImpl('https://openrouter.ai/api/v1/models', { signal })
   if (!response.ok) return { contextTokens: null, source: 'unavailable' }
-  const body = (await response.json()) as { data?: { id?: string; context_length?: number }[] }
+  const body = (await response.json()) as { data?: { id?: string; context_length?: number; top_provider?: { max_completion_tokens?: number } }[] }
   const match = body.data?.find((item) => item.id === input.model)
   const length = match?.context_length
+  const output = match?.top_provider?.max_completion_tokens
+  const cap = typeof output === 'number' && Number.isFinite(output) && output >= 16 ? { maxOutputTokens: Math.floor(output) } : {}
   if (typeof length !== 'number' || !Number.isFinite(length) || length < 1024) return { contextTokens: null, source: 'unavailable' }
-  return { contextTokens: Math.round(length), source: 'provider' }
+  return { contextTokens: Math.round(length), source: 'provider', ...cap }
 }

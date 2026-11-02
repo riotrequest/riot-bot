@@ -40,7 +40,7 @@ import { CodexService, type CodexUsage } from './codex'
 import { buildContext, type BuiltContext, type SkillCatalogItem } from './context'
 import type { CredentialStore } from './credentials'
 import { Database, type BotRecord, type MemoryRecord, type MessageRecord, type RunRecord, type SkillRecord, type TaskRecord } from './db'
-import { ConfigError, LimitError, PauseError, ProviderError, StopError } from './errors'
+import { AppError, ConfigError, LimitError, PauseError, ProviderError, StopError, ToolArgumentsError } from './errors'
 import { editTextFile, listFiles, readTextFile, searchFiles, undoFileEdit, writeTextFile } from './files'
 import { Gateway } from './gateway'
 import { newId } from './ids'
@@ -49,7 +49,7 @@ import { formatHistoryList, historyRoleLabel } from './history'
 import { explicitRemember, memoryRejection } from './memory'
 import { catalogIsFresh, lookupProviderContext, planContext, selectToolGroups, TOOL_PREVIEW_CHARS, TIGHT_TOOL_PREVIEW_CHARS, type ContextPlan } from './context-policy'
 import { BROWSER_TOOLS, TOOLS, toolsForGroups, type ModelProvider, type ModelResponse, type ToolCall, type ToolDefinition } from './model'
-import { PathEscapeError, resolveWorkspacePath } from './path-safety'
+import { resolveWorkspacePath } from './path-safety'
 import { progressLabel } from './progress'
 import { COMPACTION_PROMPT, FILE_DELIVERY_INSTRUCTIONS, SYSTEM_PROMPT, toolLabel } from './prompt'
 import { acceptReactionEmoji, reactionLabel } from './reactions'
@@ -113,9 +113,14 @@ export class RiotApp {
   private skillSaveAllowed = false
   private skillUpdateAllowed = false
   private compactedThisRun = false
+  private compactionAttempted = false
   private extraGroups = new Set<string>()
   private toolPreviewLimit = TOOL_PREVIEW_CHARS
   private activePlan: ContextPlan | null = null
+  private adaptiveReplyAllowance: number | null = null
+  private modelOutputLimit: number | null = null
+  private modelContextLimit: number | null = null
+  private toolReadOffsets = new Map<string, number>()
   private compactionKeys = new Set<string>()
   private compactionPasses = new Set<string>()
   private closed = false
@@ -355,6 +360,7 @@ export class RiotApp {
         provider,
         model,
         workspacePath,
+        workspaceEditing: draft.workspaceKind === 'suggested',
         pinnedInstructions: instructions,
         maxEstimatedSpendPerDayUsd: this.db.appConfig().maxEstimatedSpendPerDayUsd
       })
@@ -837,7 +843,7 @@ export class RiotApp {
   }
 
   updateSettings(patch: Partial<PublicSettings>): PublicSettings {
-    const next = sanitizeSettings({ ...this.db.getSettings(), ...patch })
+    const next = sanitizeSettings({ ...this.db.getSettings(), ...patch, ...(patch.maxOutputTokens != null && patch.replyMode == null ? { replyMode: 'manual' } : {}) })
     if (next.workspacePath) {
       try {
         const stat = fs.statSync(next.workspacePath)
@@ -1001,6 +1007,7 @@ export class RiotApp {
   }
 
   private decorateMessages(botId: string, messages: MessageRecord[]): ChatMessageView[] {
+    const detailLimit = this.db.getSettings(botId).maxToolOutputChars
     const reactions = this.db.listReactions(botId, messages.map((message) => message.id))
     const attachments = messages.length ? this.db.listAttachments(botId, messages.map((message) => message.id)) : []
     const runIds = [...new Set(messages.map((message) => message.runId).filter((id): id is string => Boolean(id)))]
@@ -1008,6 +1015,7 @@ export class RiotApp {
     const statuses = new Map(runIds.map((id) => [id, this.db.getRun(id)?.status]))
     return messages.map((message) => {
       const view = toMessageView(message)
+      if (message.role === 'tool' && message.content.length > detailLimit) view.content = `${message.content.slice(0, detailLimit)}\n\n[Detail preview only. The full bounded tool result is stored and can be read with read_tool_result.]${/\nedit-id:[0-9a-f-]+$/i.exec(message.content)?.[0] ?? ''}`
       view.attachments = attachments.filter((item) => item.messageId === message.id).map(toAttachmentView)
       view.runStatus = message.runId ? statuses.get(message.runId) : undefined
       view.reactions = reactions
@@ -1072,9 +1080,14 @@ export class RiotApp {
     this.skillSaveAllowed = false
     this.skillUpdateAllowed = false
     this.compactedThisRun = false
+    this.compactionAttempted = false
     this.extraGroups = new Set()
     this.toolPreviewLimit = TOOL_PREVIEW_CHARS
     this.activePlan = null
+    this.adaptiveReplyAllowance = null
+    this.modelOutputLimit = null
+    this.modelContextLimit = null
+    this.toolReadOffsets.clear()
     this.compactionKeys = new Set()
     this.compactionPasses = new Set()
     const run = this.db.createRun(conversationId, now)
@@ -1265,6 +1278,7 @@ export class RiotApp {
       let streamed = ''
       this.setSteps(conversationId, runId, taskId, done, [continuationNote ? 'Finishing your request…' : 'Writing a reply'])
       let response: ModelResponse
+      let invalidArguments = ''
       try {
         response = await this.gateway.request({
           runId,
@@ -1273,6 +1287,7 @@ export class RiotApp {
           context: { ...fit.breakdown, compacted: this.compactedThisRun },
           contextFit: this.contextFit(),
           tools: this.toolsForRequest(),
+          maxOutputTokens: this.replyAllowance(),
           signal,
           onDelta: (chunk) => {
             streamed += chunk
@@ -1283,7 +1298,10 @@ export class RiotApp {
         if (response.toolCalls.length > 0) {
           if (!this.currentSettings().toolsEnabled) throw new PauseError('Tools are off in Settings. The model returned a tool request, so no actions were executed.')
           // Validate the entire batch before the first action can change anything.
-          if (response.finishReason !== 'length') for (const call of response.toolCalls) parseArgs(call)
+          if (response.finishReason !== 'length') {
+            try { for (const call of response.toolCalls) parseArgs(call) }
+            catch (error) { if (error instanceof ToolArgumentsError) invalidArguments = error.detail; else throw error }
+          }
           if (!this.currentSettings().workspaceEditing && response.toolCalls.some(call => call.name === 'write_file' || call.name === 'edit_file')) throw new PauseError('File editing is off for this bot. Open Settings and enable workspace editing to save or change files. No actions from this batch were executed.')
         }
       } catch (error) {
@@ -1306,20 +1324,23 @@ export class RiotApp {
       const toolCalls = response.toolCalls ?? []
       const chunk = response.content || streamed
       const content: string = prefix + chunk
-      this.db.updateMessageContent(assistantId, content, toolCalls.length && response.finishReason !== 'length' ? JSON.stringify(toolCalls) : null)
+      this.db.updateMessageContent(assistantId, content, toolCalls.length && response.finishReason !== 'length' && !invalidArguments ? JSON.stringify(toolCalls) : null)
       this.emitMessage(conversationId, assistantId)
-      if (response.finishReason === 'length') {
+      if (response.finishReason === 'length' || invalidArguments) {
         if (toolCalls.length) {
           pendingReply = null
           if (!content.trim()) this.db.deleteMessage(assistantId)
           truncatedTools += 1
-          if (truncatedTools > 2 || this.db.getRun(runId)!.modelCalls >= this.currentSettings().maxModelCallsPerTask) throw new PauseError('The model reached its output limit before completing a tool request, and could not recover within this task. No actions from the incomplete batch were executed. Earlier completed changes are still saved.')
-          continuationNote = `The last tool batch was cut off. NONE of its actions were executed. Issue a smaller complete tool call; do not resend a large batch. For file writing, use write_file with at most ${truncatedTools === 1 ? 1500 : 750} characters per content chunk, then append:true for later chunks. Read the current file before deciding what still needs writing. Do not repeat tools that completed earlier in this task.`
+          if (truncatedTools > 2 || this.db.getRun(runId)!.modelCalls >= this.currentSettings().maxModelCallsPerTask) throw new PauseError(`The model could not recover its ${invalidArguments ? 'invalid tool arguments' : 'tool request after the output limit'} within this task. No actions from that batch were executed. Earlier completed changes are still saved.`)
+          if (response.finishReason === 'length' || (response.usage?.outputTokens ?? 0) >= this.replyAllowance()) this.expandReplyAllowance()
+          continuationNote = `The last tool batch was ${invalidArguments ? 'invalid: ' + invalidArguments : 'cut off'}. NONE of its actions were executed. Follow the tool JSON schema exactly and escape strings correctly. Issue a smaller complete tool call; do not resend a large batch. For file writing, keep each content chunk below ${Math.max(750, Math.floor(this.replyAllowance() * (truncatedTools === 1 ? 0.8 : 0.4)))} characters, then append:true for later chunks. Read the current file before deciding what still needs writing. Do not repeat tools that completed earlier in this task.`
         } else {
           emptyContinuations = chunk.trim() ? 0 : emptyContinuations + 1
-          if (emptyContinuations > 1) throw new PauseError('The model could not finish a reply after automatic continuation. Any partial response is saved.')
-          pendingReply = { id: assistantId, content }
-          continuationNote = 'The previous assistant reply was cut off. Continue exactly from its last character without repeating the beginning, adding an introduction, or repeating completed tools. Finish the current request. For project work, save the files through tools and keep the final summary short; do not continue dumping source into chat.'
+          const expanded = !chunk.trim() && this.expandReplyAllowance()
+          if (emptyContinuations > 1 && !expanded) throw new PauseError('The model exhausted its available reply allowance without producing an answer. Any partial response is saved. No further requests were sent.')
+          pendingReply = content ? { id: assistantId, content } : null
+          if (!content) this.db.deleteMessage(assistantId)
+          continuationNote = content ? 'The previous assistant reply was cut off. Continue exactly from its last character without repeating the beginning, adding an introduction, or repeating completed tools. Finish the current request. For project work, save the files through tools and keep the final summary short; do not continue dumping source into chat.' : `The previous response used its allowance before producing an answer. ${expanded ? 'The allowance has been increased.' : 'Keep the answer concise within the available allowance.'} Complete the original request using available tools. Do not repeat completed tools.`
         }
         continue
       }
@@ -1342,9 +1363,9 @@ export class RiotApp {
       for (const call of toolCalls) {
         this.assertRunning(runId, signal)
         const result = await this.executeTool(conversationId, runId, taskId, call, signal, done)
-        this.addTranscript(conversationId, runId, 'tool', result, { toolCallId: call.id, toolName: call.name })
-        if (call.name === 'react' && !result.startsWith('Could not')) reacted = true
-        if (call.name !== 'react') done.push(toolLabel(call.name))
+        this.addTranscript(conversationId, runId, 'tool', result.text, { toolCallId: call.id, toolName: call.name })
+        if (call.name === 'react' && result.ok && !result.text.startsWith('Could not')) reacted = true
+        if (call.name !== 'react' && result.ok) done.push(toolLabel(call.name))
         this.setSteps(conversationId, runId, taskId, done, ['Writing a reply'])
       }
       const moreWork = toolCalls.some((call) => call.name !== 'react')
@@ -1369,6 +1390,7 @@ export class RiotApp {
         return { ...built, paused: true, reason: built.pauseReason ?? 'This request does not fit the model context. Nothing was sent.' }
       }
       if (!built.overBudget && built.omittedMessageIds.length === 0) return built
+      if (!built.overBudget && this.compactionAttempted) return built
       const key = [...built.omittedMessageIds].sort().join(',')
       if (!built.overBudget && this.compactionPasses.has(key)) return built
       if (built.overBudget && this.compactionPasses.has(key)) {
@@ -1421,6 +1443,8 @@ export class RiotApp {
     const profile = bot
       ? `Bot name: ${bot.name}\nPurpose: ${bot.purpose || 'Not set.'}\nWorkspace: ${bot.workspacePath || 'No workspace folder yet.'}\nWorkspace editing: ${settings.workspaceEditing ? 'enabled' : 'disabled'}.\nIf asked where the workspace is, answer with this path. Do not search files for it.\nThe workspace path is information. File tools stay inside it, and it is not an operating-system sandbox.`
       : ''
+    const remainingCalls = settings.maxModelCallsPerTask - (this.db.getRun(runId)?.modelCalls ?? 0)
+    const budgetNote = remainingCalls <= 4 ? `This task has ${Math.max(0, remainingCalls)} model calls remaining, including the final reply. Finish the requested deliverable and reserve a call for a short handoff with file links. Stop optional polishing and repeated checks. State any unfinished or unverified work honestly; do not claim checks that did not run.${remainingCalls === 1 ? ' This is the last available response: give the handoff now instead of requesting more tools.' : ''}` : ''
     return buildContext({
       systemPrompt: `${SYSTEM_PROMPT}\n\n${profile}`,
       pinnedInstructions: settings.pinnedInstructions,
@@ -1430,10 +1454,10 @@ export class RiotApp {
       summary: conversation?.summary ?? '',
       task: task ? toTaskState(task) : null,
       recent,
-      turnNote: this.turnNote,
+      turnNote: [this.turnNote, budgetNote].filter(Boolean).join('\n\n'),
       tokenBudget: plan.inputCeiling,
       packTarget: plan.assemblyTarget,
-      responseAllowance: settings.maxOutputTokens,
+      responseAllowance: this.replyAllowance(),
       modelContextTokens: plan.capacity,
       toolTokenReserve: toolReserve,
       toolPreviewChars: this.toolPreviewLimit,
@@ -1447,7 +1471,7 @@ export class RiotApp {
     return this.activePlan ?? planContext({
       mode: settings.contextMode,
       contextTokenBudget: settings.contextTokenBudget,
-      maxOutputTokens: settings.maxOutputTokens,
+      maxOutputTokens: this.replyAllowance(),
       configuredCapacity: settings.modelContextTokens,
       providerCapacity: null
     })
@@ -1456,11 +1480,12 @@ export class RiotApp {
   private async resolvePlan(signal: AbortSignal): Promise<ContextPlan> {
     if (this.activePlan) return this.activePlan
     const settings = this.currentSettings()
-    const providerCapacity = settings.contextMode === 'manual' || settings.modelContextTokens != null ? null : await this.cachedProviderCapacity(settings, signal)
+    const providerCapacity = settings.replyMode === 'automatic' || (settings.contextMode !== 'manual' && settings.modelContextTokens == null) ? await this.cachedProviderCapacity(settings, signal) : null
+    this.modelContextLimit = settings.modelContextTokens ?? providerCapacity
     this.activePlan = planContext({
       mode: settings.contextMode,
       contextTokenBudget: settings.contextTokenBudget,
-      maxOutputTokens: settings.maxOutputTokens,
+      maxOutputTokens: this.replyAllowance(),
       configuredCapacity: settings.modelContextTokens,
       providerCapacity
     })
@@ -1470,14 +1495,15 @@ export class RiotApp {
   private async cachedProviderCapacity(settings: Settings, signal: AbortSignal): Promise<number | null> {
     if (settings.provider !== 'openrouter' || !settings.model.trim()) return null
     const cached = this.db.getModelCatalog(settings.provider, settings.model)
-    if (cached && catalogIsFresh(cached, this.now())) return cached.contextTokens
+    if (cached && catalogIsFresh(cached, this.now())) { this.modelOutputLimit = cached.maxOutputTokens ?? null; return cached.contextTokens }
     try {
       const found = await lookupProviderContext({ provider: settings.provider, model: settings.model, fetchImpl: this.catalogFetchImpl ?? this.fetchImpl ?? globalThis.fetch, signal })
-      this.db.saveModelCatalog(settings.provider, settings.model, found.contextTokens, found.source, this.now())
+      this.modelOutputLimit = found.maxOutputTokens ?? null
+      this.db.saveModelCatalog(settings.provider, settings.model, found.contextTokens, found.source, this.now(), found.maxOutputTokens)
       return found.contextTokens
     } catch {
       if (signal.aborted) throw new StopError('Stopped before the next model request was sent.')
-      if (cached) return cached.contextTokens
+      if (cached) { this.modelOutputLimit = cached.maxOutputTokens ?? null; return cached.contextTokens }
       this.db.saveModelCatalog(settings.provider, settings.model, null, 'unavailable', this.now())
       return null
     }
@@ -1493,6 +1519,21 @@ export class RiotApp {
     }
   }
 
+  private replyAllowance(): number {
+    const settings = this.currentSettings()
+    if (settings.replyMode === 'manual') return settings.maxOutputTokens
+    return Math.max(16, Math.min(this.adaptiveReplyAllowance ?? 8192, this.modelOutputLimit ?? 32768, Math.floor((settings.modelContextTokens ?? this.modelContextLimit ?? 32768) / 2)))
+  }
+
+  private expandReplyAllowance(): boolean {
+    const current = this.replyAllowance()
+    if (this.currentSettings().replyMode === 'manual') return false
+    this.adaptiveReplyAllowance = Math.min(current * 2, 32768)
+    if (this.replyAllowance() <= current) return false
+    this.activePlan = null
+    return true
+  }
+
   private toolsForRequest(): ToolDefinition[] | undefined {
     if (!this.currentSettings().toolsEnabled) return undefined
     const latest = this.latestUserText()
@@ -1503,7 +1544,7 @@ export class RiotApp {
   private latestUserText(): string {
     const conversationId = this.db.getBot(this.scopeBot())?.ongoingConversationId
     if (!conversationId) return ''
-    return this.db.latestMessage(conversationId)?.content ?? ''
+    return this.db.latestMessage(conversationId, ['user'])?.content ?? ''
   }
 
   private skillCatalog(query: string): SkillCatalogItem[] {
@@ -1532,7 +1573,7 @@ export class RiotApp {
     let draft = ''
     for (const message of candidates) {
       const references = attached.filter((item) => item.messageId === message.id).map((item) => `Saved ${item.kind} attachment ${item.id}: ${item.name}. ${item.kind === 'text' ? 'Use read_attachment for its contents.' : 'The image stays saved in the transcript; ask the user to attach it again if exact visual details are needed.'}`).join('\n')
-      const addition = `[message ${message.id} role=${message.role}]\n${message.content}\n${references}\n\n`
+      const addition = `[message ${message.id} role=${message.role}]\n${message.role === 'tool' ? message.content.slice(0, TOOL_PREVIEW_CHARS) : message.content}\n${references}\n\n`
       const preview = [
         { content: `${COMPACTION_PROMPT}${pin}` },
         { content: `Previous summary:\n${conversation.summary || '(none)'}\n\nMessages to fold in:\n${draft}${addition}` }
@@ -1560,9 +1601,11 @@ export class RiotApp {
       )
     }
     const folded = `Previous summary:\n${conversation.summary || '(none)'}\n\nMessages to fold in:\n${draft}`
+    this.compactionAttempted = true
     const response = await this.gateway.request({
       runId,
       purpose: 'compaction',
+      maxOutputTokens: this.replyAllowance(),
       signal,
       messages: [
         { role: 'system', content: `${COMPACTION_PROMPT}${pin}` },
@@ -1571,7 +1614,7 @@ export class RiotApp {
       contextFit: this.contextFit(),
       context: {
         contextLimit: this.planOrDefault(settings).inputCeiling,
-        replyAllowance: settings.maxOutputTokens,
+        replyAllowance: this.replyAllowance(),
         estimatedInputTokens: estimateTokens(`${COMPACTION_PROMPT}${pin}\n${folded}`),
         reportedInputTokens: null,
         instructionsTokens: estimateTokens(COMPACTION_PROMPT),
@@ -1589,10 +1632,9 @@ export class RiotApp {
         note: 'This request is the summary step. Token sizes are estimates until the provider reports usage. The input working budget does not include the reply token limit.'
       }
     })
+    if (!response.content.trim() || response.finishReason === 'length' || response.toolCalls.length) throw new PauseError('The summary did not finish. The original messages and previous summary are still saved.')
     this.compactedThisRun = true
     const nextSummary = response.content.trim()
-      ? response.content.trim()
-      : `${conversation.summary}\n\n[Summary came back empty for ${batch.map((message) => message.id).join(', ')}. Use search_history for the original text.]`.trim()
     this.db.transaction(() => {
       this.db.setSummary(conversationId, nextSummary)
       this.db.markSummarized(batch.map((message) => message.id))
@@ -1605,18 +1647,29 @@ export class RiotApp {
   }
 
   private readStoredToolResult(botId: string, id: string, query: string, offset: number): string {
-    const stored = id ? this.db.findToolMessage(botId, id) : null
-    if (!stored) return 'No stored tool result with that id in this bot.'
+    const found = id ? this.db.findToolMessage(botId, id) : null
+    if (!found) return 'No stored tool result with that id in this bot.'
+    let stored: MessageRecord = found
+    const visited = new Set([stored.id])
+    for (let depth = 0; depth < 32 && stored.toolName === 'read_tool_result'; depth++) {
+      const original: string | undefined = /^Stored result (\S+), characters /.exec(stored.content)?.[1]
+      const parent: MessageRecord | null = original ? this.db.findToolMessage(botId, original) : null
+      if (!parent || visited.has(parent.id)) break
+      visited.add(parent.id); stored = parent
+    }
     const text = stored.content
-    const window = 1600
-    let start = Number.isFinite(offset) && offset > 0 ? Math.min(text.length, Math.floor(offset)) : 0
+    const sourceId = stored.toolCallId || stored.id
+    const window = this.currentSettings().contextMode === 'manual' ? 1600 : 24000
+    let start = Number.isFinite(offset) && offset >= 0 ? Math.min(text.length, Math.floor(offset)) : this.toolReadOffsets.get(stored.id) ?? 0
     if (query.trim()) {
       const at = text.toLowerCase().indexOf(query.trim().toLowerCase())
       if (at < 0) return `That text is not in the stored result ${id}. The stored result is ${text.length} characters.`
       start = Math.max(0, at - 200)
     }
+    if (start >= text.length) return `Stored result ${sourceId} has already been read to the end (${text.length} characters). Use the source to finish the task. Supply a query or explicit offset only if you need to revisit it.`
     const slice = text.slice(start, start + window)
-    return `Stored result ${id}, characters ${start}–${start + slice.length} of ${text.length}:\n${slice}`
+    this.toolReadOffsets.set(stored.id, start + slice.length)
+    return `Stored result ${sourceId}, characters ${start}–${start + slice.length} of ${text.length}:\n${slice}\n\n${start + slice.length >= text.length ? 'End of stored result.' : 'More remains; call read_tool_result with this original id and omit offset to continue.'}`
   }
 
   private readAttachment(botId: string, id: string, query: string, offset: number): string {
@@ -1680,7 +1733,7 @@ export class RiotApp {
     call: ToolCall,
     signal: AbortSignal,
     done: string[]
-  ): Promise<string> {
+  ): Promise<{ text: string; ok: boolean }> {
     const toolId = newId()
     const started = this.now()
     this.db.insertTool({
@@ -1697,13 +1750,15 @@ export class RiotApp {
     })
     this.setSteps(conversationId, runId, taskId, done, [progressLabel(call.name)])
     try {
-      const result = cap(await this.dispatchTool(conversationId, runId, taskId, call, signal, done), this.currentSettings().maxToolOutputChars)
+      const result = await this.dispatchTool(conversationId, runId, taskId, call, signal, done)
       this.db.finishTool(toolId, 'completed', result, null, this.now())
-      return result
+      return { text: result, ok: true }
     } catch (error) {
       const message = publicErrorMessage(error, this.credentials.secretValues())
-      this.db.finishTool(toolId, signal.aborted ? 'interrupted' : 'failed', null, message, this.now())
-      throw error
+      const result = `Tool failed: ${message}`
+      this.db.finishTool(toolId, signal.aborted ? 'interrupted' : 'failed', result, message, this.now())
+      if (signal.aborted || error instanceof AppError) throw error
+      return { text: result, ok: false }
     }
   }
 
@@ -1808,13 +1863,12 @@ export class RiotApp {
     } catch (error) {
       if (error instanceof StopError || error instanceof LimitError || error instanceof PauseError) throw error
       if (signal.aborted) throw new StopError('Stopped. Work already sent to the provider may still be billed.')
-      if (error instanceof PathEscapeError || error instanceof Error) return error.message
-      return 'The tool failed.'
+      throw error
     }
   }
 
   private recordFileChange(runId: string, change: ReturnType<typeof writeTextFile>, append = false): string {
-    if ('error' in change) return change.error
+    if ('error' in change) throw new Error(change.error)
     const extended = append ? this.db.extendFileEdit(runId, change.path, change.beforeText, change.afterText) : null
     const id = extended ?? newId()
     if (!extended) this.db.insertEdit({
@@ -2270,34 +2324,30 @@ function browserAction(name: string, args: Record<string, unknown>): BrowserActi
 
 function parseArgs(call: ToolCall): Record<string, unknown> {
   const definition = [...TOOLS, ...BROWSER_TOOLS].find((tool) => tool.name === call.name)
-  const invalid = (): never => { throw new PauseError('The model returned invalid tool arguments. No actions from that batch were executed. Send another message to retry.') }
-  if (!definition || call.arguments.length > 1_200_000) return invalid()
+  const invalid = (detail: string): never => { throw new ToolArgumentsError(`${call.name.slice(0, 80)}: ${detail}`) }
+  if (!definition) return invalid('Unknown tool; use an available tool name.')
+  if (call.arguments.length > 1_200_000) return invalid('Arguments exceed the size limit.')
   let parsed: unknown
   try {
     parsed = JSON.parse(call.arguments || '{}')
   } catch {
-    return invalid()
+    return invalid('Arguments are not complete valid JSON.')
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return invalid()
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return invalid('Arguments must be a JSON object.')
   const args = parsed as Record<string, unknown>
   const properties = definition.parameters.properties as Record<string, { type: string; enum?: unknown[] }>
   const required = definition.parameters.required as string[]
-  if (required.some((key) => !Object.hasOwn(args, key))) return invalid()
+  if (required.some((key) => !Object.hasOwn(args, key))) return invalid(`Missing required fields: ${required.filter(key => !Object.hasOwn(args, key)).join(', ')}.`)
   for (const [key, value] of Object.entries(args)) {
     const rule = Object.hasOwn(properties, key) ? properties[key] : undefined
-    if (!rule || typeof value !== rule.type || (rule.type === 'number' && !Number.isFinite(value))) return invalid()
-    if (rule.enum && !rule.enum.includes(value)) return invalid()
+    if (!rule || typeof value !== rule.type || (rule.type === 'number' && !Number.isFinite(value))) return invalid(`Field ${key.slice(0, 80)} must match its declared tool schema.`)
+    if (rule.enum && !rule.enum.includes(value)) return invalid(`Field ${key.slice(0, 80)} must use an allowed value.`)
   }
   return args
 }
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : value == null ? '' : String(value)
-}
-
-function cap(text: string, max: number): string {
-  if (text.length <= max) return text
-  return `${text.slice(0, max)}\n… output truncated`
 }
 
 function normalizeKind(kind: string): Memory['kind'] {

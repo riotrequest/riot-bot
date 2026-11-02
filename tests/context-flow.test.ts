@@ -252,7 +252,7 @@ describe('automatic context', () => {
     expect(section?.content).toContain('PLAYWRIGHT_DOC_MARKER')
     const answer = detail.messages.filter((message) => message.role === 'assistant').at(-1)
     expect(answer?.content).toContain('PLAYWRIGHT_DOC_MARKER')
-    const plan = planContext({ mode: 'automatic', contextTokenBudget: 8000, maxOutputTokens: 2048, configuredCapacity: null, providerCapacity: null })
+    const plan = planContext({ mode: 'automatic', contextTokenBudget: 8000, maxOutputTokens: 8192, configuredCapacity: null, providerCapacity: null })
     const activity = app.listActivity()
     expect(activity.some((entry) => entry.purpose === 'compaction')).toBe(false)
     expect(activity.length).toBeGreaterThan(0)
@@ -408,7 +408,7 @@ describe('automatic context', () => {
     const documented = cached.app.listActivity().find((entry) => entry.purpose === 'chat')
     expect(documented?.context?.capacitySource).toBe('provider')
     expect(documented?.context?.modelContextTokens).toBe(131072)
-    expect(documented?.context?.contextLimit).toBe(131072 - fitTokens(2048))
+    expect(documented?.context?.contextLimit).toBe(131072 - fitTokens(8192))
     now += 8 * 24 * 60 * 60 * 1000
     await cached.app.sendMessage(conversationId, 'Hello later')
     expect(catalogFetches).toBe(2)

@@ -2,6 +2,7 @@ import { lookup } from 'dns/promises'
 import http from 'http'
 import https from 'https'
 import net from 'net'
+import tls from 'tls'
 
 export function isPrivateAddress(ip: string): boolean {
   const normalized = ip.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0]
@@ -116,7 +117,10 @@ export async function connectPinned(input: PinnedConnection): Promise<PinnedResu
       path,
       headers: { ...input.headers, Host: input.hostHeader },
       servername: input.servername,
-      rejectUnauthorized: input.rejectUnauthorized
+      rejectUnauthorized: input.rejectUnauthorized,
+      ca: typeof tls.getCACertificates === 'function'
+        ? [...tls.getCACertificates('default'), ...tls.getCACertificates('system')]
+        : undefined
     }
     const req = (secure ? https : http).request(requestOptions, (response) => {
       const chunks: Buffer[] = []

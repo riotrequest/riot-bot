@@ -151,7 +151,8 @@ export class Gateway {
         throw new PauseError('Blocked a model call that was not started by a message you sent.')
       }
       const now = this.deps.now()
-      const maxOutput = Math.min(settings.maxOutputTokens, input.maxOutputTokens ?? settings.maxOutputTokens)
+      const limit = settings.replyMode === 'automatic' ? 8192 : settings.maxOutputTokens
+      const maxOutput = settings.replyMode === 'automatic' ? input.maxOutputTokens ?? limit : Math.min(limit, input.maxOutputTokens ?? limit)
       const maxCalls = Math.min(settings.maxModelCallsPerTask, input.maxModelCalls ?? settings.maxModelCallsPerTask)
       if (now - run.startedAt > settings.maxTaskDurationMs) {
         throw new LimitError('This task reached its time limit. Send another message when you want to continue.')

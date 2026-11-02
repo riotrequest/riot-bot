@@ -42,15 +42,32 @@ export function searchFiles(workspace: string, query: string, requested = '.'): 
   const matches: string[] = []
   let scanned = 0
 
-  const walk = (dir: string): void => {
+  const walk = (target: string): void => {
     if (matches.length >= 40 || scanned >= 2000) return
     let real: string
     try {
-      real = fs.realpathSync(dir)
+      real = fs.realpathSync(target)
     } catch {
       return
     }
     if (!inside(root, real)) return
+    const stat = fs.statSync(real)
+    if (stat.isFile()) {
+      scanned += 1
+      if (stat.size > 1_000_000) return
+      let content: string
+      try {
+        content = fs.readFileSync(real, 'utf8')
+      } catch {
+        return
+      }
+      if (content.includes('\0')) return
+      const lines = content.split(/\r?\n/)
+      const line = lines.findIndex(item => item.toLowerCase().includes(needle))
+      if (line >= 0) matches.push(`${path.relative(root, real)}:${line + 1}: ${lines[line].trim().slice(0, 250)}`)
+      return
+    }
+    if (!stat.isDirectory()) return
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(real, { withFileTypes: true })
@@ -61,30 +78,7 @@ export function searchFiles(workspace: string, query: string, requested = '.'): 
       if (matches.length >= 40 || scanned >= 2000) return
       if (entry.name === 'node_modules' || entry.name === '.git') continue
       if (entry.isSymbolicLink()) continue
-      const full = path.join(real, entry.name)
-      if (entry.isDirectory()) {
-        walk(full)
-        continue
-      }
-      if (!entry.isFile()) continue
-      scanned += 1
-      let stat: fs.Stats
-      try {
-        stat = fs.statSync(full)
-      } catch {
-        continue
-      }
-      if (!inside(root, full) || stat.size > 1_000_000) continue
-      let content: string
-      try {
-        content = fs.readFileSync(full, 'utf8')
-      } catch {
-        continue
-      }
-      if (content.includes('\0')) continue
-      if (!content.toLowerCase().includes(needle)) continue
-      const line = content.split(/\r?\n/).findIndex((item) => item.toLowerCase().includes(needle)) + 1
-      matches.push(`${path.relative(root, full)}:${line}`)
+      if (entry.isDirectory() || entry.isFile()) walk(path.join(real, entry.name))
     }
   }
 
@@ -129,8 +123,9 @@ export function writeTextFile(workspace: string, requested: string, content: str
     if (bytes.includes(0) || !Buffer.from(before, 'utf8').equals(bytes)) {
       return { error: 'The existing file is binary or is not UTF-8 text, so it was not replaced.' }
     }
-  } else if (!fs.existsSync(path.dirname(full)) || !fs.statSync(path.dirname(full)).isDirectory()) {
-    return { error: 'The folder for that file does not exist yet.' }
+  } else {
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    resolveWorkspacePath(workspace, requested)
   }
   if (append) content = (before ?? '') + content
   if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) return { error: 'The complete file would exceed the 1 MB write limit.' }

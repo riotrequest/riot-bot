@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
-import { editTextFile, undoFileEdit, writeTextFile } from '../src/core/files'
+import { editTextFile, searchFiles, undoFileEdit, writeTextFile } from '../src/core/files'
 import { PathEscapeError, resolveWorkspacePath } from '../src/core/path-safety'
 
 describe('workspace paths', () => {
@@ -22,6 +22,13 @@ describe('workspace paths', () => {
     const junction = path.join(workspace, 'linked')
     execFileSync('cmd.exe', ['/c', 'mklink', '/J', junction, outside], { windowsHide: true })
     expect(() => resolveWorkspacePath(workspace, path.join('linked', 'secret.txt'))).toThrow(PathEscapeError)
+    expect(() => writeTextFile(workspace, 'linked/new/file.txt', 'blocked', true)).toThrow(PathEscapeError)
+    expect(fs.existsSync(path.join(outside, 'new'))).toBe(false)
+    const nested = writeTextFile(workspace, 'assets/css/style.css', 'body { color: gold }', true)
+    expect('error' in nested).toBe(false)
+    expect(fs.readFileSync(path.join(workspace, 'assets/css/style.css'), 'utf8')).toContain('gold')
+    expect(searchFiles(workspace, 'color', 'assets/css/style.css')).toContain('style.css:1: body { color: gold }')
+    expect(searchFiles(workspace, 'color', 'assets')).toContain('style.css:1: body { color: gold }')
 
     try {
       const fileLink = path.join(workspace, 'secret-link.txt')

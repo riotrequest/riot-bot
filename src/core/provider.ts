@@ -89,12 +89,14 @@ export function usageFromApi(usage: unknown): ModelUsage | undefined {
   if (!usage || typeof usage !== 'object') return undefined
   const record = usage as Record<string, unknown>
   const details = record.prompt_tokens_details as Record<string, unknown> | undefined
+  const completionDetails = record.completion_tokens_details as Record<string, unknown> | undefined
   const reported = numberOrUndefined(record.cost)
   const inputTokens = numberOrUndefined(record.prompt_tokens ?? record.input_tokens)
   const outputTokens = numberOrUndefined(record.completion_tokens ?? record.output_tokens)
   const cacheTokens = numberOrUndefined(details?.cached_tokens ?? record.cache_read_input_tokens)
+  const reasoningTokens = numberOrUndefined(completionDetails?.reasoning_tokens)
   if (inputTokens == null && outputTokens == null && cacheTokens == null && reported == null) return undefined
-  return { inputTokens, outputTokens, cacheTokens, reportedCostUsd: reported }
+  return { inputTokens, outputTokens, cacheTokens, ...(reasoningTokens != null ? { reasoningTokens } : {}), reportedCostUsd: reported }
 }
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -121,13 +123,19 @@ export function responseFromJson(json: unknown): ModelResponse {
   }
   const message = (choice?.message ?? {}) as Record<string, unknown>
   const calls = Array.isArray(message.tool_calls) ? message.tool_calls.map((call, index) => mapToolCall(call, index)) : []
-  const finish = typeof choice?.finish_reason === 'string' ? choice.finish_reason : undefined
+  const finish = completionFinishReason(choice)
   return {
     content: typeof message.content === 'string' ? message.content : '',
     toolCalls: calls.filter((call) => call.name),
     usage: usageFromApi(record.usage),
     finishReason: finish
   }
+}
+
+function completionFinishReason(choice: Record<string, unknown> | undefined): string | undefined {
+  const native = typeof choice?.native_finish_reason === 'string' ? choice.native_finish_reason.toLowerCase() : ''
+  if (['length', 'max_tokens', 'max_output_tokens'].includes(native)) return 'length'
+  return typeof choice?.finish_reason === 'string' ? choice.finish_reason : undefined
 }
 
 export interface StreamState {
@@ -155,7 +163,8 @@ export function applyStreamEvent(state: StreamState, event: unknown): void {
   const choice = Array.isArray(record.choices) ? (record.choices[0] as Record<string, unknown> | undefined) : undefined
   const delta = (choice?.delta ?? {}) as Record<string, unknown>
   if (typeof delta.content === 'string' && delta.content) state.content += delta.content
-  if (typeof choice?.finish_reason === 'string' && choice.finish_reason) state.finishReason = choice.finish_reason
+  const finish = completionFinishReason(choice)
+  if (finish && state.finishReason !== 'length') state.finishReason = finish
   const deltas = Array.isArray(delta.tool_calls) ? delta.tool_calls : []
   for (const tool of deltas) {
     const item = tool as Record<string, unknown>
@@ -171,7 +180,7 @@ export function applyStreamEvent(state: StreamState, event: unknown): void {
     state.tools[index] = current
   }
   const usage = usageFromApi(record.usage)
-  if (usage) state.usage = usage
+  if (usage) state.usage = { ...state.usage, ...Object.fromEntries(Object.entries(usage).filter(([, value]) => value != null)) }
 }
 
 function toolIndex(state: StreamState, item: Record<string, unknown>): number {
