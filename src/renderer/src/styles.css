@@ -315,7 +315,7 @@ button .ui-icon { vertical-align: middle; }
 .settings-savebar .row { flex-shrink: 0; }
 .settings-savebar button { font-size: 12px; }
 .settings-savebar p { margin: 0; font-size: 11px; overflow-wrap: anywhere; }
-.save-success { color: #a6ccb0; font-size: 12px; margin: 0; }
+.save-success { color: #a6ccb0; font-size: 12px; margin-block: 0; }
 .advanced-details { display: block; }
 .advanced-details > summary { font-weight: 500; font-size: 13px; }
 .advanced-details > summary > span { font-size: 10px; font-weight: 400; color: var(--muted); margin-left: 8px; }
