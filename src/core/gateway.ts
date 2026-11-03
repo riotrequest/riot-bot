@@ -10,7 +10,7 @@ import { dollarBudgetEnabled, estimateCostUsd, estimateMessagesTokens, estimateT
 
 export interface GatewayInput {
   runId: string
-  purpose: 'chat' | 'tool_continuation' | 'reply_continuation' | 'compaction' | 'bot_setup'
+  purpose: 'chat' | 'tool_continuation' | 'reply_continuation' | 'compaction' | 'bot_setup' | 'learning_review'
   messages: ChatMessage[]
   tools?: ToolDefinition[]
   signal: AbortSignal
@@ -21,6 +21,8 @@ export interface GatewayInput {
   maxOutputTokens?: number
   maxModelCalls?: number
   stream?: boolean
+  /** Optional checks get one attempt, without a retry or parameter fallback. */
+  singleAttempt?: boolean
 }
 
 interface Begun {
@@ -106,6 +108,7 @@ export class Gateway {
               : 'Stopped. Work already sent to the provider may still be billed.'
           )
         }
+        if (input.singleAttempt) throw providerError
         if (providerError.kind === 'auth' || providerError.kind === 'credit' || providerError.kind === 'context_limit') throw providerError
         if (providerError.kind === 'unsupported_tools') {
           throw new PauseError(`This model does not support tools. Turn off tools in Settings or choose another model. ${providerError.message}`)

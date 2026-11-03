@@ -11,7 +11,7 @@ export function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'riot-bot-'))
 }
 
-export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fetchImpl' | 'lookupHost' | 'createProvider' | 'workspaceRoot' | 'openFolder' | 'revealFile' | 'writeClipboard' | 'browserOpener' | 'now' | 'codex'>> & { provider?: MockProvider; dbPath?: string }) {
+export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fetchImpl' | 'lookupHost' | 'createProvider' | 'workspaceRoot' | 'openFolder' | 'revealFile' | 'writeClipboard' | 'browserOpener' | 'now' | 'codex'>> & { provider?: MockProvider; dbPath?: string; learning?: boolean }) {
   const dir = options?.dbPath ? path.dirname(options.dbPath) : tempDir()
   const dbPath = options?.dbPath ?? path.join(dir, 'riot.sqlite')
   const provider = options?.provider ?? new MockProvider()
@@ -36,6 +36,16 @@ export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fet
   })
   app.boot()
   app.updateSettings({ model: 'mock-model' })
+  // Foreground regression fixtures opt out of optional reviews; learning tests enable the real defaults.
+  if (!options?.learning) {
+    app.updateSettings({ autoMemory: false, autoSkillSuggestions: false })
+    const create = app.createBot.bind(app)
+    app.createBot = async draft => {
+      const result = await create(draft)
+      app.updateSettings({ autoMemory: false, autoSkillSuggestions: false })
+      return result
+    }
+  }
   return { dir, dbPath, app, provider, credentials, logger }
 }
 

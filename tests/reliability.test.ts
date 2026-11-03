@@ -275,6 +275,7 @@ describe('accounting and recall', () => {
 
   it('saves a skill only for an explicit request and restores an older version', async () => {
     const { app, provider } = makeApp()
+    app.updateSettings({ autoSkillSuggestions: true })
     const conversationId = app.getSnapshot().conversations[0].id
     const draft = {
       name: 'Deploy',

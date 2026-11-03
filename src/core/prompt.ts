@@ -42,6 +42,7 @@ The summary is incomplete by nature. Mention that the original messages remain s
 
 export function toolLabel(name: string): string {
   switch (name) {
+    case 'set_learning_preferences': return 'Updated memory and skill preferences'
     case 'get_disk_space': return 'Checked available disk space'
     case 'list_files':
       return 'Looked through a folder'

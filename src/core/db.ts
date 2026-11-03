@@ -1393,6 +1393,12 @@ export class Database {
     })
   }
 
+  /** Include removed notes so an automatic check does not restore something the user deleted. */
+  learningMemoryHistory(botId: string): { content: string; deleted: boolean }[] {
+    return rows(this.db.prepare(`SELECT content, deleted_at FROM memories WHERE bot_id = ? ORDER BY COALESCE(deleted_at, updated_at) DESC, rowid DESC LIMIT 200`).all(botId))
+      .map(item => ({ content: text(item, 'content'), deleted: item.deleted_at != null }))
+  }
+
   updateMemory(id: string, content: string, now: number, provenance: Memory['provenance'], botId = this.activeBotId()): MemoryRecord | null {
     return this.transaction(() => {
       const existing = this.getMemory(id, botId)
@@ -1471,6 +1477,10 @@ export class Database {
   incrementModelCalls(id: string): number {
     this.db.prepare(`UPDATE runs SET model_calls = model_calls + 1 WHERE id = ?`).run(id)
     return this.getRun(id)?.modelCalls ?? 0
+  }
+
+  modelRequestCountForRun(runId: string): number {
+    return num(row(this.db.prepare(`SELECT COUNT(*) AS total FROM model_requests WHERE run_id = ?`).get(runId))!, 'total')
   }
 
   createTask(conversationId: string, runId: string, objective: string, now: number): TaskRecord {
@@ -1897,6 +1907,10 @@ export class Database {
     return found ? mapProposal(found) : null
   }
 
+  learningProposalHistory(botId: string): ProposalRecord[] {
+    return rows(this.db.prepare(`SELECT * FROM skill_proposals WHERE bot_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 100`).all(botId)).map(mapProposal)
+  }
+
   getProposal(id: string, botId = this.activeBotId()): ProposalRecord | null {
     const found = row(this.db.prepare(`SELECT * FROM skill_proposals WHERE id = ?`).get(id))
     if (!found) return null
@@ -2036,7 +2050,7 @@ function mapMemory(record: Row): MemoryRecord {
     updatedAt: num(record, 'updated_at'),
     sourceMessageId: record.source_message_id == null ? null : text(record, 'source_message_id'),
     conversationId: record.conversation_id == null ? null : text(record, 'conversation_id'),
-    provenance: provenance === 'user_explicit' || provenance === 'user_edit' ? provenance : 'assistant_tool'
+    provenance: provenance === 'user_explicit' || provenance === 'user_edit' || provenance === 'automatic' ? provenance : 'assistant_tool'
   }
 }
 

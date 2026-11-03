@@ -30,6 +30,8 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'botSpendPerDayUsd',
   'streaming',
   'toolsEnabled',
+  'autoMemory',
+  'autoSkillSuggestions',
   'pinnedInstructions',
   'maxFileReadBytes',
   'webFetchTimeoutMs',

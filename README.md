@@ -144,13 +144,17 @@ OpenAI requests go to `https://api.openai.com/v1/chat/completions`. OpenRouter r
 
 ## What you can ask it to do
 
+Chat hides successful **Completed · … actions** rows by default. Turn on **Settings → Preferences & spending → Show completed actions in Chat** to see expandable action history across all bots. This global preference saves immediately. Errors, interrupted work, approval requests, file links/Undo, and the bot's reply remain available. Full logs stay in **Usage & activity**.
+
 Riot’s API file tools stay inside the selected bot’s workspace. File creation and editing stay off until **Allow Riot Bot to create and edit files in this folder** is checked. Each app-made edit can be undone from the chat if the file has not changed since. The API workspace is not an operating-system sandbox. Codex uses its native sandbox and file tools; its edits do not have Riot’s Undo button, and its legacy Windows policy permits broader reads. See the Codex guide.
 
 An API terminal command is shown with its working folder and time limit, and it runs only after you approve that exact command. The workspace folder does not contain the API shell. Codex follows its native approval rules: safe read commands can run automatically, and native requests that need approval appear in Riot Bot.
 
 `fetch_url` is still the lightweight tool for a straightforward public page. The browser is for JavaScript pages, search, and interaction.
 
-Say `remember this: …` to save that wording without a model call. A guess is saved when you explicitly ask to remember it, and you can correct or delete it afterward. Obvious secret patterns are blocked. That check does not catch every secret.
+Say `remember this: …` to save that wording locally right away. The chat reply still uses your model. A guess is saved when you explicitly ask to remember it, and you can correct or delete it afterward. Obvious secret patterns are blocked. That check does not catch every secret.
+
+**Bot settings → Memory & skills** has independent switches for **Automatic memory** and **Suggest reusable skills**, both on by default. One short, quiet review after a successful chat reply checks for important durable preferences, project facts, and confirmed decisions, and for useful repeatable procedures. It can save one evidenced memory; a skill always waits for **Save skill**. Say `Turn off automatic memory`, `Stop suggesting skills`, or `Turn off both background checks` to change these settings for the current bot. Existing notes and skills stay available, and explicit save requests still work. Reviews use the bot's current connection/model and appear as **Memory & skill check** in Usage & activity. They consume extra API usage or native Codex allowance. See [quiet learning](docs/quiet-learning.md) for limits and behavior.
 
 A memory is a fact or preference. A skill is a procedure. Say `Save this workflow as a skill.` or `Update that skill with the correction we just discovered.` to save or update one. After a substantial task, Riot Bot may show a preview with **Save**, **Edit**, and **Dismiss**. Nothing about later chats changes until you save it. Skills cannot grant permissions, raise a budget, or override the app rules. The **Skills** screen lists, edits, disables, deletes, and restores versions. Markdown export and import are text only: import shows a preview first, adds the skill disabled, and does not run code or install anything. The catalog added to a request is at most eight short descriptions, and about 400 estimated tokens.
 
@@ -256,7 +260,7 @@ The running window was also checked at 1180 and 880 pixels wide. The sidebar sta
 - The secret check only catches common patterns.
 - File undo is refused if the file changed after the edit.
 - Images in model Markdown are not loaded. `http` and `https` links open externally. Avatar uploads are stored locally.
-- One task per bot runs at a time, with up to two bots working independently; overlapping workspaces take turns. Only saved schedules start work on a timer. Skills are not learned in the background.
+- One task per bot runs at a time, with up to two bots working independently; overlapping workspaces take turns. Only saved schedules start work on a timer. Optional memory/skill reviews follow successful user turns; skills still require explicit approval to save.
 - Typed drafts survive a bot switch in the same session and are not written to disk. Pending file and screenshot attachments are persisted.
 - No accounts, sync, telemetry, plugin marketplace, or extra agents.
 - Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one.

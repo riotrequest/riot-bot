@@ -18,7 +18,9 @@ function setup(extra: Partial<RiotServiceOptions> = {}) {
 }
 
 async function bot(app: RiotService, name: string, workspacePath = '') {
-  return app.createBot({name,purpose:'Help with this project',provider:'openai',model:name,workspaceKind:workspacePath ? 'existing' : 'suggested',workspacePath,avatarKind:'builtin',avatarValue:'spark',avatarBackground:'#d4544a'})
+  const result = await app.createBot({name,purpose:'Help with this project',provider:'openai',model:name,workspaceKind:workspacePath ? 'existing' : 'suggested',workspacePath,avatarKind:'builtin',avatarValue:'spark',avatarBackground:'#d4544a'})
+  app.updateSettings({autoMemory:false,autoSkillSuggestions:false})
+  return result
 }
 
 function pending(input: {signal: AbortSignal}, done: (resolve: (response: ModelResponse)=>void)=>void): Promise<ModelResponse> {

@@ -38,6 +38,8 @@ export interface PublicSettings {
   botSpendPerDayUsd: number | null
   streaming: boolean
   toolsEnabled: boolean
+  autoMemory: boolean
+  autoSkillSuggestions: boolean
   pinnedInstructions: string
   maxFileReadBytes: number
   webFetchTimeoutMs: number
@@ -83,6 +85,7 @@ export interface Reaction {
 }
 
 export interface AppPreferences {
+  /** Show expandable completed-action history in all chats. Errors remain visible either way. */
   showToolDetails: boolean
 }
 
@@ -166,7 +169,7 @@ export interface Memory {
   updatedAt: number
   sourceMessageId: string | null
   conversationId: string | null
-  provenance: 'user_explicit' | 'assistant_tool' | 'user_edit'
+  provenance: 'user_explicit' | 'assistant_tool' | 'user_edit' | 'automatic'
 }
 
 export interface ApprovalView {
@@ -460,6 +463,7 @@ export type AppEvent =
   | { type: 'run'; conversationId: string; run: RunState; task: TaskState | null }
   | { type: 'approval'; approval: ApprovalView | null }
   | { type: 'memories-changed' }
+  | { type: 'learning-settings'; botId: string; autoMemory: boolean; autoSkillSuggestions: boolean }
   | { type: 'skills-changed' }
   | { type: 'skill-proposal'; proposal: SkillProposal | null }
   | { type: 'usage'; usage: UsageSummary }

@@ -17,7 +17,7 @@ function setup(dir = tempDir(), start = initial, options: Partial<RiotServiceOpt
   const provider = new MockProvider(), credentials = new MemoryCredentialStore(), events: AppEvent[] = []
   const app = new RiotService({ dbPath: path.join(dir, 'schedules.sqlite'), workspaceRoot: path.join(dir, 'workspaces'), provider, credentials, ...options, now: () => now })
   app.onEvent(event => events.push(event)); app.boot()
-  app.updateSettings({ model: 'mock-model', workspacePath: dir })
+  app.updateSettings({ model: 'mock-model', workspacePath: dir, autoMemory: false, autoSkillSuggestions: false })
   return { app, provider, events, dir, credentials, clock: (value: number) => { now = value } }
 }
 

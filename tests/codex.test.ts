@@ -36,6 +36,33 @@ function turnInput(dir: string, patch: Partial<CodexTurnInput> = {}): CodexTurnI
 }
 
 describe('native Codex connection', () => {
+  it('runs a quiet disposable review without tools, records allowance use, and preserves the main native thread', async () => {
+    const text = 'For every project, I need plain English explanations and short checklists.'
+    const memory = { content: 'Use plain English explanations and short checklists for projects.', kind: 'preference', evidence: text, importance: 'high' }
+    const { app, id, requests, provider } = nativeApp({ review: { memory, skill: null } })
+    app.updateSettings({ autoMemory: true, autoSkillSuggestions: true })
+    const run = await app.sendMessage(id, text)
+    expect(run.status).toBe('completed')
+    expect(app.listMemories()[0]).toMatchObject({ content: memory.content, provenance: 'automatic' })
+    expect(app.getUsage()).toMatchObject({ modelCalls: 0, codexTurns: 2 })
+    expect(app.listActivity().some(entry => entry.purpose === 'learning_review' && entry.costLabel === 'subscription')).toBe(true)
+    await app.sendMessage(id, 'Please explain the next project step.')
+    const starts = requests().filter(item => item.method === 'thread/start')
+    expect(starts).toHaveLength(3)
+    expect(starts.filter(item => item.params.ephemeral)).toHaveLength(2)
+    const nativeReview = starts.find(item => item.params.ephemeral).params
+    expect(nativeReview).toMatchObject({ sandbox: 'read-only', dynamicTools: [], config: { web_search: 'disabled', 'features.shell_tool': false, project_doc_max_bytes: 0 } })
+    const turns = requests().filter(item => item.method === 'turn/start')
+    expect(turns).toHaveLength(4)
+    expect(turns[0].params.threadId).toBe(turns[2].params.threadId)
+    expect(turns[1].params.threadId).not.toBe(turns[0].params.threadId)
+    expect(turns[1].params).toMatchObject({ effort: 'low', outputSchema: { type: 'object' } })
+    await waitFor(() => requests().filter(item => item.method === 'thread/unsubscribe').length === 2)
+    expect(requests().filter(item => item.method === 'thread/unsubscribe').map(item => item.params.threadId)).toEqual([turns[1].params.threadId, turns[3].params.threadId])
+    expect(app.openConversation(id).messages.some(message => message.role === 'assistant' && message.content.includes('"memory":'))).toBe(false)
+    expect(provider.calls).toHaveLength(0)
+  })
+
   it('reads disk capacity through Riot and matches streamed native failures to the correct action', async () => {
     const { app, id, requests, provider } = nativeApp({ scenario: 'disk-space' })
     app.updateSettings({ workspaceEditing: false })

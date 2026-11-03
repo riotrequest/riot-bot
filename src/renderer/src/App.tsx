@@ -184,6 +184,10 @@ function Shell({ api }: { api: RiotBridge }) {
         void api.listMemories().then(setMemories).catch(() => undefined)
         return
       }
+      if (event.type === 'learning-settings') {
+        if (event.botId === viewedBotId.current) setSettings(current => current ? { ...current, autoMemory: event.autoMemory, autoSkillSuggestions: event.autoSkillSuggestions } : current)
+        return
+      }
       if (event.type === 'skills-changed') {
         void api.listSkills().then(setSkills).catch(() => undefined)
         return
@@ -762,7 +766,7 @@ function MemoryPane(props: {
       <div className="page-intro"><h2>A little context goes a long way.</h2><p>Facts and preferences your bot can remember for next time. You can edit or remove them whenever you like.</p></div>
       <input aria-label="Search memories" value={query} placeholder="Find a memory…" onChange={(event) => setQuery(event.target.value)} />
       {shown.length === 0 && <EmptyState icon="memory" title={query ? 'No matching memories' : 'Your bot is getting to know you'}>{query ? 'Try a different word or clear your search.' : 'Try saying “Remember this: I prefer short, straightforward answers” in chat.'}</EmptyState>}
-      <details className="subtle-details"><summary>How memories work</summary><p className="help">“Remember this” saves your wording. Removing a memory stops it being used in future replies; earlier chats can still mention it. Avoid saving passwords or other secrets.</p></details>
+      <details className="subtle-details"><summary>How memories work</summary><p className="help">Your bot can quietly remember important facts and preferences after replies. Manage this in Bot settings → Memory & skills, or say “Turn off automatic memory.” “Remember this” still saves your wording. Removing a memory stops it being used in future replies; earlier chats can still mention it. Avoid saving passwords or other secrets.</p></details>
       {shown.map((memory) => (
         <MemoryCard key={memory.id} memory={memory} {...props} />
       ))}
@@ -789,7 +793,7 @@ function MemoryCard({
     <article className="card">
       <header>
         <span>{memory.kind}</span>
-        <span>{memory.provenance === 'user_explicit' ? 'You asked to remember this' : memory.provenance === 'user_edit' ? 'Edited by you' : 'Saved during a chat'}</span>
+        <span>{memory.provenance === 'user_explicit' ? 'You asked to remember this' : memory.provenance === 'user_edit' ? 'Edited by you' : memory.provenance === 'automatic' ? 'Remembered automatically' : 'Saved during a chat'}</span>
         <time>{new Date(memory.updatedAt).toLocaleString()}</time>
       </header>
       <textarea value={content} rows={3} onChange={(event) => setContent(event.target.value)} />
@@ -946,12 +950,29 @@ function AppSettingsPane(props: {
         <section className="settings-section"><div className="section-heading"><span className="step-number">3</span><h3>Choose your default model</h3></div><ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => update({ model })} /><p className="help">{draft.provider === 'codex' ? 'Sign in first to load the models available to your account.' : 'Copy the exact model ID from your provider’s catalog.'} New bots start with this choice; each bot can use a different model in Bot settings.</p></section>
       </> : <>
         <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Make Riot work your way.</h2><p>These preferences apply across your bots.</p></div>
-        <section className="settings-section"><h3>Conversation display</h3><label className="check permission-option"><input type="checkbox" checked={props.preferences.showToolDetails} onChange={event => void props.api.updatePreferences({ showToolDetails: event.target.checked }).then(props.onPreferences).catch(reason => props.onError(messageOf(reason)))} /><span><strong>Show tool details by default</strong><small>Expand technical action logs in every chat. This preference saves immediately.</small></span></label></section>
+        <section className="settings-section"><h3>Conversation display</h3><label className="check permission-option"><input type="checkbox" checked={props.preferences.showToolDetails} onChange={event => void props.api.updatePreferences({ showToolDetails: event.target.checked }).then(props.onPreferences).catch(reason => props.onError(messageOf(reason)))} /><span><strong>Show completed actions in Chat</strong><small>Add expandable action history to every bot’s chat. Off by default. Errors and approval requests still appear. This preference saves immediately.</small></span></label><p className="help">Full action history is always available in Usage & activity.</p></section>
         <section className="settings-section"><h3>App-wide spending ceiling</h3><OptionalMoney label="All bots, per day (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={maxEstimatedSpendPerDayUsd => update({ maxEstimatedSpendPerDayUsd })} /><p className="help">Leave blank to turn this ceiling off. It covers API spending across all bots. Each API bot needs its model’s input and output prices in Bot settings → Limits for spending estimates. Codex account usage is managed separately.</p></section>
       </>}
     </fieldset>
     <footer className="settings-savebar"><div role="status" aria-live="polite">{error ? <p className="danger" role="alert">{error}</p> : <p className={note ? 'save-success' : 'help'}>{note || (changed ? 'You have unsaved app settings.' : 'Shared settings for Riot Bot')}</p>}</div><div className="row"><button type="button" disabled={saving} onClick={props.onDone}>{changed ? 'Discard changes' : 'Done'}</button><button className="send" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save app settings'}<Icon name="check" /></button></div></footer>
   </form>
+}
+
+export function LearningSettings({ settings, onChange }: { settings: PublicSettings; onChange: (patch: Partial<PublicSettings>) => void }) {
+  return <>
+    <div className="page-intro"><h2>A little more helpful over time.</h2><p>Let this bot notice what matters and find useful ways to help you again.</p></div>
+    <section className="settings-section"><h3>Remember the important things</h3>
+      <label className="check permission-option"><input type="checkbox" checked={settings.autoMemory} onChange={event => onChange({ autoMemory: event.target.checked })} /><span><strong>Automatic memory</strong><small>Quietly save lasting preferences, project facts, and confirmed decisions. Everyday chat and one-time requests don’t need a memory.</small></span></label>
+      <p className="help">Review, correct, or delete anything in Memories. You can also say “Turn off automatic memory.” Explicit “remember this” requests still work when this is off.</p>
+    </section>
+    <section className="settings-section"><h3>Turn good workflows into skills</h3>
+      <label className="check permission-option"><input type="checkbox" checked={settings.autoSkillSuggestions} onChange={event => onChange({ autoSkillSuggestions: event.target.checked })} /><span><strong>Suggest reusable skills</strong><small>After a useful procedure, offer to save it for next time. You review the steps and choose Save skill. Dismissed suggestions won’t be repeated.</small></span></label>
+      <p className="help">Say “Stop suggesting skills” to turn this off in chat. Your saved skills stay available.</p>
+    </section>
+    <div className="callout"><strong>One quiet review, two independent choices</strong><p>When either option is on, your bot can make one short review after a successful chat reply, using its current model and connection. Both off means no background review. These choices apply only to this bot.</p>
+      <details className="subtle-details"><summary>Usage & limits</summary><p className="help">Reviews appear in Usage & activity. API reviews use a small text excerpt, reserve up to 1,000 reply tokens, share the task’s call and spending limits, and never retry. Codex reviews use one extra native turn and your ChatGPT allowance; Codex manages its tokens. Reviews have no tools and stop after 20 seconds. No reviews run while idle or after scheduled work.</p></details>
+    </div>
+  </>
 }
 
 function SettingsPane(props: {
@@ -969,7 +990,7 @@ function SettingsPane(props: {
   onDone: () => void
   onBusy: (busy: boolean) => void
 }) {
-  const [tab, setTab] = useState<'connection' | 'workspace' | 'limits' | 'advanced'>('connection')
+  const [tab, setTab] = useState<'connection' | 'workspace' | 'learning' | 'limits' | 'advanced'>('connection')
   const [draft, setDraft] = useState(props.settings)
   const [saving, setSaving] = useState(false)
   const [savedNote, setSavedNote] = useState('')
@@ -1002,7 +1023,7 @@ function SettingsPane(props: {
   return <form className="settings-page" noValidate onSubmit={event => { event.preventDefault(); void save() }}>
     <nav className="settings-tabs" aria-label="Bot settings sections">
       <button type="button" disabled={saving} onClick={props.onProfile}>Profile & browser</button>
-      {([['connection', 'Model'], ['workspace', 'Files & tools'], ['limits', 'Limits'], ['advanced', 'Advanced']] as const).map(([value, label]) => <button key={value} type="button" disabled={saving} aria-current={tab === value ? 'page' : undefined} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{label}</button>)}
+      {([['connection', 'Model'], ['workspace', 'Files & tools'], ['learning', 'Memory & skills'], ['limits', 'Limits'], ['advanced', 'Advanced']] as const).map(([value, label]) => <button key={value} type="button" disabled={saving} aria-current={tab === value ? 'page' : undefined} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{label}</button>)}
     </nav>
     <fieldset className="settings-content" disabled={saving}>
       {tab === 'connection' && <>
@@ -1027,6 +1048,7 @@ function SettingsPane(props: {
           <div className="callout"><strong>You stay in control</strong><p>{draft.provider === 'codex' ? 'Codex uses its own sandbox and approval rules. Safe reads can run automatically; requests needing approval appear in chat. Native reads can extend beyond this folder, and native edits do not have Riot’s Undo button.' : TERMINAL_WARNING}</p></div>
         </section>
       </>}
+      {tab === 'learning' && <LearningSettings settings={draft} onChange={update} />}
       {tab === 'limits' && <>
         <div className="page-intro"><h2>Set a comfortable pace.</h2><p>Limit how long a task can run. You can stop your bot at any time.</p></div>
         <section className="settings-section"><h3>Time per task</h3><NumberField label="Maximum minutes" value={Math.round(draft.maxTaskDurationMs / 60000)} onChange={value => update({ maxTaskDurationMs: value * 60 * 1000 })} /><p className="help">When time runs out, work pauses and partial results are kept.</p></section>
@@ -1794,6 +1816,7 @@ export function NewBotForm(props: { settings: PublicSettings; api: RiotBridge; c
 }
 
 function labelPurpose(purpose: string): string {
+  if (purpose === 'learning_review') return 'Memory & skill check'
   if (purpose === 'scheduled_task') return 'Scheduled task'
   if (purpose === 'reply_continuation') return 'Automatic continuation'
   if (purpose === 'codex_turn') return 'Native Codex turn'

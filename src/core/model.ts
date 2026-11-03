@@ -69,6 +69,10 @@ const stringProp = (description: string): Record<string, unknown> => ({ type: 's
 
 export const TOOLS: ToolDefinition[] = [
   {
+    name: 'set_learning_preferences', description: 'Only when the user asks: turn automatic important memories or skill suggestions on/off for this bot. Omit unchanged options. Keeps existing memories/skills; explicit save requests still work.',
+    parameters: objectSchema({ auto_memory: { type: 'boolean' }, skill_suggestions: { type: 'boolean' } }, [])
+  },
+  {
     name: 'get_disk_space', description: 'Read available and total disk space directly, without a shell. Prefer this for disk-space questions. Checks one filesystem; defaults to this bot’s working folder.',
     parameters: objectSchema({ path: stringProp('Optional existing drive or folder, e.g. C:\\ or D:\\.') }, [])
   },
@@ -278,8 +282,9 @@ const FILE_TOOL_NAMES = new Set(['list_files', 'search_files', 'read_file', 'wri
 const TERMINAL_TOOL_NAMES = new Set(['run_terminal'])
 const SCHEDULE_TOOL_NAMES = new Set(['list_schedules', 'create_schedule', 'manage_schedule'])
 
-export function toolsForGroups(groups: Array<'files' | 'terminal' | 'browser' | 'schedules'>): ToolDefinition[] {
+export function toolsForGroups(groups: Array<'files' | 'terminal' | 'browser' | 'schedules'>, learningControl = false): ToolDefinition[] {
   const selected = TOOLS.filter((tool) => {
+    if (tool.name === 'set_learning_preferences') return learningControl
     if (FILE_TOOL_NAMES.has(tool.name)) return groups.includes('files')
     if (TERMINAL_TOOL_NAMES.has(tool.name)) return groups.includes('terminal')
     if (SCHEDULE_TOOL_NAMES.has(tool.name)) return groups.includes('schedules')

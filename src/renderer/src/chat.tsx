@@ -145,8 +145,10 @@ function TurnView(props: {
     return change ? [[change.editId, message] as const] : []
   })).values()]
   const notices = props.turn.rest.filter((message) => message.role === 'notice')
-  const status = props.running ? props.statusLabel || 'Working…' : props.outcome ? actionStatus(tools.length, props.outcome, tools.filter(message => message.toolError).length) : `${tools.length} recorded actions · outcome unavailable`
+  const failedCount = tools.filter(message => message.toolError).length
+  const status = props.running ? props.statusLabel || 'Working…' : props.outcome ? actionStatus(tools.length, props.outcome, failedCount) : `${tools.length} recorded actions · outcome unavailable`
   const incomplete = props.outcome && props.outcome !== 'completed' && props.outcome !== 'running'
+  const showHistory = !props.running && tools.length > 0 && (props.showToolDetails || incomplete || failedCount > 0)
   const long = prose.some((message) => isLongForm(message.content))
 
   async function copy(): Promise<void> {
@@ -168,7 +170,7 @@ function TurnView(props: {
           <ReactionList message={props.turn.user} api={props.api} onError={props.onError} />
         </div>
       )}
-      {(prose.length > 0 || tools.length > 0 || files.length > 0 || notices.length > 0 || (props.latest && props.running)) && (
+      {(prose.length > 0 || showHistory || files.length > 0 || notices.length > 0 || (props.latest && props.running)) && (
         <div className="assistant-group">
           {props.avatar && <BotAvatar avatar={props.avatar} size={32} />}
           <div className="assistant-body">
@@ -186,7 +188,7 @@ function TurnView(props: {
                 {incomplete && message.id === prose.at(-1)?.id && <p className="interrupted">{props.outcome === 'paused' ? 'Paused · partial reply' : props.outcome === 'failed' ? 'Failed · partial reply' : 'Interrupted · partial reply'}</p>}
               </article>
             ))}
-            {files.length > 0 && <details className="file-changes" open={props.showToolDetails}><summary>{files.length === 1 ? '1 file change' : `${files.length} file changes`} · View files & undo</summary>{files.map((message) => {
+            {files.length > 0 && <details className="file-changes"><summary>{files.length === 1 ? '1 file change' : `${files.length} file changes`} · View files & undo</summary>{files.map((message) => {
               const change = fileChange(message.toolName, message.content)
               if (!change) return null
               return (
@@ -209,8 +211,8 @@ function TurnView(props: {
                 {message.content.includes('Take over the browser') && <BrowserRecovery api={props.api} onError={props.onError} />}
               </div>
             ))}
-            {!props.running && tools.length > 0 && (
-              <details className="tool" open={props.showToolDetails}>
+            {showHistory && (
+              <details className="tool">
                 <summary>{status}</summary>
                 {tools.map((message) => (
                   <div key={message.id} className="tool-detail">

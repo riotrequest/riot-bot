@@ -16,7 +16,9 @@ function setup(dbPath = path.join(tempDir(),'riot.sqlite')) {
   return {app,provider,credentials,dir:path.dirname(dbPath),dbPath}
 }
 async function makeBot(app: RiotService,name: string) {
-  return app.createBot({name,purpose:'Deletion verification',provider:'openai',model:'fixture',workspaceKind:'suggested',workspacePath:'',avatarKind:'builtin',avatarValue:'spark',avatarBackground:'#d4544a'})
+  const result=await app.createBot({name,purpose:'Deletion verification',provider:'openai',model:'fixture',workspaceKind:'suggested',workspacePath:'',avatarKind:'builtin',avatarValue:'spark',avatarBackground:'#d4544a'})
+  app.updateSettings({autoMemory:false,autoSkillSuggestions:false})
+  return result
 }
 
 describe('deleting a bot',()=>{

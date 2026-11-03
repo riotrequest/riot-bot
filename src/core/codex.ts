@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import type { CodexStatus } from '../shared/types'
 import { ConfigError, PauseError, StopError } from './errors'
 import { publicErrorMessage } from './redact'
+import { LEARNING_SCHEMA } from './learning'
 
 type Obj = Record<string, any>
 export interface CodexUsage { inputTokens: number; outputTokens: number; cachedInputTokens: number }
@@ -24,6 +25,8 @@ export interface CodexTurnInput {
   approve: (kind: 'command' | 'file', command: string, cwd: string) => Promise<boolean>
   tool: (name: string, args: Obj) => Promise<string>
   dynamicTools: Obj[]
+  /** A disposable, tool-free assessment, separate from the user's native conversation. */
+  review?: boolean
 }
 export interface CodexTurnResult { status: string; error: string; usage: CodexUsage | null }
 
@@ -257,10 +260,10 @@ export class CodexService {
         const readiness = await this.request('windowsSandbox/readiness')
         if (readiness.status !== 'ready') throw new PauseError('The native Windows sandbox is not ready. Update the official Codex CLI and retry. No turn was started.')
       }
-      const config = { web_search: input.tools ? 'live' : 'disabled', 'features.shell_tool': input.tools, 'features.multi_agent': false }
+      const config = { web_search: input.tools ? 'live' : 'disabled', 'features.shell_tool': input.tools, 'features.multi_agent': false, ...(input.review ? { project_doc_max_bytes: 0 } : {}) }
       const threadParams = { model: input.model, cwd: input.cwd, approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: input.editing && input.tools ? 'workspace-write' : 'read-only', developerInstructions: input.instructions, config }
       const result = input.threadId ? await this.request('thread/resume', { ...threadParams, threadId: input.threadId, excludeTurns: true })
-        : await this.request('thread/start', { ...threadParams, dynamicTools: input.tools ? input.dynamicTools : [] })
+        : await this.request('thread/start', { ...threadParams, dynamicTools: input.tools ? input.dynamicTools : [], ...(input.review ? { ephemeral: true } : {}) })
       const threadId = result.thread?.id
       if (typeof threadId !== 'string') throw new PauseError('Codex did not return a thread. No turn was started.')
       if (input.signal.aborted) throw new StopError('Stopped before starting Codex.')
@@ -280,11 +283,16 @@ export class CodexService {
       input.signal.addEventListener('abort', abort, { once: true })
       try {
         if (input.signal.aborted) throw new StopError('Stopped before starting Codex.')
-        const started = await this.request('turn/start', { threadId, model: input.model, input: input.input, cwd: input.cwd, approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandboxPolicy: input.editing && input.tools ? { type: 'workspaceWrite', writableRoots: [input.cwd], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true } : { type: 'readOnly', networkAccess: false } })
+        const started = await this.request('turn/start', { threadId, model: input.model, input: input.input, cwd: input.cwd, approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandboxPolicy: input.editing && input.tools ? { type: 'workspaceWrite', writableRoots: [input.cwd], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true } : { type: 'readOnly', networkAccess: false }, ...(input.review ? { effort: 'low', outputSchema: LEARNING_SCHEMA } : {}) })
         active!.turnId = started.turn?.id ?? active!.turnId
         if (input.signal.aborted) abort()
         return await finished
-      } finally { input.signal.removeEventListener('abort', abort); this.active = null }
+      } finally {
+        input.signal.removeEventListener('abort', abort)
+        this.active = null
+        // Release disposable review sessions without delaying the reply or changing the main thread.
+        if (input.review && this.process && !input.signal.aborted) void this.request('thread/unsubscribe', { threadId }).catch(() => undefined)
+      }
     } catch (error) {
       await this.close()
       if (input.signal.aborted) throw new StopError('The native Codex turn was interrupted. Work already sent can count against account usage.')

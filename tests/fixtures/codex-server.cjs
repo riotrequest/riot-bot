@@ -75,6 +75,7 @@ async function turn(params) {
     log({ dynamicResult: result })
     text += ': ' + result.contentItems[0].text
   }
+  if (params.outputSchema) text = JSON.stringify(config.review ?? { memory: null, skill: null })
   const item = { type: 'agentMessage', id: 'reply-' + turnCount, text, phase: 'final_answer' }
   event('item/started', { ...base, item: { ...item, text: '' } })
   event('item/agentMessage/delta', { ...base, itemId: item.id, delta: text.slice(0, 6) })
@@ -110,6 +111,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (method === 'account/logout') { connected = false; return reply(id, {}) }
   if (method === 'thread/start') { threadId = randomUUID(); turnCount = 0; return reply(id, { thread: { id: threadId } }) }
   if (method === 'thread/resume') { threadId = params.threadId; return reply(id, { thread: { id: threadId } }) }
+  if (method === 'thread/unsubscribe') return reply(id, { status: 'unsubscribed' })
   if (method === 'turn/start') {
     if (config.scenario === 'quota') return write({ id, error: { code: -32000, message: 'Codex usage limit reached. Try after reset.' } })
     turnId = randomUUID(); turnCount++
