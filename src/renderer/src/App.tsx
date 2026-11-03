@@ -22,6 +22,7 @@ import type {
   HistoryHitView,
   JobView,
   PublicSettings,
+  ScheduleView,
   RiotBridge,
   Skill,
   SkillProposal,
@@ -32,9 +33,10 @@ import { formatUsd, TERMINAL_WARNING } from '../../shared/types'
 import { AVATAR_CHOICES, AVATAR_COLORS, AVATAR_EMOJIS, BotAvatar } from './avatar'
 import { AttachmentList, ChatTranscript } from './chat'
 import { JobsPane, LibraryPane } from './jobs'
+import { SchedulesPane } from './schedules'
 import { ChatWelcome, EmptyState, Icon, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
-type Screen = 'chat' | 'jobs' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
+type Screen = 'chat' | 'jobs' | 'schedules' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
 
 export function App() {
   const api = window.riot
@@ -55,6 +57,9 @@ function Shell({ api }: { api: RiotBridge }) {
   const [bots, setBots] = useState<Bot[]>([])
   const [bot, setBot] = useState<Bot | null>(null)
   const [jobs, setJobs] = useState<JobView[]>([])
+  const [schedules, setSchedules] = useState<ScheduleView[]>([])
+  const [reminder, setReminder] = useState<ScheduleView | null>(null)
+  const [scheduleTarget, setScheduleTarget] = useState<string | null>(null)
   const [artifacts, setArtifacts] = useState<ArtifactView[]>([])
   const [preferences, setPreferences] = useState<AppPreferences>({ showToolDetails: false })
   const [activityScope, setActivityScope] = useState<'bot' | 'app'>('bot')
@@ -105,6 +110,7 @@ function Shell({ api }: { api: RiotBridge }) {
     setBot(snapshot.bot)
     viewedBotId.current = snapshot.bot?.id ?? null
     setJobs(snapshot.jobs ?? [])
+    setSchedules(snapshot.schedules ?? [])
     setArtifacts(snapshot.artifacts ?? [])
     setPreferences(snapshot.preferences)
     setOngoingId(snapshot.ongoingConversationId)
@@ -135,10 +141,17 @@ function Shell({ api }: { api: RiotBridge }) {
   useEffect(() => {
     void reload().catch((reason: unknown) => setError(messageOf(reason)))
     return api.onEvent((event) => {
+      if (event.type === 'schedules-changed') {
+        const id = viewedBotId.current
+        void api.listSchedules().then(items => { if (id === viewedBotId.current) setSchedules(items) }).catch(() => undefined)
+        return
+      }
+      if (event.type === 'reminder-fired') { setReminder(event.schedule); return }
+      if (event.type === 'open-schedule') { setScheduleTarget(event.botId); return }
       if (event.type === 'jobs-changed') {
         void api.listJobs('app').then(setJobs).catch(() => undefined)
         const id = viewedBotId.current
-        void api.getSnapshot().then((snapshot) => { if (id === viewedBotId.current && id === snapshot.bot?.id) setDraftAttachments(snapshot.draftAttachments ?? []) }).catch(() => undefined)
+        void api.getSnapshot().then((snapshot) => { if (id === viewedBotId.current && id === snapshot.bot?.id) { setDraftAttachments(snapshot.draftAttachments ?? []); setSchedules(snapshot.schedules ?? []) } }).catch(() => undefined)
         return
       }
       if (event.type === 'artifacts-changed') {
@@ -257,6 +270,11 @@ function Shell({ api }: { api: RiotBridge }) {
     setScreen(next)
   }
 
+  useEffect(() => {
+    if (!scheduleTarget || editingBusy) return
+    void selectBot(scheduleTarget).then(() => setScreen('schedules')).catch((reason: unknown) => setError(messageOf(reason))).finally(() => setScheduleTarget(null))
+  }, [scheduleTarget, editingBusy])
+
   return (
     <div className="app">
       <aside className="sidebar" aria-label="Bots and app settings">
@@ -329,6 +347,7 @@ function Shell({ api }: { api: RiotBridge }) {
             <button onClick={() => setError(null)}>Dismiss</button>
           </div>
         )}
+        {reminder && <div className="banner reminder-banner" role="status"><div><strong>Reminder: {reminder.title}</strong><p>{reminder.instructions}</p></div><div className="row"><button onClick={() => { setScheduleTarget(reminder.botId); setReminder(null) }}>View schedule</button><button onClick={() => setReminder(null)}>Dismiss</button></div></div>}
         {approval && (
           <ApprovalCard
             key={approval.id}
@@ -429,6 +448,7 @@ function Shell({ api }: { api: RiotBridge }) {
           />
         )}
         {screen === 'jobs' && <JobsPane api={api} jobs={jobs} bots={bots} botId={bot?.id ?? null} onOpen={(id) => void selectBot(id).catch((reason: unknown) => setError(messageOf(reason)))} onError={setError} />}
+        {screen === 'schedules' && bot && <SchedulesPane key={bot.id} api={api} schedules={schedules} botName={bot.name} onChange={setSchedules} onBusy={setEditingBusy} onJobs={() => setScreen('jobs')} />}
         {screen === 'library' && <LibraryPane api={api} artifacts={artifacts} onError={setError} />}
         {screen === 'memory' && (
           <MemoryPane
@@ -503,7 +523,7 @@ function Shell({ api }: { api: RiotBridge }) {
         <div className="workspace-heading"><p className="sidebar-label">WORKSPACE</p><strong title={bot?.name}>{bot?.name ?? 'Choose a bot to get started'}</strong></div>
         <nav className="workspace-nav" aria-label="Bot workspace">
           {([
-            ['chat', 'chat', 'Chat'], ['jobs', 'tasks', 'Tasks'], ['library', 'files', 'Files'],
+            ['chat', 'chat', 'Chat'], ['jobs', 'tasks', 'Tasks'], ['schedules', 'calendar', 'Schedule'], ['library', 'files', 'Files'],
             ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills']
           ] as [Screen, IconName, string][]).map(([value, icon, label]) => <button key={value} disabled={!bot || editingBusy} className={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'active' : ''} aria-current={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'page' : undefined} onClick={() => showScreen(value)}>
             <Icon name={icon} /><span>{label}</span>{value === 'jobs' && activeTaskCount > 0 && <small className="nav-count">{activeTaskCount}</small>}
@@ -1487,6 +1507,7 @@ function ProviderCheck(props: { api: RiotBridge; onError: (message: string) => v
 }
 
 function screenTitle(screen: Screen): string {
+  if (screen === 'schedules') return 'Schedule'
   if (screen === 'jobs') return 'Tasks'
   if (screen === 'library') return 'Files'
   if (screen === 'memory') return 'Memories'
@@ -1499,6 +1520,7 @@ function screenTitle(screen: Screen): string {
 }
 
 function screenDescription(screen: Screen): string {
+  if (screen === 'schedules') return 'Reminders and work that happens on a schedule.'
   if (screen === 'jobs') return 'See what’s in progress, finished, or waiting for you.'
   if (screen === 'library') return 'The files your bot has made, all in one place.'
   if (screen === 'memory') return 'Useful things your bot remembers about you.'
@@ -1718,6 +1740,7 @@ export function NewBotForm(props: { settings: PublicSettings; api: RiotBridge; c
 }
 
 function labelPurpose(purpose: string): string {
+  if (purpose === 'scheduled_task') return 'Scheduled task'
   if (purpose === 'reply_continuation') return 'Automatic continuation'
   if (purpose === 'codex_turn') return 'Native Codex turn'
   if (purpose === 'compaction') return 'Summary'

@@ -71,7 +71,7 @@ export function ChatTranscript(props: {
   }
 
   return (
-    <div className="transcript" ref={scroller} onScroll={onScroll}>
+    <div className="transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="region" aria-label="Conversation">
       {props.detail.olderMessagesCursor && <button type="button" className="load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}</button>}
       {turns.map((turn, index) => (
         <TurnView
@@ -186,7 +186,7 @@ function TurnView(props: {
                 {incomplete && message.id === prose.at(-1)?.id && <p className="interrupted">{props.outcome === 'paused' ? 'Paused · partial reply' : props.outcome === 'failed' ? 'Failed · partial reply' : 'Interrupted · partial reply'}</p>}
               </article>
             ))}
-            {files.map((message) => {
+            {files.length > 0 && <details className="file-changes" open={props.showToolDetails}><summary>{files.length === 1 ? '1 file change' : `${files.length} file changes`} · View files & undo</summary>{files.map((message) => {
               const change = fileChange(message.toolName, message.content)
               if (!change) return null
               return (
@@ -197,7 +197,7 @@ function TurnView(props: {
                   </button>
                 </div>
               )
-            })}
+            })}</details>}
             {notices.map((message) => (
               <div key={message.id} className={message.content.startsWith('Interrupted.') || message.content.includes('empty reply') ? 'banner warn' : 'notice'}>
                 <p>{message.content}</p>

@@ -14,7 +14,7 @@ export interface CodexStatus {
 
 export type RunStatus = 'running' | 'completed' | 'stopped' | 'failed' | 'interrupted' | 'paused'
 
-export type RunTrigger = 'user_message' | 'provider_check' | 'bot_setup'
+export type RunTrigger = 'user_message' | 'provider_check' | 'bot_setup' | 'scheduled_task'
 
 export interface PublicSettings {
   provider: ProviderId
@@ -359,6 +359,37 @@ export interface Snapshot {
   jobs?: JobView[]
   artifacts?: ArtifactView[]
   runningBotIds?: string[]
+  schedules: ScheduleView[]
+}
+
+export type ScheduleRepeat = 'once' | 'daily' | 'weekdays' | 'weekly'
+export interface ScheduleDraft {
+  kind: 'reminder' | 'task'
+  title: string
+  instructions: string
+  startAt: string
+  repeat: ScheduleRepeat
+  timezone: string
+}
+export interface ScheduleView {
+  id: string
+  botId: string
+  conversationId: string
+  kind: 'reminder' | 'task'
+  title: string
+  instructions: string
+  context: string
+  startAt: number
+  repeat: ScheduleRepeat
+  timezone: string
+  nextRunAt: number | null
+  state: 'active' | 'paused' | 'completed' | 'cancelled'
+  lastRunAt: number | null
+  lastStatus: string
+  lastNote: string
+  lastJobId: string | null
+  createdAt: number
+  updatedAt: number
 }
 
 export type JobStatus = 'queued' | 'running' | 'completed' | 'paused' | 'failed' | 'interrupted' | 'cancelled'
@@ -417,6 +448,9 @@ export interface BotCreateResult {
 }
 
 export type AppEvent =
+  | { type: 'schedules-changed' }
+  | { type: 'reminder-fired'; schedule: ScheduleView }
+  | { type: 'open-schedule'; botId: string }
   | { type: 'jobs-changed' }
   | { type: 'artifacts-changed' }
   | { type: 'codex-status'; status: CodexStatus }
@@ -460,6 +494,10 @@ export interface RiotBridge {
   sendMessage(conversationId: string, text: string, attachmentIds?: string[]): Promise<RunState>
   queueMessage(conversationId: string, text: string, attachmentIds?: string[]): Promise<JobView>
   listJobs(scope?: 'bot' | 'app'): Promise<JobView[]>
+  listSchedules(): Promise<ScheduleView[]>
+  saveSchedule(draft: ScheduleDraft, id?: string): Promise<ScheduleView>
+  manageSchedule(id: string, action: 'pause' | 'resume' | 'cancel'): Promise<ScheduleView>
+  runScheduleNow(id: string): Promise<void>
   cancelJob(id: string): Promise<void>
   resumeJob(id: string): Promise<JobView>
   listArtifacts(query?: string): Promise<ArtifactView[]>

@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { buildContext } from '../src/core/context'
 import { Database, type MessageRecord } from '../src/core/db'
 import { newId } from '../src/core/ids'
-import { BROWSER_TOOLS, TOOLS } from '../src/core/model'
+import { toolsForGroups } from '../src/core/model'
 import { SYSTEM_PROMPT } from '../src/core/prompt'
 import { estimateTokens, fitTokens } from '../src/core/settings'
 import { makeApp, reopen } from './helpers'
 
-const toolReserve = estimateTokens(JSON.stringify(TOOLS))
+const toolReserve = estimateTokens(JSON.stringify(toolsForGroups(['files', 'terminal'])))
 
 describe('input budget', () => {
   it('fits a short workspace question with the current tool set and a saved summary', () => {
@@ -71,7 +71,7 @@ describe('input budget', () => {
       recent,
       tokenBudget: 8000,
       responseAllowance: 2048,
-      toolTokenReserve: estimateTokens(JSON.stringify([...TOOLS, ...BROWSER_TOOLS]))
+      toolTokenReserve: estimateTokens(JSON.stringify(toolsForGroups(['files', 'terminal', 'browser'])))
     })
     expect(built.overBudget).toBe(false)
     expect(built.omittedMessageIds.length).toBeGreaterThan(0)

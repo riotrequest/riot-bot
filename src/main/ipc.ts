@@ -8,6 +8,7 @@ import type { SkillDraft } from '../core/skills'
 import { publicErrorMessage } from '../core/redact'
 import type { AppPreferences, BotDraft, ProviderId, PublicSettings } from '../shared/types'
 import type { ElectronCredentialStore } from './credentials'
+import type { ScheduleDraft } from '../shared/types'
 
 const SETTING_KEYS: (keyof PublicSettings)[] = [
   'provider',
@@ -53,6 +54,10 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('app:getSnapshot', (app) => app.getSnapshot())
   handle('jobs:queue', (app,args) => app.queueMessage(requireId(args[0]),requireText(args[1],'Write a message first.'),args[2] == null ? [] : requireAttachmentIds(args[2])))
   handle('jobs:list', (app,args) => app.listJobs(args[0] === 'app' ? 'app' : 'bot'))
+  handle('schedules:list', app => app.listSchedules())
+  handle('schedules:save', (app, args) => app.saveSchedule(scheduleDraft(args[0]), args[1] == null ? undefined : requireId(args[1])))
+  handle('schedules:manage', (app, args) => app.manageSchedule(requireId(args[0]), args[1] as 'pause' | 'resume' | 'cancel'))
+  handle('schedules:runNow', (app, args) => app.runScheduleNow(requireId(args[0])))
   handle('jobs:cancel', (app,args) => app.cancelJob(requireId(args[0])))
   handle('jobs:resume', (app,args) => app.resumeJob(requireId(args[0])))
   handle('artifacts:list', (app,args) => app.listArtifacts(typeof args[0] === 'string' ? args[0] : ''))
@@ -276,6 +281,12 @@ function botDraft(value: unknown): BotDraft {
     avatarBackground: typeof record.avatarBackground === 'string' ? record.avatarBackground : '',
     avatarBytes: bytes
   }
+}
+
+function scheduleDraft(value: unknown): ScheduleDraft {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Describe the reminder or scheduled task first.')
+  const input = value as Record<string, unknown>
+  return { kind: input.kind as ScheduleDraft['kind'], title: requireText(input.title, 'Add a title.'), instructions: requireText(input.instructions, 'Describe the reminder or task.'), startAt: requireText(input.startAt, 'Choose a date and time.'), repeat: input.repeat as ScheduleDraft['repeat'], timezone: requireText(input.timezone, 'Choose a time zone.') }
 }
 
 function botPatch(value: unknown): { name?: string; purpose?: string; instructions?: string } {

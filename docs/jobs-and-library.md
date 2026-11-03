@@ -1,6 +1,6 @@
 # Tasks, saved files and local verification
 
-Riot’s Electron main process owns execution independently of the chat renderer. The desktop window closes to the tray. There is no extra daemon to install and no model work starts on boot, bot selection, window opening, status refresh or sign-in.
+Riot’s Electron main process owns execution independently of the chat renderer. The desktop window closes to the tray. There is no extra daemon to install. Model work starts only from a user request or a saved scheduled task; bot selection, window opening, status refresh and sign-in do not start it. Due reminders can show on boot; overdue bot tasks wait for **Run now**. See [scheduling](scheduling.md).
 
 ## Execution
 
@@ -14,7 +14,7 @@ Approval cards show a brief action, folder and permission warning. File changes,
 
 Skill previews have their own layout, separate from approval cards. Save skill, Edit and Dismiss stay outside the scrolling procedure/editor so long previews cannot hide the controls. Details start collapsed; saving persists the reviewed skill for that bot.
 
-Stop applies to the selected bot and pauses its remaining queue. Stop all is in the tray menu. A failed or paused job also pauses its follow-ups. Cancelling an unstarted job releases its draft attachments. Resume is an explicit request to run with the bot’s current settings. For work that already started, the new attempt receives the earlier task plus instructions to inspect saved results, avoid repeating completed actions and request any outstanding approvals again. This is a review-based continuation, not exactly-once recovery for external actions.
+Stop applies to the selected bot and pauses its remaining queue. Stop all is in the tray menu and also pauses active bot-task schedules; reminders remain enabled. A failed or paused job also pauses its follow-ups. A failed, paused or stopped scheduled run pauses its schedule. Cancelling an unstarted job releases its draft attachments. Resume is an explicit request to run with the bot’s current settings. For work that already started, the new attempt receives the earlier task plus instructions to inspect saved results, avoid repeating completed actions and request any outstanding approvals again. This is a review-based continuation, not exactly-once recovery for external actions.
 
 Quit stops executors, waits for them to settle and closes the databases. On restart, active jobs are marked interrupted and queued jobs are restored paused. An abrupt crash has the same recovery policy. Previous approvals are denied during recovery. The browser’s cookies remain in its bot profile. Reopening the app never silently repeats a command or switches to another model or a paid API backend.
 
@@ -30,7 +30,7 @@ Capture is bounded to 1,000 inventoried files, 2,000 folders, 12 folder levels, 
 
 ## Deleting a bot
 
-Open that bot’s **Bot settings → Profile & browser → Delete this bot → Delete bot…** and type its exact name. Active work must stop first; queued work is discarded. Deletion removes the bot and its Riot conversations, messages, reactions, attachments, memories, skills/versions, proposals, job records, file-edit backups, Library files, avatar and browser profile. It keeps the project workspace, other bots, shared credentials, existing backups and the shared Codex profile (including native session history). Usage requests and reservations are detached and stripped of conversation/context/error data so the app-wide spend ceiling and usage totals remain correct.
+Open that bot’s **Bot settings → Profile & browser → Delete this bot → Delete bot…** and type its exact name. Active work must stop first; queued work is discarded. Deletion removes the bot and its Riot conversations, messages, reactions, attachments, memories, skills/versions, proposals, job records, schedules, file-edit backups, Library files, avatar and browser profile. It keeps the project workspace, other bots, shared credentials, existing backups and the shared Codex profile (including native session history). Usage requests and reservations are detached and stripped of conversation/context/error data so the app-wide spend ceiling and usage totals remain correct.
 
 The per-bot executor closes before data is removed. Database deletion runs in one transaction, and Quit waits for deletion to settle. File cleanup is limited to validated per-bot paths under Riot’s app-data directory, refuses parent junctions, and protects overlapping workspace paths. If a cache cannot be removed, the UI reports the remaining paths. Deletion is logical removal from Riot, not forensic erasure of SQLite pages, backups or provider-managed history. Deleting the last bot leaves a persistent empty state with no automatic model calls.
 

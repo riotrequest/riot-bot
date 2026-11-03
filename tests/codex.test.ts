@@ -35,6 +35,21 @@ function turnInput(dir: string, patch: Partial<CodexTurnInput> = {}): CodexTurnI
 }
 
 describe('native Codex connection', () => {
+  it('exposes built-in schedules and carries scheduled context without allowing recursive schedules', async () => {
+    const { app, id, requests, provider } = nativeApp({ scenario: 'schedule', schedule: { kind: 'reminder', title: 'Fixture reminder', instructions: 'Review the fixture.', start_at: new Date(Date.now() + 86400000).toISOString(), repeat: 'once', timezone: 'UTC' } })
+    expect((await app.sendMessage(id, 'Remind me to review the fixture tomorrow.')).status).toBe('completed')
+    expect(app.listSchedules()).toHaveLength(1)
+    const start = requests().find(item => item.method === 'thread/start')
+    expect(start.params.dynamicTools.some((item: any) => item.name === 'riot_create_schedule')).toBe(true)
+    const run = await app.sendMessage(id, 'Check RLH every morning.', [], 'scheduled_task', 'Reference context captured: RLH uses the fixture email dashboard.')
+    expect(run.trigger).toBe('scheduled_task')
+    expect(app.listSchedules()).toHaveLength(1)
+    expect(requests().filter(item => item.method === 'thread/resume').at(-1).params.developerInstructions).toContain('RLH uses the fixture email dashboard')
+    expect(requests().filter(item => item.dynamicResult).at(-1).dynamicResult).toMatchObject({ success: false })
+    expect(app.listActivity()[0].trigger).toBe('scheduled_task')
+    expect(provider.calls).toHaveLength(0)
+  })
+
   it('pauses an unlisted model before starting a thread or consuming a native turn',async()=>{
     const {app,id,requests}=nativeApp()
     app.updateSettings({model:'unlisted-model'})

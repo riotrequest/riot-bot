@@ -144,6 +144,9 @@ button .ui-icon { vertical-align: middle; }
 .composer-hint { margin: 9px 0 16px; text-align: center; color: #9ca69f; font-size: 10px; flex-shrink: 0; }
 .composer-hint span { padding: 0 7px; color: #77877a; }
 .transcript { overflow-anchor: none; flex: 1; min-height: 0; overflow-y: auto; padding: 30px max(28px, calc((100% - 840px) / 2)); display: flex; flex-direction: column; gap: 20px; }
+.transcript, .chat-welcome, .bot-list, .sidebar, .workspace-sidebar, .panel, .runtime-pane, .settings-content, .new-bot-content, .bot-menu { scrollbar-width: none; }
+.transcript::-webkit-scrollbar, .chat-welcome::-webkit-scrollbar, .bot-list::-webkit-scrollbar, .sidebar::-webkit-scrollbar, .workspace-sidebar::-webkit-scrollbar, .panel::-webkit-scrollbar, .runtime-pane::-webkit-scrollbar, .settings-content::-webkit-scrollbar, .new-bot-content::-webkit-scrollbar, .bot-menu::-webkit-scrollbar { display: none; }
+.transcript:focus-visible { outline: 1px solid #a17d65; outline-offset: -3px; }
 .load-older { align-self: center; flex-shrink: 0; }
 .bubble { max-width: 760px; padding: 12px 16px; border-radius: 14px; }
 .bubble.user { align-self: flex-end; background: #35302c; border: 1px solid #4d4139; }
@@ -186,6 +189,35 @@ button .ui-icon { vertical-align: middle; }
 .skill-editor summary { display: list-item; color: #e3e8e1; font-size: 14px; }
 .skill-editor[open] > :not(summary) { margin-top: 15px; }
 .skill-editor label { display: grid; gap: 6px; margin-bottom: 14px; }
+.file-changes { border: 1px solid var(--border); border-radius: 10px; padding: 10px 13px; font-size: 12px; }
+.file-changes > summary { color: #b6c2b8; cursor: pointer; }
+.file-changes .file-change { margin-top: 10px; padding: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.file-changes .file-change p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.file-changes .file-change button { font-size: 12px; }
+.schedules-pane .runtime-intro { margin-bottom: 0; flex-wrap: wrap; }
+.schedules-pane .runtime-intro > .row { flex-shrink: 0; }
+.schedule-local-note { display: flex; align-items: center; gap: 9px; }
+.schedule-local-note .ui-icon { color: var(--accent); }
+.schedule-editor fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 18px; }
+.schedule-kind { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.schedule-kind label { display: flex; align-items: flex-start; gap: 9px; padding: 13px; border: 1px solid #48504f; border-radius: 9px; cursor: pointer; }
+.schedule-kind label:has(input:checked) { border-color: #c08c74; background: #302a25; }
+.schedule-kind input { margin-top: 3px; }
+.schedule-kind span { display: grid; gap: 5px; }
+.schedule-kind small { color: var(--muted); font-weight: 400; font-size: 11px; }
+.schedule-editor .send { justify-self: start; }
+.schedule-card h3 { margin: 4px 0 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.schedule-card .eyebrow { font-size: 9px; letter-spacing: 1.3px; }
+.schedule-card .runtime-actions { margin-top: 17px; flex-wrap: wrap; gap: 8px; }
+.schedule-card .runtime-actions button { padding: 7px 10px; font-size: 12px; }
+.schedule-card .help { margin: 7px 0; }
+.schedule-instructions { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.schedule-note { border-left: 2px solid #a57d61; padding: 4px 0 4px 12px; color: #d0b69c; font-size: 12px; }
+.schedule-card pre { max-height: 240px; overflow: auto; background: #171b1d; border-radius: 8px; padding: 12px; }
+.reminder-banner { border-color: #a1785b; }
+.reminder-banner > div:first-child { min-width: 0; }
+.reminder-banner > div.row { flex-shrink: 0; }
+.reminder-banner p { margin: 4px 0 0; font-size: 12px; max-height: 4.5em; overflow: auto; }
 .usage h2 { font-size: 17px; margin: 0; }
 .usage p { margin: 5px 0; }
 .markdown {

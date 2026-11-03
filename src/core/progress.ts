@@ -1,6 +1,9 @@
 /** Present-tense status from the tool that is actually running. No model call. */
 export function progressLabel(name: string): string {
   switch (name) {
+    case 'create_schedule': return 'Saving your schedule…'
+    case 'list_schedules': return 'Checking your schedules…'
+    case 'manage_schedule': return 'Updating your schedule…'
     case 'list_memories':
     case 'save_memory':
     case 'update_memory':

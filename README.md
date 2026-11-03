@@ -10,11 +10,19 @@ The right Workspace sidebar uses **Tasks** for work in progress, **Files** for s
 
 **Bot settings** has **Profile & browser**, **Model**, **Files & tools**, **Limits**, and **Advanced**. Model/context tuning and the optional connection test live in Advanced. Profile & browser contains its name, purpose, extra instructions, icon, browser, earlier conversations, and deletion. Shared credentials, display preferences, the app-wide spending ceiling, and defaults live in the left sidebar’s app Settings. Defaults are seeded once from the previously selected bot on upgrade; later changes apply to new bots and do not switch existing bots. Chat shows the current provider and model below the bot’s name. The working status and View tasks stay together above the composer, using the same content width. Choosing a different working folder turns editing off in the form until you explicitly enable it and save. Existing saved permissions are preserved.
 
+## Reminders and scheduled work — November 3, 2026
+
+**Schedule** in the right Workspace supports reminders and bot tasks: once, daily, weekdays, or weekly. Ask in Chat (“Remind me to check email at 9 PM” or “Check the RLH email system every weekday at 8 AM”), or add one directly. Reminders show a desktop notification without an AI call. Bot tasks save conversation context, use that bot’s current setup and usual approvals, and put their results in Chat and Tasks. Both API and native Codex bots expose the built-in scheduling tools; scripts and Windows scheduled tasks are unnecessary.
+
+Schedules run while Riot is open or in the tray and this computer is awake. Missed reminders catch up when Riot resumes. Missed AI work waits for **Run now** rather than automatically repeating overdue work. Failed or stopped tasks pause their schedule. Edit, pause, resume, cancel, and the next run/result are available in Schedule. See [scheduling and recovery](docs/scheduling.md) for details.
+
+Chat and the main panels scroll without a visible scrollbar; mouse wheels, touchpads, and keyboard scrolling still work. File changes stay in a collapsed **View files & undo** section, with each edit’s Undo control available inside.
+
 ## Persistent jobs and saved files — November 2, 2026
 
 Messages now become durable jobs. You can queue a follow-up while a bot works and switch to another bot. Two bots can run independently; each has its own provider, tools, browser, approvals and Stop control. Jobs sharing a workspace take turns. The **Tasks** view shows queued work, approvals and outcomes across one or all bots.
 
-Closing the chat hides it in the Windows system tray while work continues. Double-click the Riot tray icon to reopen; use its menu to stop all work or **Quit Riot Bot**. Quit interrupts active jobs and pauses the queue. Reopening does not make model calls: choose **Resume** for work you want to continue. The computer must remain on and awake. This is a local desktop service; scheduled routines and a cloud/mobile control plane are still future work.
+Closing the chat hides it in the Windows system tray while work continues. Double-click the Riot tray icon to reopen; use its menu to stop all work or **Quit Riot Bot**. Quit interrupts active jobs and pauses the queue. Reopening does not replay interrupted work: choose **Resume** for work you want to continue. Future scheduled tasks run at their saved time. The computer must remain on and awake. This is a local desktop service; cloud/mobile control is not available.
 
 The per-bot **Files** screen keeps versioned copies of files created or changed during a job, including partial results from a stopped job. Copies remain available after the workspace original changes or is deleted. Chat keeps short summaries and workspace file links. **Show in folder** reveals the version in Explorer; HTML does not render automatically. See [job, Library and verification behavior](docs/jobs-and-library.md) for bounds and recovery details.
 
@@ -52,7 +60,7 @@ The first launch of this version keeps the existing database. Chats, memories, s
 
 Data lives in `%APPDATA%\riot-bot\`:
 
-- `riot-bot.sqlite` — bots, conversations, messages, attachments (including pending uploads), reactions, memories, skills, tasks, and usage
+- `riot-bot.sqlite` — bots, conversations, messages, attachments (including pending uploads), reactions, memories, skills, tasks, schedules, and usage
 - `avatars\` — uploaded bot images, stored as PNG thumbnails named by bot id
 - `browser-profiles\<bot id>\` — that bot’s Chromium cookies and site storage
 - `playwright-browsers\` — the Chromium download, after you choose Install Chromium
@@ -240,7 +248,7 @@ The running window was also checked at 1180 and 880 pixels wide. The sidebar sta
 - The secret check only catches common patterns.
 - File undo is refused if the file changed after the edit.
 - Images in model Markdown are not loaded. `http` and `https` links open externally. Avatar uploads are stored locally.
-- One task runs at a time. Nothing runs on a timer, and skills are not learned in the background.
+- One task per bot runs at a time, with up to two bots working independently; overlapping workspaces take turns. Only saved schedules start work on a timer. Skills are not learned in the background.
 - Typed drafts survive a bot switch in the same session and are not written to disk. Pending file and screenshot attachments are persisted.
 - No accounts, sync, telemetry, plugin marketplace, or extra agents.
 - Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one.

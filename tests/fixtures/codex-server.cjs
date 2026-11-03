@@ -56,6 +56,11 @@ async function turn(params) {
     const result = await ask('item/permissions/requestApproval', { ...base, permissions: { network: { enabled: true } } })
     log({ permissions: result })
   }
+  if (config.scenario === 'schedule') {
+    const result = await ask('item/tool/call', { ...base, callId: 'schedule-' + turnCount, tool: 'riot_create_schedule', arguments: config.schedule })
+    log({ dynamicResult: result })
+    text += ': ' + result.contentItems[0].text
+  }
   const item = { type: 'agentMessage', id: 'reply-' + turnCount, text, phase: 'final_answer' }
   event('item/started', { ...base, item: { ...item, text: '' } })
   event('item/agentMessage/delta', { ...base, itemId: item.id, delta: text.slice(0, 6) })

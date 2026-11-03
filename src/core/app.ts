@@ -25,6 +25,9 @@ import type {
   ProviderCheckResult,
   PublicSettings,
   RunState,
+  RunTrigger,
+  ScheduleDraft,
+  ScheduleView,
   Skill,
   SkillProposal,
   HistoryHitView,
@@ -46,6 +49,7 @@ import { AppError, ConfigError, LimitError, PauseError, ProviderError, StopError
 import { editTextFile, listFiles, readTextFile, searchFiles, undoFileEdit, writeTextFile } from './files'
 import { Gateway } from './gateway'
 import { newId } from './ids'
+import { nextOccurrence, scheduleClock, scheduleText, validateSchedule } from './schedules'
 import { RedactingLogger, silentLogger, type Logger } from './logger'
 import { formatHistoryList, historyRoleLabel } from './history'
 import { explicitRemember, memoryRejection } from './memory'
@@ -53,9 +57,9 @@ import { catalogIsFresh, lookupProviderContext, planContext, selectToolGroups, T
 import { BROWSER_TOOLS, TOOLS, toolsForGroups, type ModelProvider, type ModelResponse, type ToolCall, type ToolDefinition } from './model'
 import { resolveWorkspacePath } from './path-safety'
 import { progressLabel } from './progress'
-import { COMPACTION_PROMPT, FILE_DELIVERY_INSTRUCTIONS, SYSTEM_PROMPT, toolLabel } from './prompt'
+import { COMPACTION_PROMPT, FILE_DELIVERY_INSTRUCTIONS, SCHEDULE_INSTRUCTIONS, SYSTEM_PROMPT, toolLabel } from './prompt'
 import { acceptReactionEmoji, reactionLabel } from './reactions'
-import { publicErrorMessage, redact } from './redact'
+import { looksLikeSecret, publicErrorMessage, redact } from './redact'
 import { explicitSkillIntent, parseSkillMarkdown, skillRejection, skillToMarkdown, type SkillDraft } from './skills'
 import { cleanBotName, fallbackBotName, parseSetupReply, SETUP_PROMPT } from './slug'
 import { allocateWorkspace, defaultWorkspaceRoot, removeEmptyFolder, useExistingWorkspace } from './workspace'
@@ -114,6 +118,7 @@ export class RiotApp {
   private settingsOverride: Settings | null = null
   private inflight: Promise<unknown> | null = null
   private turnNote = ''
+  private scheduledContext = ''
   private skillSaveAllowed = false
   private skillUpdateAllowed = false
   private compactedThisRun = false
@@ -211,6 +216,7 @@ export class RiotApp {
       current,
       browser: this.browsers.view(bot?.id ?? ''),
       settings: this.db.getSettings(bot?.id ?? ''),
+      schedules: bot ? this.listSchedules() : [],
       appSettings: this.getAppSettings(),
       preferences: { showToolDetails: this.db.appConfig().showToolDetails },
       credentials: this.credentialStatus(),
@@ -490,8 +496,70 @@ export class RiotApp {
     this.db.removeDraftAttachment(id, attachment.botId)
   }
 
-  sendMessage(conversationId: string, text: string, attachmentIds: string[] = []): Promise<RunState> {
-    return this.trackOperation(() => this.sendInner(conversationId, text, attachmentIds))
+  sendMessage(conversationId: string, text: string, attachmentIds: string[] = [], trigger: RunTrigger = 'user_message', referenceContext = ''): Promise<RunState> {
+    return this.trackOperation(() => this.sendInner(conversationId, text, attachmentIds, trigger, referenceContext))
+  }
+
+  listSchedules(): ScheduleView[] {
+    return this.db.listSchedules(this.scopeBot()).map(item => {
+      const job = item.lastJobId ? this.db.getJob(item.lastJobId) : null
+      return job && item.lastStatus === 'queued' ? { ...item, lastStatus: job.status, lastNote: job.note || item.lastNote } : item
+    })
+  }
+
+  private checkScheduleIntent(conversationId: string, runId: string): void {
+    if (this.db.getRun(runId)?.trigger === 'scheduled_task') throw new ConfigError('Scheduled work cannot create or change schedules. Ask in chat or use the Schedule view.')
+    if (!this.scheduleRequested(conversationId)) throw new ConfigError('The user must request a reminder, scheduled task, or schedule change first.')
+  }
+
+  private scheduleRequested(conversationId: string): boolean {
+    const messages = this.db.pageMessages(conversationId, undefined, 12).messages.filter(message => message.role === 'user' || (message.role === 'assistant' && message.content.trim()))
+    const user = [...messages].reverse().find(message => message.role === 'user')
+    if (!user) return false
+    const intent = /\b(remind|reminder|schedule|scheduled|routine|recurring|every|each|daily|weekly|weekdays|tomorrow|tonight|pause|resume|cancel|reschedule|change|update|delete|stop)\b/i
+    if (intent.test(user?.content ?? '')) return true
+    const before = messages.slice(0, messages.indexOf(user))
+    const question = before.at(-1), prior = [...before].reverse().find(message => message.role === 'user')
+    return Boolean(question?.role === 'assistant' && question.content.includes('?') && intent.test(prior?.content ?? '') && /^(?:yes\b|sure\b|okay\b|ok\b|at\b|\d|morning\b|evening\b|noon\b|midnight\b)/i.test(user.content.trim()) && user.content.length < 100)
+  }
+
+  saveSchedule(input: ScheduleDraft, id?: string): ScheduleView {
+    const botId = this.scopeBot(), now = this.now()
+    const bot = this.db.getBot(botId)
+    if (!bot?.ongoingConversationId) throw new ConfigError('Choose a bot before adding a schedule.')
+    const previous = id ? this.db.getSchedule(id, botId) : null
+    if (id && !previous) throw new ConfigError('That schedule is not in this bot.')
+    const clean = validateSchedule(input, now)
+    if (looksLikeSecret(`${clean.title}\n${clean.instructions}`, this.credentials.secretValues())) throw new ConfigError('Keep passwords and API keys out of schedules. Refer to the bot’s saved connection instead.')
+    return this.db.transaction(() => {
+      const schedules = this.db.listSchedules(botId)
+      const duplicate = !id && schedules.find(item => (item.state === 'active' || item.state === 'paused') && item.kind === clean.kind && item.title.toLowerCase() === clean.title.toLowerCase() && item.instructions === clean.instructions && item.repeat === clean.repeat && item.timezone === clean.timezone && (clean.repeat === 'once' ? Math.floor(item.startAt / 60000) === Math.floor(clean.startAt / 60000) : JSON.stringify(scheduleClock(item)) === JSON.stringify(scheduleClock(clean))))
+      if (duplicate) return duplicate
+      if (!id && schedules.length >= 100) throw new ConfigError('This bot has 100 schedules. Reuse or edit an existing one.')
+      const conversation = this.db.getConversation(bot.ongoingConversationId)
+      const context = clean.kind === 'task' ? previous?.context ?? redact([conversation?.summary, ...this.db.pageMessages(bot.ongoingConversationId, undefined, 12).messages.filter(message => (message.role === 'user' || message.role === 'assistant') && message.content.trim()).map(message => `${message.id} | ${message.role}: ${message.content.slice(0, 1500)}`)].filter(Boolean).join('\n').slice(-12000), this.credentials.secretValues()) : ''
+      const record: ScheduleView = { ...clean, id: id ?? newId(), botId, conversationId: previous?.conversationId ?? bot.ongoingConversationId, context, state: previous?.state === 'paused' ? 'paused' : 'active', lastRunAt: previous?.lastRunAt ?? null, lastStatus: previous?.lastStatus ?? '', lastNote: '', lastJobId: previous?.lastJobId ?? null, createdAt: previous?.createdAt ?? now, updatedAt: now }
+      this.db.saveSchedule(record)
+      this.emit({ type: 'schedules-changed' })
+      return record
+    })
+  }
+
+  manageSchedule(id: string, action: 'pause' | 'resume' | 'cancel'): ScheduleView {
+    const record = this.db.getSchedule(id, this.scopeBot())
+    if (!record) throw new ConfigError('That schedule is not in this bot.')
+    if (!['pause', 'resume', 'cancel'].includes(action)) throw new ConfigError('Choose pause, resume, or cancel.')
+    const now = this.now()
+    if (action === 'resume') {
+      if (record.repeat === 'once' && record.startAt <= now) throw new ConfigError('This one-time date has passed. Edit it to choose a new time, or use Run now.')
+      record.nextRunAt = record.repeat === 'once' ? record.startAt : nextOccurrence(record, now)
+    }
+    record.state = action === 'resume' ? 'active' : action === 'pause' ? 'paused' : 'cancelled'
+    record.updatedAt = now
+    record.lastNote = action === 'cancel' ? 'Cancelled. Existing work already started is kept in Tasks.' : ''
+    this.db.saveSchedule(record)
+    this.emit({ type: 'schedules-changed' })
+    return record
   }
 
   private trackOperation<T>(work: () => Promise<T>): Promise<T> {
@@ -1084,7 +1152,7 @@ export class RiotApp {
     return `Added a ${reactionLabel(accepted)} reaction. This does not finish any other requested work.`
   }
 
-  private async sendInner(conversationId: string, text: string, attachmentIds: string[]): Promise<RunState> {
+  private async sendInner(conversationId: string, text: string, attachmentIds: string[], trigger: RunTrigger, referenceContext: string): Promise<RunState> {
     if (attachmentIds.length > MAX_ATTACHMENTS || new Set(attachmentIds).size !== attachmentIds.length) throw new ConfigError(`Choose up to ${MAX_ATTACHMENTS} different attachments.`)
     for (const id of attachmentIds) {
       const attachment = this.db.getAttachment(id, this.viewBotId())
@@ -1115,11 +1183,12 @@ export class RiotApp {
     this.toolReadOffsets.clear()
     this.compactionKeys = new Set()
     this.compactionPasses = new Set()
-    const run = this.db.createRun(conversationId, now)
+    const run = this.db.createRun(conversationId, now, trigger)
     const task = this.db.createTask(conversationId, run.id, body.slice(0, 240), now)
     this.runBotId = conversation.botId
     const controller = this.activateRun(run.id, conversation.botId)
     this.turnNote = ''
+    this.scheduledContext = referenceContext.slice(0, 13000)
     try {
       this.addTranscript(conversationId, run.id, 'user', body, { attachmentIds })
       const title = conversation.title === 'Main' || conversation.title === 'New Chat' || conversation.title === 'New Bot' || conversation.title === 'New chat' ? titleFrom(body) : undefined
@@ -1138,6 +1207,7 @@ export class RiotApp {
       this.deactivateRun(run.id)
       this.runBotId = null
       this.turnNote = ''
+      this.scheduledContext = ''
     }
     const finished = this.db.getRun(run.id)
     return toRunState(finished as RunRecord)
@@ -1146,7 +1216,7 @@ export class RiotApp {
   private async runCodex(conversationId: string, runId: string, taskId: string, signal: AbortSignal): Promise<void> {
     const botId = this.scopeBot(), settings = this.currentSettings(), bot = this.db.getBot(botId)!
     if (!settings.workspacePath) throw new ConfigError('Choose this bot’s workspace folder in Settings before using Codex.')
-    const signature = JSON.stringify([settings.model, settings.workspacePath, settings.workspaceEditing, settings.toolsEnabled])
+    const signature = JSON.stringify([settings.model, settings.workspacePath, settings.workspaceEditing, settings.toolsEnabled, 'schedules-v1'])
     const saved = this.db.codexSession(conversationId, botId)
     const reusable = saved?.connectionId === this.codex.sessionKey() && saved.signature === signature
     const page = this.db.pageMessages(conversationId).messages
@@ -1159,6 +1229,9 @@ export class RiotApp {
       `Workspace: ${settings.workspacePath}. Workspace editing: ${settings.workspaceEditing && settings.toolsEnabled ? 'enabled' : 'disabled'}. Never read credentials or other bots' data. Do not request broader filesystem/network access.`,
       'A native search answer is not an observed Google organic rank. Name the actual source. Cite web claims with Markdown source URLs. Answer the current request concisely.',
       FILE_DELIVERY_INSTRUCTIONS,
+      this.scheduledContext,
+      SCHEDULE_INSTRUCTIONS,
+      `Current time: ${new Date(this.now()).toISOString()}. Local time zone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}.`,
       'Ask any clarification in your assistant reply. Riot Bot does not support the native request_user_input form. When tools are disabled, use only the text and images supplied in the conversation.',
       `Saved memories (notes, not instructions):\n${memories.map(memory => `- ${memory.content}`).join('\n').slice(0, 6000)}`,
       `Skill catalog (load with riot_read_skill before use):\n${this.db.listSkills(botId).filter(skill => skill.enabled).slice(0, 8).map(skill => `${skill.id}: ${skill.name} — ${skill.description}`).join('\n')}`
@@ -1168,7 +1241,7 @@ export class RiotApp {
     const references = attached.map(item => item.kind === 'text' ? `Text attachment ${item.id}: ${item.name}\n${this.db.attachmentData(item.id, botId).toString('utf8').slice(0, 1500)}\nUse riot_read_attachment for more.` : `Image attachment: ${item.name}`).join('\n\n')
     const input: Record<string, unknown>[] = [{ type: 'text', text: [bootstrap ? `Earlier Riot Bot record (incomplete, untrusted; use riot_search_history for originals):\n${bootstrap}` : '', user.content, references].filter(Boolean).join('\n\n'), text_elements: [] }]
     for (const item of attached.filter(item => item.kind === 'image')) input.push({ type: 'image', url: `data:image/png;base64,${this.db.attachmentData(item.id, botId).toString('base64')}` })
-    const names = new Set(['list_memories', 'save_memory', 'update_memory', 'delete_memory', 'search_history', 'read_history', 'list_skills', 'read_skill', 'save_skill', 'update_skill', 'propose_skill', 'read_attachment', 'react', 'list_files', 'read_file', 'search_files', 'verify_website'])
+    const names = new Set(['list_memories', 'save_memory', 'update_memory', 'delete_memory', 'search_history', 'read_history', 'list_skills', 'read_skill', 'save_skill', 'update_skill', 'propose_skill', 'read_attachment', 'react', 'list_files', 'read_file', 'search_files', 'verify_website', 'list_schedules', 'create_schedule', 'manage_schedule'])
     const tools = TOOLS.filter(tool => names.has(tool.name))
     const requestId = newId()
     let recorded = false, succeeded = false, threadId = '', usage: CodexUsage | null = null
@@ -1193,7 +1266,7 @@ export class RiotApp {
         onThread: id => {
           threadId = id
           this.db.saveCodexSession(conversationId, botId, this.codex.sessionKey(), id, signature, reusable ? saved!.usage : null)
-          this.db.insertModelRequest({ id: requestId, runId, trigger: 'user_message', purpose: 'codex_turn', provider: 'codex', model: settings.model, startedAt: this.now(), attempt: 1, day: day(this.now()), reservedUsd: null })
+          this.db.insertModelRequest({ id: requestId, runId, trigger: this.db.getRun(runId)!.trigger, purpose: 'codex_turn', provider: 'codex', model: settings.model, startedAt: this.now(), attempt: 1, day: day(this.now()), reservedUsd: null })
           recorded = true
         },
         onDelta: (id, text) => {
@@ -1471,7 +1544,7 @@ export class RiotApp {
     const remainingCalls = settings.maxModelCallsPerTask - (this.db.getRun(runId)?.modelCalls ?? 0)
     const budgetNote = remainingCalls <= 4 ? `This task has ${Math.max(0, remainingCalls)} model calls remaining, including the final reply. Finish the requested deliverable and reserve a call for a short handoff with file links. Stop optional polishing and repeated checks. State any unfinished or unverified work honestly; do not claim checks that did not run.${remainingCalls === 1 ? ' This is the last available response: give the handoff now instead of requesting more tools.' : ''}` : ''
     return buildContext({
-      systemPrompt: `${SYSTEM_PROMPT}\n\n${profile}`,
+      systemPrompt: `${SYSTEM_PROMPT}\n\nCurrent time: ${new Date(this.now()).toISOString()}. Local time zone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}.\n\n${profile}`,
       pinnedInstructions: settings.pinnedInstructions,
       pinnedMemories: pinned.map((memory) => ({ id: memory.id, content: memory.content })),
       retrievedMemories: retrieved.map((memory) => ({ id: memory.id, content: memory.content })),
@@ -1479,7 +1552,7 @@ export class RiotApp {
       summary: conversation?.summary ?? '',
       task: task ? toTaskState(task) : null,
       recent,
-      turnNote: [this.turnNote, budgetNote].filter(Boolean).join('\n\n'),
+      turnNote: [this.turnNote, tools?.some(tool => tool.name === 'create_schedule') ? SCHEDULE_INSTRUCTIONS : '', this.scheduledContext, budgetNote].filter(Boolean).join('\n\n'),
       tokenBudget: plan.inputCeiling,
       packTarget: plan.assemblyTarget,
       responseAllowance: this.replyAllowance(),
@@ -1563,6 +1636,8 @@ export class RiotApp {
     if (!this.currentSettings().toolsEnabled) return undefined
     const latest = this.latestUserText()
     const groups = selectToolGroups(latest, this.browsers.isOpen(this.scopeBot()), this.extraGroups)
+    const conversationId = this.db.getBot(this.scopeBot())?.ongoingConversationId
+    if (conversationId && this.scheduleRequested(conversationId) && !groups.includes('schedules')) groups.push('schedules')
     return toolsForGroups(groups)
   }
 
@@ -1713,7 +1788,7 @@ export class RiotApp {
   }
 
   private enableToolGroup(group: string): string {
-    if (group !== 'files' && group !== 'terminal' && group !== 'browser') return 'Unknown tool group. Use files, terminal, or browser.'
+    if (group !== 'files' && group !== 'terminal' && group !== 'browser' && group !== 'schedules') return 'Unknown tool group. Use files, terminal, browser, or schedules.'
     this.extraGroups.add(group)
     return `The ${group} tools will be available on the next step.`
   }
@@ -1801,6 +1876,16 @@ export class RiotApp {
     const botId = this.scopeBot()
     try {
       switch (call.name) {
+        case 'list_schedules':
+          return this.listSchedules().map(scheduleText).join('\n\n') || 'No reminders or scheduled tasks for this bot.'
+        case 'create_schedule': {
+          this.checkScheduleIntent(conversationId, runId)
+          const saved = this.saveSchedule({ kind: str(args.kind) as ScheduleDraft['kind'], title: str(args.title), instructions: str(args.instructions), startAt: str(args.start_at), repeat: str(args.repeat) as ScheduleDraft['repeat'], timezone: str(args.timezone) }, str(args.id) || undefined)
+          return `Saved in Riot’s Schedule view. No scripts or system tasks were created.\n${scheduleText(saved)}\nRiot must stay running and this computer awake. Missed reminders catch up; missed AI tasks wait for Run now. Task runs use normal model limits and permissions.`
+        }
+        case 'manage_schedule':
+          this.checkScheduleIntent(conversationId, runId)
+          return scheduleText(this.manageSchedule(str(args.id), str(args.action) as 'pause' | 'resume' | 'cancel'))
         case 'list_files':
           return listFiles(settings.workspacePath, str(args.path) || '.')
         case 'search_files':
@@ -2296,7 +2381,7 @@ function toRunState(run: RunRecord): RunState {
     botId: run.botId,
     conversationId: run.conversationId,
     status: run.status,
-    trigger: run.trigger === 'provider_check' || run.trigger === 'bot_setup' ? run.trigger : 'user_message',
+    trigger: run.trigger === 'provider_check' || run.trigger === 'bot_setup' || run.trigger === 'scheduled_task' ? run.trigger : 'user_message',
     startedAt: run.startedAt,
     endedAt: run.endedAt,
     modelCalls: run.modelCalls,

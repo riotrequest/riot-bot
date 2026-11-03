@@ -25,6 +25,7 @@ let riot: RiotService | null = null
 let tray: Tray | null = null
 let quitting = false
 let quitReady = false
+const reminderNotifications = new Set<Notification>()
 
 const devUrl = process.env.ELECTRON_RENDERER_URL
 
@@ -122,7 +123,7 @@ async function createWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  app.setAppUserModelId('app.riotbot.desktop')
+  app.setAppUserModelId(app.isPackaged ? 'app.riotbot.desktop' : process.execPath)
   const userData = app.getPath('userData')
   fs.mkdirSync(userData, { recursive: true })
   process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(userData, 'playwright-browsers')
@@ -158,6 +159,18 @@ app.whenReady().then(async () => {
   createTray()
   const notifiedJobs = new Set<string>()
   riot.onEvent((event) => {
+    if (event.type === 'reminder-fired' && !quitting) {
+      const reminder = event.schedule
+      if (!Notification.isSupported()) riot?.noteReminderDelivery(reminder.id, 'Desktop notifications are unavailable. This reminder is saved in Schedule.')
+      else {
+        const notification = new Notification({ title: reminder.title, body: reminder.instructions, timeoutType: 'never' })
+        reminderNotifications.add(notification)
+        notification.once('close', () => reminderNotifications.delete(notification))
+        notification.once('failed', () => { reminderNotifications.delete(notification); riot?.noteReminderDelivery(reminder.id, 'Windows could not show this notification. The reminder is saved in Schedule.') })
+        notification.once('click', () => { showWindow(); window?.webContents.send('app:event', { type: 'open-schedule', botId: reminder.botId }) })
+        notification.show()
+      }
+    }
     if (event.type === 'jobs-changed' && riot) {
       const jobs = riot.listJobs('app')
       const running = jobs.filter((job) => job.status === 'running')

@@ -99,7 +99,7 @@ export function previewToolContent(message: Pick<MessageRecord, 'role' | 'conten
   return `${message.content.slice(0, limit)}\n\n[${message.content.length} characters are stored locally. Call read_tool_result with id ${id} to read another section. The omitted text was not sent.]`
 }
 
-export type ToolGroupName = 'files' | 'terminal' | 'browser'
+export type ToolGroupName = 'files' | 'terminal' | 'browser' | 'schedules'
 
 export function selectToolGroups(text: string, browserOpen: boolean, extra: Iterable<string>): ToolGroupName[] {
   const hay = text.toLowerCase()
@@ -108,6 +108,7 @@ export function selectToolGroups(text: string, browserOpen: boolean, extra: Iter
   if (enabled.has('files') || /\b(file|folder|code|edit|workspace|readme|src|html|css|javascript|typescript|python|project|repo)\b/.test(hay) || /\b(build|create|redesign|develop|update|fix)\b.{0,80}\b(website|site|page|app)\b/.test(hay)) groups.push('files')
   if (enabled.has('terminal') || /\b(terminal|command|shell|powershell|npm|git)\b/.test(hay)) groups.push('terminal')
   if (enabled.has('browser') || browserOpen || /\b(browser|click|tab|website|web page|open the|open a|open this)\b/.test(hay)) groups.push('browser')
+  if (enabled.has('schedules') || /\b(remind|reminder|schedule|scheduled|routine|recurring|every|each|daily|weekly|weekdays|tomorrow|tonight)\b/.test(hay)) groups.push('schedules')
   return groups
 }
 

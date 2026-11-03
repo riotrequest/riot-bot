@@ -64,7 +64,7 @@ describe('idle launch', () => {
         messages: [{ role: 'user', content: 'hello' }],
         signal: new AbortController().signal
       })
-    ).rejects.toThrow(/not started by a message you sent/)
+    ).rejects.toThrow(/without a user request or saved scheduled task/)
     expect(provider.calls).toHaveLength(0)
     database.close()
   })

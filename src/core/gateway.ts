@@ -147,8 +147,8 @@ export class Gateway {
     return this.deps.db.transaction(() => {
       const run = this.deps.db.getRun(input.runId)
       if (!run || run.status !== 'running' || run.stopRequested) throw new StopError('Stopped before the next model request was sent.')
-      if (run.trigger !== 'user_message' && run.trigger !== 'provider_check' && run.trigger !== 'bot_setup') {
-        throw new PauseError('Blocked a model call that was not started by a message you sent.')
+      if (!['user_message', 'provider_check', 'bot_setup', 'scheduled_task'].includes(run.trigger)) {
+        throw new PauseError('Blocked a model call without a user request or saved scheduled task.')
       }
       const now = this.deps.now()
       const limit = settings.replyMode === 'automatic' ? 8192 : settings.maxOutputTokens

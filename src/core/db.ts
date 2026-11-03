@@ -8,6 +8,8 @@ import { newId } from './ids'
 import { snippetAround, toFtsOrQuery, toFtsQuery } from './search'
 import { DEFAULT_SETTINGS, localDay, sanitizeSettings, type Settings } from './settings'
 import { openDatabase, type SqlDatabase } from './sqlite'
+import { SCHEDULE_SCHEMA } from './schedules'
+import type { ScheduleView } from '../shared/types'
 
 type Row = Record<string, unknown>
 
@@ -550,7 +552,8 @@ export class Database {
       this.ensureAttachments()
       this.ensureCodexSessions()
       this.db.exec(RUNTIME_SCHEMA)
-      this.db.exec('PRAGMA user_version = 10')
+      this.db.exec(SCHEDULE_SCHEMA)
+      this.db.exec('PRAGMA user_version = 11')
       this.ensureModelCatalog()
       return
     }
@@ -605,6 +608,38 @@ export class Database {
       this.db.exec(RUNTIME_SCHEMA)
       this.db.exec('PRAGMA user_version = 10')
     })
+    if (this.userVersion() < 11) this.transaction(() => {
+      this.db.exec(SCHEDULE_SCHEMA)
+      this.db.exec('PRAGMA user_version = 11')
+    })
+  }
+
+  listSchedules(botId?: string): ScheduleView[] {
+    return rows(botId ? this.db.prepare('SELECT * FROM schedules WHERE bot_id = ? ORDER BY created_at DESC LIMIT 100').all(botId) : this.db.prepare('SELECT * FROM schedules ORDER BY created_at DESC LIMIT 1000').all()).map(mapSchedule)
+  }
+
+  getSchedule(id: string, botId?: string): ScheduleView | null {
+    const found = row(botId ? this.db.prepare('SELECT * FROM schedules WHERE id = ? AND bot_id = ?').get(id, botId) : this.db.prepare('SELECT * FROM schedules WHERE id = ?').get(id))
+    return found ? mapSchedule(found) : null
+  }
+
+  dueSchedules(now: number): ScheduleView[] {
+    return rows(this.db.prepare("SELECT * FROM schedules WHERE state = 'active' AND next_run_at <= ? ORDER BY next_run_at LIMIT 100").all(now)).map(mapSchedule)
+  }
+
+  pauseTaskSchedules(now: number): void {
+    this.db.prepare("UPDATE schedules SET state = 'paused', last_note = 'Paused by Stop all work.', updated_at = ? WHERE kind = 'task' AND state = 'active'").run(now)
+  }
+
+  scheduleForJob(jobId: string): ScheduleView | null {
+    const found = row(this.db.prepare('SELECT * FROM schedules WHERE last_job_id = ?').get(jobId))
+    return found ? mapSchedule(found) : null
+  }
+
+  saveSchedule(record: ScheduleView): void {
+    this.db.prepare(`INSERT INTO schedules (id,bot_id,conversation_id,kind,title,instructions,context,start_at,repeat,timezone,next_run_at,state,last_run_at,last_status,last_note,last_job_id,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,kind=excluded.kind,instructions=excluded.instructions,context=excluded.context,start_at=excluded.start_at,repeat=excluded.repeat,timezone=excluded.timezone,next_run_at=excluded.next_run_at,state=excluded.state,last_run_at=excluded.last_run_at,last_status=excluded.last_status,last_note=excluded.last_note,last_job_id=excluded.last_job_id,updated_at=excluded.updated_at`)
+      .run(record.id,record.botId,record.conversationId,record.kind,record.title,record.instructions,record.context,record.startAt,record.repeat,record.timezone,record.nextRunAt,record.state,record.lastRunAt,record.lastStatus,record.lastNote,record.lastJobId,record.createdAt,record.updatedAt)
   }
 
   private ensureCodexSessions(): void {
@@ -2188,5 +2223,16 @@ function mapAttachment(record: Row): AttachmentRecord {
     name: text(record, 'name'), kind: text(record, 'kind') === 'image' ? 'image' : 'text', mimeType: text(record, 'mime_type'),
     size: num(record, 'size'), width: nullableNum(record, 'width'), height: nullableNum(record, 'height'),
     previewUrl: record.preview_url == null ? null : text(record, 'preview_url')
+  }
+}
+
+function mapSchedule(record: Row): ScheduleView {
+  return {
+    id: text(record, 'id'), botId: text(record, 'bot_id'), conversationId: text(record, 'conversation_id'),
+    kind: text(record, 'kind') as ScheduleView['kind'], title: text(record, 'title'), instructions: text(record, 'instructions'), context: text(record, 'context'),
+    startAt: num(record, 'start_at'), repeat: text(record, 'repeat') as ScheduleView['repeat'], timezone: text(record, 'timezone'),
+    nextRunAt: nullableNum(record, 'next_run_at'), state: text(record, 'state') as ScheduleView['state'],
+    lastRunAt: nullableNum(record, 'last_run_at'), lastStatus: text(record, 'last_status'), lastNote: text(record, 'last_note'), lastJobId: record.last_job_id == null ? null : text(record, 'last_job_id'),
+    createdAt: num(record, 'created_at'), updatedAt: num(record, 'updated_at')
   }
 }

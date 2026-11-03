@@ -69,6 +69,18 @@ const stringProp = (description: string): Record<string, unknown> => ({ type: 's
 
 export const TOOLS: ToolDefinition[] = [
   {
+    name: 'list_schedules', description: 'List this bot’s saved reminders and scheduled bot tasks, including next run and last result.',
+    parameters: objectSchema({}, [])
+  },
+  {
+    name: 'create_schedule', description: 'Save a built-in reminder (notification, no model call when due) or scheduled bot task (runs with this bot’s context and normal permissions). Use only after an explicit user request. Supply a self-contained task based on the chat. Optional id edits an existing schedule. Do not write scripts or use OS task scheduling.',
+    parameters: objectSchema({ id: stringProp('Existing schedule id to edit, optional.'), kind: { type: 'string', enum: ['reminder', 'task'] }, title: stringProp('Short title, 2 to 80 characters.'), instructions: stringProp('Reminder text or complete task instructions. Resolve references from the chat; omit passwords and API keys.'), start_at: stringProp('First date/time as ISO 8601 with Z or an explicit offset matching the time zone. Ask if the desired time is unclear.'), repeat: { type: 'string', enum: ['once', 'daily', 'weekdays', 'weekly'] }, timezone: stringProp('IANA time zone, such as America/New_York.') }, ['kind', 'title', 'instructions', 'start_at', 'repeat', 'timezone'])
+  },
+  {
+    name: 'manage_schedule', description: 'Pause, resume, or cancel this bot’s schedule, only when the user asks. Cancellation stops future runs and keeps the record; stop already running work separately.',
+    parameters: objectSchema({ id: stringProp('Schedule id.'), action: { type: 'string', enum: ['pause', 'resume', 'cancel'] } }, ['id', 'action'])
+  },
+  {
     name: 'read_attachment',
     description: 'Read a saved text attachment by id, including text outside its preview. Images are included with the original message; this tool reads text only.',
     parameters: objectSchema({ id: stringProp('Attachment id from a message.'), offset: { type: 'number', description: 'Character offset, optional.' }, query: stringProp('Optional text to find.') }, ['id'])
@@ -242,8 +254,8 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'describe_tools',
-    description: 'Load another tool group: files, terminal, or browser. The group is available on the next step.',
-    parameters: objectSchema({ group: { type: 'string', enum: ['files', 'terminal', 'browser'], description: 'Tool group.' } }, ['group'])
+    description: 'Load another tool group: files, terminal, browser, or schedules. Available on the next step.',
+    parameters: objectSchema({ group: { type: 'string', enum: ['files', 'terminal', 'browser', 'schedules'], description: 'Tool group.' } }, ['group'])
   },
   {
     name: 'react',
@@ -260,11 +272,13 @@ export const TOOLS: ToolDefinition[] = [
 
 const FILE_TOOL_NAMES = new Set(['list_files', 'search_files', 'read_file', 'write_file', 'edit_file', 'verify_website'])
 const TERMINAL_TOOL_NAMES = new Set(['run_terminal'])
+const SCHEDULE_TOOL_NAMES = new Set(['list_schedules', 'create_schedule', 'manage_schedule'])
 
-export function toolsForGroups(groups: Array<'files' | 'terminal' | 'browser'>): ToolDefinition[] {
+export function toolsForGroups(groups: Array<'files' | 'terminal' | 'browser' | 'schedules'>): ToolDefinition[] {
   const selected = TOOLS.filter((tool) => {
     if (FILE_TOOL_NAMES.has(tool.name)) return groups.includes('files')
     if (TERMINAL_TOOL_NAMES.has(tool.name)) return groups.includes('terminal')
+    if (SCHEDULE_TOOL_NAMES.has(tool.name)) return groups.includes('schedules')
     return true
   })
   if (groups.includes('browser')) selected.push(...BROWSER_TOOLS)
