@@ -7,7 +7,7 @@ The preview connector uses the official Codex CLI’s app-server and its managed
 1. Install the official Codex CLI if it is missing, then restart Riot Bot. The connector was checked against Codex CLI **0.154.0** on November 2, 2026.
 2. In Settings, select **Codex · ChatGPT sign-in (preview)**.
 3. Click **Sign in with ChatGPT** and finish the official browser flow. Riot opens only the supported HTTPS authentication hosts. **Cancel sign-in**, **Refresh Codex status**, and **Disconnect Codex** are available in the same panel.
-4. Choose a Codex model from the connected account’s picker. An old model choice remains visible for correction. Riot pauses an unlisted model before starting a native turn; being listed still does not guarantee that the account can use it.
+4. Choose a Codex model from the connected account’s picker. New Bot uses the same picker and loads the catalog when Codex is selected. An old model choice remains visible for correction. Riot pauses an unlisted model before starting a native turn; being listed still does not guarantee that the account can use it.
 5. Select this bot’s workspace and save Settings. Send a message to start a native turn.
 
 Sign-in and status checks do not start a model turn. Riot neither imports another app’s login nor copies tokens out of your normal Codex profile. The connection is app-wide; each bot still has its own native conversation mapping.

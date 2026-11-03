@@ -240,6 +240,11 @@ function Shell({ api }: { api: RiotBridge }) {
     setScreen('chat')
   }
 
+  function showScreen(next: Screen): void {
+    setMenuOpen(false)
+    setScreen(next)
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -275,53 +280,25 @@ function Shell({ api }: { api: RiotBridge }) {
                 <span>{item.name}</span>
                 {jobs.some((job) => job.botId === item.id && (job.status === 'running' || job.status === 'queued')) && <small className="bot-job-status">{jobs.some((job) => job.botId === item.id && job.awaitingApproval) ? 'Approval' : jobs.some((job) => job.botId === item.id && job.status === 'running') ? 'Working' : 'Queued'}</small>}
               </button>
-              {item.id === bot?.id && (
-                <button type="button" className="bot-menu-button" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
-                  Menu
-                </button>
-              )}
             </div>
           ))}
         </div>
-        {menuOpen && bot && (
-          <BotMenu
-            api={api}
-            bot={bot}
-            running={running}
-            onDelete={() => setDeleteTarget(bot)}
-            note={browserNote}
-            onNote={setBrowserNote}
-            onError={(next) => setError(next)}
-            onBot={(next) => {
-              setBot(next)
-              setBots((current) => current.map((item) => (item.id === next.id ? next : item)))
-            }}
-            onEarlier={() => {
-              setMenuOpen(false)
-              setScreen('earlier')
-            }}
-            onSettings={() => {
-              setMenuOpen(false)
-              setScreen('settings')
-            }}
-          />
-        )}
         <nav>
-          <button className={screen === 'chat' ? 'active' : ''} onClick={() => setScreen('chat')}>
+          <button className={!menuOpen && screen === 'chat' ? 'active' : ''} onClick={() => showScreen('chat')}>
             Chat
           </button>
-          <button className={screen === 'jobs' ? 'active' : ''} onClick={() => setScreen('jobs')}>Jobs</button>
-          <button className={screen === 'library' ? 'active' : ''} onClick={() => setScreen('library')}>Library</button>
-          <button className={screen === 'memory' ? 'active' : ''} onClick={() => setScreen('memory')}>
+          <button className={!menuOpen && screen === 'jobs' ? 'active' : ''} onClick={() => showScreen('jobs')}>Jobs</button>
+          <button className={!menuOpen && screen === 'library' ? 'active' : ''} onClick={() => showScreen('library')}>Library</button>
+          <button className={!menuOpen && screen === 'memory' ? 'active' : ''} onClick={() => showScreen('memory')}>
             Memory
           </button>
-          <button className={screen === 'skills' ? 'active' : ''} onClick={() => setScreen('skills')}>
+          <button className={!menuOpen && screen === 'skills' ? 'active' : ''} onClick={() => showScreen('skills')}>
             Skills
           </button>
-          <button className={screen === 'activity' ? 'active' : ''} onClick={() => setScreen('activity')}>
+          <button className={!menuOpen && screen === 'activity' ? 'active' : ''} onClick={() => showScreen('activity')}>
             Activity
           </button>
-          <button className={screen === 'settings' ? 'active' : ''} onClick={() => setScreen('settings')}>
+          <button className={!menuOpen && screen === 'settings' ? 'active' : ''} onClick={() => showScreen('settings')}>
             Settings
           </button>
         </nav>
@@ -330,9 +307,9 @@ function Shell({ api }: { api: RiotBridge }) {
       <section className="main">
         <header className="topbar">
           <div className="title-lockup">
-            {bot && screen === 'chat' && <BotAvatar avatar={bot.avatar} label={bot.name} size={36} />}
+            {bot && (screen === 'chat' || menuOpen) && <BotAvatar avatar={bot.avatar} label={bot.name} size={36} />}
             <div>
-              <h1>{screen === 'chat' ? (viewingEarlier ? detail?.conversation.title : bot?.name) ?? 'Chat' : screenTitle(screen)}</h1>
+              <h1>{menuOpen ? 'Bot settings' : screen === 'chat' ? (viewingEarlier ? detail?.conversation.title : bot?.name) ?? 'Chat' : screenTitle(screen)}</h1>
               <p className="status">
                 {bot ? bot.name : 'Riot Bot'}
                 {bot?.purpose ? ` · ${bot.purpose}` : ''}
@@ -341,9 +318,12 @@ function Shell({ api }: { api: RiotBridge }) {
               </p>
             </div>
           </div>
-          <button className="stop" disabled={!running} onClick={() => void api.stop()}>
-            Stop
-          </button>
+          <div className="topbar-actions">
+            {bot && screen !== 'new-bot' && <button type="button" className="bot-settings-toggle" aria-label="Bot settings" title="Bot settings" aria-expanded={menuOpen} aria-controls="bot-settings-panel" onClick={() => setMenuOpen((open) => !open)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="m9.5 3 .6-2h3.8l.6 2 2 .8 1.9-1 2.7 2.7-1 1.9.8 2 2 .6v3.8l-2 .6-.8 2 1 1.9-2.7 2.7-1.9-1-2 .8-.6 2h-3.8l-.6-2-2-.8-1.9 1-2.7-2.7 1-1.9-.8-2-2-.6V10l2-.6.8-2-1-1.9 2.7-2.7 1.9 1z" /><circle cx="12" cy="12" r="3.4" /></svg>
+            </button>}
+            <button className="stop" disabled={!running} onClick={() => void api.stop()}>Stop</button>
+          </div>
         </header>
         {error && (
           <div className="banner warn">
@@ -360,9 +340,29 @@ function Shell({ api }: { api: RiotBridge }) {
             }}
           />
         )}
+        {menuOpen && bot ? (
+          <BotMenu
+            api={api}
+            bot={bot}
+            running={running}
+            onDelete={() => setDeleteTarget(bot)}
+            note={browserNote}
+            onNote={setBrowserNote}
+            onError={setError}
+            onBot={(next) => {
+              setBot(next)
+              setBots((current) => current.map((item) => (item.id === next.id ? next : item)))
+            }}
+            onEarlier={() => { setMenuOpen(false);setScreen('earlier') }}
+            onSettings={() => { setMenuOpen(false);setScreen('settings') }}
+          />
+        ) : <>
         {screen === 'new-bot' && settings && (
           <NewBotForm
             settings={settings}
+            api={api}
+            codex={codex}
+            onCodex={setCodex}
             onCreate={async (input) => {
               if (bot) drafts.current[bot.id] = draft
               const result = await api.createBot(input)
@@ -371,7 +371,7 @@ function Shell({ api }: { api: RiotBridge }) {
               setScreen('chat')
               setError(/failed|stopped|temporary|not available/i.test(result.status) ? result.status : null)
             }}
-            onError={(next) => setError(next)}
+            onError={setError}
           />
         )}
         {screen === 'earlier' && (
@@ -404,7 +404,7 @@ function Shell({ api }: { api: RiotBridge }) {
             avatar={bot?.avatar ?? null}
             proposal={proposal}
             api={api}
-            onProposal={setProposal}
+            onProposal={(next) => {if (viewedBotId.current === detail.conversation.botId) setProposal(next)}}
             onDraft={setDraft}
             onSend={() => void send()}
             onUndo={(id) => void api.undoEdit(id).then((result) => setError(result.ok ? null : result.message))}
@@ -485,6 +485,7 @@ function Shell({ api }: { api: RiotBridge }) {
             onError={(next) => setError(next)}
           />
         )}
+        </>}
       </section>
       {deleteTarget && <DeleteBotDialog bot={deleteTarget} onCancel={() => setDeleteTarget(null)} onDelete={async (confirmationName) => {
         const result = await api.deleteBot(deleteTarget.id,confirmationName)
@@ -552,7 +553,7 @@ function ChatPane(props: {
           <button type="button" onClick={props.onOpenSettings}>Open Settings</button>
         </div>
       )}
-      {props.proposal && <SkillProposalCard proposal={props.proposal} api={props.api} onProposal={props.onProposal} onError={props.onError} />}
+      {props.proposal && <SkillProposalCard key={props.proposal.id} proposal={props.proposal} api={props.api} onProposal={props.onProposal} onError={props.onError} />}
       {props.detail.messages.length === 0 && <p className="empty">This chat is empty. Send a message when you are ready.</p>}
       <ChatTranscript
         detail={props.detail}
@@ -856,20 +857,13 @@ function SettingsPane(props: {
       </button>
       <label>
         Provider
-        <select value={draft.provider} onChange={(event) => { setKey(''); setDraft({ ...draft, provider: event.target.value as PublicSettings['provider'], model: '' }) }}>
+        <select aria-label="Provider" value={draft.provider} onChange={(event) => { setKey(''); setDraft({ ...draft, provider: event.target.value as PublicSettings['provider'], model: '' }) }}>
           <option value="openai">OpenAI</option>
           <option value="openrouter">OpenRouter</option>
           <option value="codex">Codex · ChatGPT sign-in (preview)</option>
         </select>
       </label>
-      <label>
-        {draft.provider === 'codex' ? 'Codex model' : 'Model ID'}
-        {draft.provider === 'codex' ? <select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>
-          <option value="">{props.codex?.connected ? 'Choose an available model' : 'Connect Codex to load models'}</option>
-          {draft.model && !props.codex?.models.some(model => model.id === draft.model) && <option value={draft.model}>{draft.model} · current choice</option>}
-          {props.codex?.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
-        </select> : <input value={draft.model} placeholder="Paste the model ID from your provider" onChange={(event) => setDraft({ ...draft, model: event.target.value })} />}
-      </label>
+      <ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={(model) => setDraft({ ...draft, model })} />
       <p className="help">Riot Bot does not pick a model for you, and it does not assume every model can use tools or streaming.</p>
       {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : <>
       <label>
@@ -1159,43 +1153,53 @@ function ContextDetails({ context }: { context: ContextView }) {
   )
 }
 
-function SkillProposalCard(props: {
+export function SkillProposalCard(props: {
   proposal: SkillProposal
   api: RiotBridge
   onProposal: (proposal: SkillProposal | null) => void
   onError: (message: string) => void
 }) {
   const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState(props.proposal)
   useEffect(() => setDraft(props.proposal), [props.proposal])
   async function resolve(action: 'save' | 'dismiss'): Promise<void> {
-    await props.api.resolveSkillProposal(props.proposal.id, action, action === 'save' ? draft : undefined)
-    props.onProposal(null)
+    if (saving) return
+    setSaving(true)
+    try {
+      await props.api.resolveSkillProposal(props.proposal.id, action, action === 'save' ? draft : undefined)
+      props.onProposal(null)
+    } finally {setSaving(false)}
   }
   return (
-    <article className="approval">
+    <article className="skill-proposal" aria-label="Skill preview">
       <strong>{props.proposal.updateSkillId ? 'Update this skill?' : 'Save this skill?'}</strong>
-      <p className="help">This is a preview. It does not change later chats until you press Save. A skill cannot grant permissions or raise a budget.</p>
+      <strong className="skill-proposal-name">{draft.name}</strong>
+      <p className="help">Preview for this bot. Choose Save skill to keep it.</p>
+      <div className="skill-proposal-body">
       {editing ? (
         <SkillFields draft={draft} onChange={setDraft} />
       ) : (
         <>
-          <p>
-            <strong>{props.proposal.name}</strong> — {props.proposal.description}
-          </p>
-          <pre>{props.proposal.procedure}</pre>
-          {props.proposal.pitfalls && <p>Pitfalls: {props.proposal.pitfalls}</p>}
-          {props.proposal.verification && <p>Check: {props.proposal.verification}</p>}
+          <p>{draft.description}</p>
+          <details>
+            <summary>View skill details</summary>
+            <pre>{draft.procedure}</pre>
+            {draft.pitfalls && <p>Pitfalls: {draft.pitfalls}</p>}
+            {draft.verification && <p>Check: {draft.verification}</p>}
+            <p className="help">A skill cannot grant permissions or raise a budget.</p>
+          </details>
         </>
       )}
-      <div className="row">
-        <button type="button" className="send" onClick={() => void resolve('save').catch((reason: unknown) => props.onError(messageOf(reason)))}>
-          Save
+      </div>
+      <div className="row skill-proposal-actions">
+        <button type="button" className="send" disabled={saving} onClick={() => void resolve('save').catch((reason: unknown) => props.onError(messageOf(reason)))}>
+          {saving ? 'Saving…' : 'Save skill'}
         </button>
-        <button type="button" onClick={() => setEditing((current) => !current)}>
+        <button type="button" disabled={saving} onClick={() => setEditing((current) => !current)}>
           {editing ? 'Done editing' : 'Edit'}
         </button>
-        <button type="button" onClick={() => void resolve('dismiss').catch((reason: unknown) => props.onError(messageOf(reason)))}>
+        <button type="button" disabled={saving} onClick={() => void resolve('dismiss').catch((reason: unknown) => props.onError(messageOf(reason)))}>
           Dismiss
         </button>
       </div>
@@ -1554,7 +1558,7 @@ function BotMenu(props: {
   }
 
   return (
-    <div className="bot-menu">
+    <section className="bot-menu" id="bot-settings-panel" aria-label="Bot settings panel">
       <div className="bot-menu-heading"><strong>Bot settings</strong><button className="danger" type="button" disabled={props.running} onClick={props.onDelete}>Delete Bot</button></div>
       {props.running && <p className="help">Stop this bot’s work before deleting it.</p>}
       <label>
@@ -1629,7 +1633,7 @@ function BotMenu(props: {
         Install Chromium
       </button>
       {props.note && <p className="help">{props.note}</p>}
-    </div>
+    </section>
   )
 }
 
@@ -1691,7 +1695,18 @@ function EarlierPane(props: {
   )
 }
 
-function NewBotForm(props: { settings: PublicSettings; onCreate: (draft: BotDraft) => Promise<void>; onError: (message: string) => void }) {
+export function ModelField(props: {provider: PublicSettings['provider'];model: string;codex: CodexStatus | null;loading?: boolean;onChange: (model: string) => void}) {
+  return <label>
+    {props.provider === 'codex' ? 'Codex model' : 'Model ID'}
+    {props.provider === 'codex' ? <select aria-label="Codex model" value={props.model} disabled={props.loading && !props.codex?.models.length} onChange={(event) => props.onChange(event.target.value)}>
+      <option value="">{props.loading ? 'Loading Codex models…' : props.codex?.connected ? 'Choose an available model' : 'Connect Codex to load models'}</option>
+      {props.model && !props.codex?.models.some(model => model.id === props.model) && <option value={props.model}>{props.model} · current choice</option>}
+      {props.codex?.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+    </select> : <input aria-label="Model ID" value={props.model} placeholder="Paste the model ID from your provider" onChange={(event) => props.onChange(event.target.value)} />}
+  </label>
+}
+
+export function NewBotForm(props: { settings: PublicSettings;api: RiotBridge;codex: CodexStatus | null;onCodex: (status: CodexStatus) => void;onCreate: (draft: BotDraft) => Promise<void>;onError: (message: string) => void }) {
   const [purpose, setPurpose] = useState('')
   const [name, setName] = useState('')
   const [provider, setProvider] = useState(props.settings.provider)
@@ -1702,6 +1717,14 @@ function NewBotForm(props: { settings: PublicSettings; onCreate: (draft: BotDraf
   const [background, setBackground] = useState(AVATAR_COLORS[0])
   const [bytes, setBytes] = useState<number[] | undefined>(undefined)
   const [busy, setBusy] = useState(false)
+  const [loadingModels,setLoadingModels] = useState(false)
+  useEffect(()=>{
+    if (provider!=='codex') return
+    let current=true
+    setLoadingModels(true)
+    void props.api.getCodexStatus().then((status)=>{if(current)props.onCodex(status)}).catch((reason:unknown)=>{if(current)props.onError(messageOf(reason))}).finally(()=>{if(current)setLoadingModels(false)})
+    return()=>{current=false}
+  },[props.api,props.onCodex,props.onError,provider])
   return (
     <form
       className="panel settings"
@@ -1736,16 +1759,13 @@ function NewBotForm(props: { settings: PublicSettings; onCreate: (draft: BotDraf
       </label>
       <label>
         Provider
-        <select value={provider} onChange={(event) => { setProvider(event.target.value as PublicSettings['provider']); setModel('') }}>
+        <select aria-label="Provider" value={provider} onChange={(event) => { setProvider(event.target.value as PublicSettings['provider']); setModel('') }}>
           <option value="openai">OpenAI</option>
           <option value="openrouter">OpenRouter</option>
           <option value="codex">Codex · ChatGPT sign-in (preview)</option>
         </select>
       </label>
-      <label>
-        Model ID
-        <input value={model} onChange={(event) => setModel(event.target.value)} />
-      </label>
+      <ModelField provider={provider} model={model} codex={props.codex} loading={loadingModels} onChange={setModel} />
       <p className="help">Suggested workspace: a new folder under your home directory in RiotBot\workspaces. Choose another folder if you already have one. Existing files stay where they are.</p>
       <div className="row">
         <button

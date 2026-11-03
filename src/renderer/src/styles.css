@@ -56,13 +56,13 @@ button:disabled { cursor: default; opacity: 0.45; }
   font-weight: 700;
 }
 
-.new-chat, .send, .settings button, .card button, .approval button, .banner button, .callout button {
+.new-chat, .send, .settings button, .card button, .approval button, .skill-proposal button, .banner button, .callout button {
   border: 1px solid #3a404c;
   background: #262b36;
   border-radius: 10px;
   padding: 8px 12px;
 }
-.send, .new-chat, .settings button.send, .callout button.send, .card button.send, .approval button.send {
+.send, .new-chat, .settings button.send, .callout button.send, .card button.send, .approval button.send, .skill-proposal button.send {
   background: #d4544a;
   color: #1a0d0c;
   border-color: transparent;
@@ -104,6 +104,11 @@ nav button.active { background: #2a303c; }
   border-bottom: 1px solid #2c313c;
 }
 .topbar h1 { margin: 0; font-size: 18px; font-weight: 650; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.bot-settings-toggle { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #3a404c; border-radius: 10px; background: transparent; color: #b6b8bf; }
+.bot-settings-toggle svg { width: 21px; height: 21px; }
+.bot-settings-toggle:hover, .bot-settings-toggle[aria-expanded="true"] { background: #2a303c; color: #f0d3a2; }
+.bot-settings-toggle:focus-visible { outline: 2px solid #f0d3a2; outline-offset: 3px; }
 
 .transcript, .panel { flex: 1; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
 .bubble { max-width: 760px; padding: 12px 14px; border-radius: 14px; }
@@ -129,7 +134,7 @@ textarea, input, select {
   padding: 10px 12px;
 }
 .composer textarea { resize: vertical; }
-.tool, .card, .approval, .usage {
+.tool, .card, .approval, .skill-proposal, .usage {
   border: 1px solid #2c313c;
   background: #181b22;
   border-radius: 12px;
@@ -152,6 +157,14 @@ textarea, input, select {
 .approval-details .help { margin-top: 8px; }
 .approval-details pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; padding: 10px; border-radius: 8px; background: #101217; }
 .approval-actions { padding-top: 2px; }
+.skill-proposal { margin: 12px 20px 0; display: flex; flex-direction: column; flex-shrink: 0; gap: 8px; min-width: 0; max-height: min(52vh, 440px); overflow: hidden; }
+.skill-proposal > strong, .skill-proposal > .help, .skill-proposal-actions { flex-shrink: 0; margin: 0; }
+.skill-proposal-name { overflow-wrap: anywhere; }
+.skill-proposal-body { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.skill-proposal-body > p { margin: 0 0 8px; }
+.skill-proposal-body summary { cursor: pointer; color: #edcd9d; }
+.skill-proposal-body label { display: grid; gap: 4px; margin-bottom: 10px; }
+.skill-proposal-actions { padding-top: 2px; }
 .tech { display: grid; gap: 8px; }
 .tech dt { color: #aaa79f; }
 .tech dd { margin: 0; }
@@ -223,8 +236,7 @@ textarea, input, select {
 .bot-row.active { background: #2a303c; box-shadow: inset 3px 0 0 #d4544a; }
 .bot-select { flex: 1; display: flex; gap: 8px; align-items: center; min-width: 0; border: 0; background: transparent; text-align: left; padding: 8px; }
 .bot-select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bot-menu-button { border: 0; background: transparent; color: #aaa79f; padding: 8px; }
-.bot-menu { display: grid; gap: 8px; max-height: 42vh; overflow: auto; padding: 8px; border: 1px solid #2c313c; border-radius: 10px; }
+.bot-menu { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; max-width: 900px; overflow: auto; padding: 20px; }
 .bot-menu label { display: grid; gap: 4px; }
 .bot-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 button.danger { border: 1px solid #a55a52; border-radius: 8px; background: #4c2525; color: #ffd6cc; padding: 7px 12px; }
