@@ -15,6 +15,7 @@ export interface CodexStatus {
 export type RunStatus = 'running' | 'completed' | 'stopped' | 'failed' | 'interrupted' | 'paused'
 
 export type RunTrigger = 'user_message' | 'provider_check' | 'bot_setup' | 'scheduled_task'
+export type BotMenuAction = 'rename' | 'settings' | 'open-workspace' | 'delete'
 
 export interface PublicSettings {
   provider: ProviderId
@@ -473,6 +474,8 @@ export interface RiotBridge {
   disconnectCodex(): Promise<CodexStatus>
   createBot(draft: BotDraft): Promise<BotCreateResult>
   selectBot(id: string): Promise<Snapshot>
+  showBotMenu(id: string, position: { x: number; y: number }): Promise<BotMenuAction | null>
+  renameBot(id: string, name: string): Promise<Bot>
   deleteBot(id: string, confirmationName: string): Promise<DeleteBotResult>
   updateBot(patch: { name?: string; purpose?: string; instructions?: string }): Promise<Bot>
   openWorkspace(): Promise<void>

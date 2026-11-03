@@ -50,8 +50,11 @@ button .ui-icon { vertical-align: middle; }
 .bot-list { flex: 1 1 96px; min-height: 68px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
 .bot-row { display: flex; border: 1px solid transparent; border-radius: 10px; min-width: 0; flex-shrink: 0; }
 .bot-row.active { background: #2b2927; border-color: #504139; }
-.bot-select { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 10px; border: 0; background: transparent; text-align: left; }
+.bot-select { display: flex; align-items: center; flex: 1; gap: 10px; min-width: 0; padding: 10px; border: 0; background: transparent; text-align: left; }
 .bot-select:hover:not(:disabled) { background: #262c2e; }
+.bot-actions { align-self: center; flex-shrink: 0; display: grid; place-items: center; margin-right: 3px; padding: 7px 4px; border: 0; background: transparent; color: var(--muted); opacity: .65; }
+.bot-actions .ui-icon { width: 17px; height: 17px; stroke-width: 3; }
+.bot-row:hover .bot-actions, .bot-row:focus-within .bot-actions, .bot-row.active .bot-actions { opacity: 1; }
 .bot-row-label { display: grid; min-width: 0; gap: 2px; }
 .bot-row-label strong, .bot-row-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bot-row-label strong { font-size: 13px; font-weight: 600; }

@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
 import type { CodexStatus, ProviderId } from '../../shared/types'
 
-export type IconName = 'chat' | 'tasks' | 'files' | 'memory' | 'spark' | 'settings' | 'activity' | 'plus' | 'arrow' | 'check' | 'attach' | 'image' | 'chevron' | 'back' | 'calendar'
+export type IconName = 'chat' | 'tasks' | 'files' | 'memory' | 'spark' | 'settings' | 'activity' | 'plus' | 'arrow' | 'check' | 'attach' | 'image' | 'chevron' | 'back' | 'calendar' | 'more'
 
 const paths: Record<IconName, string> = {
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
   calendar: 'M4 5h16v16H4ZM4 10h16M8 3v4M16 3v4M8 14h3M8 17h6',
   chat: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 2V11.5a10 10 0 0 1 20 0ZM7 9h8M7 13h5',
   tasks: 'M9 6h12M9 12h12M9 18h12M2 6l1 1 2-3M2 12l1 1 2-3M2 18l1 1 2-3',

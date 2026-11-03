@@ -1,4 +1,4 @@
-import { clipboard, dialog, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { clipboard, dialog, ipcMain, Menu, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '../core/attachments'
@@ -6,7 +6,7 @@ import type { RiotService } from '../core/service'
 import { isId } from '../core/ids'
 import type { SkillDraft } from '../core/skills'
 import { publicErrorMessage } from '../core/redact'
-import type { AppPreferences, BotDraft, ProviderId, PublicSettings } from '../shared/types'
+import type { AppPreferences, BotDraft, BotMenuAction, ProviderId, PublicSettings } from '../shared/types'
 import type { ElectronCredentialStore } from './credentials'
 import type { ScheduleDraft } from '../shared/types'
 
@@ -64,7 +64,36 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('artifacts:reveal', (app,args) => app.revealArtifact(requireId(args[0])))
   handle('bots:create', (app, args) => app.createBot(botDraft(args[0])))
   handle('bots:select', (app, args) => app.selectBot(requireId(args[0])))
-  handle('bots:delete', (app,args) => app.deleteBot(requireId(args[0]),requireText(args[1],'Type the bot’s name to confirm deletion.')))
+  handle('bots:rename', (app, args) => {
+    const id = requireId(args[0])
+    if (app.getSnapshot().bot?.id !== id) throw new Error('Select this bot again before renaming it.')
+    return app.updateBot({ name: requireText(args[1], 'Give your bot a name.') })
+  })
+  handle('bots:menu', (app, args) => {
+    const id = requireId(args[0]), snapshot = app.getSnapshot(), bot = snapshot.bots.find(item => item.id === id)
+    const window = getWindow(), point = args[1] as { x?: unknown; y?: unknown } | null
+    if (!bot || !window || window.isDestroyed()) throw new Error('That bot is no longer available.')
+    if (!point || typeof point.x !== 'number' || typeof point.y !== 'number' || !Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error('The menu position was not valid.')
+    const bounds = window.getContentBounds(), zoom = window.webContents.getZoomFactor()
+    const x = Math.round(Math.max(0, Math.min(bounds.width, point.x * zoom)))
+    const y = Math.round(Math.max(0, Math.min(bounds.height, point.y * zoom)))
+    const running = snapshot.runningBotIds?.includes(id) || snapshot.runningBotId === id
+    return new Promise<BotMenuAction | null>(resolve => {
+      let action: BotMenuAction | null = null
+      const menu = Menu.buildFromTemplate([
+        { label: bot.name.replace(/&/g, '&&'), enabled: false },
+        { type: 'separator' },
+        { label: 'Rename bot…', click: () => { action = 'rename' } },
+        { label: 'Bot settings', click: () => { action = 'settings' } },
+        { label: 'Open working folder', enabled: Boolean(bot.workspacePath), click: () => { action = 'open-workspace' } },
+        { type: 'separator' },
+        { label: running ? 'Delete bot… (stop work first)' : 'Delete bot…', enabled: !running, click: () => { action = 'delete' } }
+      ])
+      // Let the menu's click handler finish before resolving a dismissal.
+      menu.popup({ window, x, y, callback: () => setImmediate(() => resolve(action)) })
+    })
+  })
+  handle('bots:delete', (app,args) => app.deleteBot(requireId(args[0]),requireText(args[1],'Confirm this bot’s deletion first.')))
   handle('bots:update', (app, args) => app.updateBot(botPatch(args[0])))
   handle('bots:openWorkspace', (app) => {
     app.openWorkspace()

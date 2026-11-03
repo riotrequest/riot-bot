@@ -23,6 +23,7 @@ import type {
   JobView,
   PublicSettings,
   ScheduleView,
+  Snapshot,
   RiotBridge,
   Skill,
   SkillProposal,
@@ -83,6 +84,10 @@ function Shell({ api }: { api: RiotBridge }) {
   const [ongoingId, setOngoingId] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null)
+  const [renameTarget, setRenameTarget] = useState<Bot | null>(null)
+  const [botActionBusy, setBotActionBusy] = useState(false)
+  const menuPending = useRef(false)
+  const navigationLocked = editingBusy || botActionBusy || Boolean(renameTarget || deleteTarget)
   const [browserNote, setBrowserNote] = useState('')
   const conversationId = useRef<string | null>(null)
   const viewedBotId = useRef<string | null>(null)
@@ -104,8 +109,8 @@ function Shell({ api }: { api: RiotBridge }) {
     setScreen('chat')
   }
 
-  async function reload(): Promise<void> {
-    const snapshot = await api.getSnapshot()
+  async function reload(nextSnapshot?: Snapshot): Promise<void> {
+    const snapshot = nextSnapshot ?? await api.getSnapshot()
     setBots(snapshot.bots)
     setBot(snapshot.bot)
     viewedBotId.current = snapshot.bot?.id ?? null
@@ -255,25 +260,40 @@ function Shell({ api }: { api: RiotBridge }) {
   }
 
   async function selectBot(id: string): Promise<void> {
-    if (editingBusy) return
+    if (navigationLocked) return
     if (bot) drafts.current[bot.id] = draft
     setMenuOpen(false)
-    await api.selectBot(id)
-    await reload()
+    await reload(await api.selectBot(id))
     setDraft(drafts.current[id] ?? '')
     setScreen('chat')
   }
 
   function showScreen(next: Screen): void {
-    if (editingBusy) return
+    if (navigationLocked) return
     setMenuOpen(false)
     setScreen(next)
   }
 
   useEffect(() => {
-    if (!scheduleTarget || editingBusy) return
+    if (!scheduleTarget || navigationLocked) return
     void selectBot(scheduleTarget).then(() => setScreen('schedules')).catch((reason: unknown) => setError(messageOf(reason))).finally(() => setScheduleTarget(null))
-  }, [scheduleTarget, editingBusy])
+  }, [scheduleTarget, navigationLocked])
+
+  async function showBotActions(item: Bot, position: { x: number; y: number }): Promise<void> {
+    if (navigationLocked || menuPending.current) return
+    menuPending.current = true
+    try {
+      const action = await api.showBotMenu(item.id, position)
+      if (!action) return
+      setBotActionBusy(true)
+      if (item.id !== viewedBotId.current) await selectBot(item.id)
+      if (action === 'rename') setRenameTarget(item)
+      if (action === 'settings') { setMenuOpen(false); setScreen('bot-settings') }
+      if (action === 'open-workspace') await api.openWorkspace()
+      if (action === 'delete') setDeleteTarget(item)
+    } catch (reason) { setError(messageOf(reason)) }
+    finally { menuPending.current = false; setBotActionBusy(false) }
+  }
 
   return (
     <div className="app">
@@ -287,7 +307,7 @@ function Shell({ api }: { api: RiotBridge }) {
         </div>
         <button
           className="new-chat"
-          disabled={editingBusy}
+          disabled={navigationLocked}
           onClick={() => {
             if (bot) drafts.current[bot.id] = draft
             setMenuOpen(false)
@@ -299,11 +319,21 @@ function Shell({ api }: { api: RiotBridge }) {
         <p className="sidebar-label">YOUR BOTS <span>{bots.length}</span></p>
         <div className="bot-list">
           {bots.map((item) => (
-            <div key={item.id} className={item.id === bot?.id ? 'bot-row active' : 'bot-row'}>
+            <div key={item.id} className={item.id === bot?.id ? 'bot-row active' : 'bot-row'} onContextMenu={event => {
+              event.preventDefault()
+              const bounds = event.currentTarget.getBoundingClientRect()
+              void showBotActions(item, event.clientX || event.clientY ? { x: event.clientX, y: event.clientY } : { x: bounds.left + 12, y: bounds.bottom })
+            }} onKeyDown={event => {
+              if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+              event.preventDefault()
+              const bounds = event.currentTarget.getBoundingClientRect()
+              void showBotActions(item, { x: bounds.left + 12, y: bounds.bottom })
+            }}>
               <button
                 type="button"
                 className="bot-select"
-                disabled={editingBusy}
+                disabled={navigationLocked}
+                title={item.name}
                 aria-current={item.id === bot?.id ? 'true' : undefined}
                 onClick={() => {
                   void selectBot(item.id).catch((reason: unknown) => setError(messageOf(reason)))
@@ -313,13 +343,17 @@ function Shell({ api }: { api: RiotBridge }) {
                 <span className="bot-row-label"><strong>{item.name}</strong><small>{item.purpose || 'Your personal assistant'}</small></span>
                 {jobs.some((job) => job.botId === item.id && (job.status === 'running' || job.status === 'queued')) && <small className="bot-job-status">{jobs.some((job) => job.botId === item.id && job.awaitingApproval) ? 'Approval' : jobs.some((job) => job.botId === item.id && job.status === 'running') ? 'Working' : 'Queued'}</small>}
               </button>
+              <button type="button" className="bot-actions" disabled={navigationLocked} aria-label={`More actions for ${item.name}`} aria-haspopup="menu" title="Bot actions" onClick={event => {
+                const bounds = event.currentTarget.getBoundingClientRect()
+                void showBotActions(item, { x: bounds.left, y: bounds.bottom })
+              }}><Icon name="more" /></button>
             </div>
           ))}
         </div>
         <div className="sidebar-bottom">
           <nav className="utility-nav" aria-label="App controls">
-            <button disabled={editingBusy} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-label="App settings" aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => showScreen('settings')}><Icon name="settings" /> Settings</button>
-            <button disabled={!bot || editingBusy} className={!menuOpen && screen === 'activity' ? 'active' : ''} aria-current={!menuOpen && screen === 'activity' ? 'page' : undefined} onClick={() => showScreen('activity')}><Icon name="activity" /> Usage & activity</button>
+            <button disabled={navigationLocked} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-label="App settings" aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => showScreen('settings')}><Icon name="settings" /> Settings</button>
+            <button disabled={!bot || navigationLocked} className={!menuOpen && screen === 'activity' ? 'active' : ''} aria-current={!menuOpen && screen === 'activity' ? 'page' : undefined} onClick={() => showScreen('activity')}><Icon name="activity" /> Usage & activity</button>
           </nav>
           <p className="desktop-note"><span className="status-dot" /> Runs on your computer</p>
         </div>
@@ -337,7 +371,7 @@ function Shell({ api }: { api: RiotBridge }) {
           </div>
           <div className="topbar-actions">
             {screen === 'chat' && bot && <span className={`connection-status ${configured ? '' : 'pending'}`}><span className={`status-dot ${configured ? '' : 'pending'}`} />{running ? 'Working' : queued ? 'In queue' : configured ? 'Ready to chat' : 'Setup needed'}</span>}
-            {menuOpen && <button type="button" className="back-button" disabled={editingBusy} onClick={() => { setMenuOpen(false); setScreen('bot-settings') }}><Icon name="back" /> Back</button>}
+            {menuOpen && <button type="button" className="back-button" disabled={navigationLocked} onClick={() => { setMenuOpen(false); setScreen('bot-settings') }}><Icon name="back" /> Back</button>}
             {running && <button className="stop" onClick={() => void api.stop().catch((reason: unknown) => setError(messageOf(reason)))}>Stop</button>}
           </div>
         </header>
@@ -525,13 +559,13 @@ function Shell({ api }: { api: RiotBridge }) {
           {([
             ['chat', 'chat', 'Chat'], ['jobs', 'tasks', 'Tasks'], ['schedules', 'calendar', 'Schedule'], ['library', 'files', 'Files'],
             ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills']
-          ] as [Screen, IconName, string][]).map(([value, icon, label]) => <button key={value} disabled={!bot || editingBusy} className={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'active' : ''} aria-current={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'page' : undefined} onClick={() => showScreen(value)}>
+          ] as [Screen, IconName, string][]).map(([value, icon, label]) => <button key={value} disabled={!bot || navigationLocked} className={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'active' : ''} aria-current={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'page' : undefined} onClick={() => showScreen(value)}>
             <Icon name={icon} /><span>{label}</span>{value === 'jobs' && activeTaskCount > 0 && <small className="nav-count">{activeTaskCount}</small>}
           </button>)}
         </nav>
         <div className="workspace-footer">
-          {bot && !configured && <button className="connection-nudge" disabled={editingBusy} onClick={() => showScreen('bot-settings')}><span className="status-dot pending" /><span><strong>Connect your AI</strong><small>One step to your first chat</small></span><Icon name="chevron" /></button>}
-          <nav className="workspace-nav" aria-label="Bot controls"><button disabled={!bot || editingBusy} className={menuOpen || screen === 'bot-settings' ? 'active' : ''} aria-current={menuOpen || screen === 'bot-settings' ? 'page' : undefined} onClick={() => showScreen('bot-settings')}><Icon name="settings" /><span>Bot settings</span></button></nav>
+          {bot && !configured && <button className="connection-nudge" disabled={navigationLocked} onClick={() => showScreen('bot-settings')}><span className="status-dot pending" /><span><strong>Connect your AI</strong><small>One step to your first chat</small></span><Icon name="chevron" /></button>}
+          <nav className="workspace-nav" aria-label="Bot controls"><button disabled={!bot || navigationLocked} className={menuOpen || screen === 'bot-settings' ? 'active' : ''} aria-current={menuOpen || screen === 'bot-settings' ? 'page' : undefined} onClick={() => showScreen('bot-settings')}><Icon name="settings" /><span>Bot settings</span></button></nav>
           <p>Model, profile, files & tools<br />for this bot.</p>
         </div>
       </aside>
@@ -541,9 +575,15 @@ function Shell({ api }: { api: RiotBridge }) {
         setDeleteTarget(null)
         setMenuOpen(false)
         setDraft('')
-        await reload()
+        await reload(result.snapshot)
         setScreen(result.snapshot.bot ? 'chat' : 'new-bot')
         setError(result.cleanupWarning)
+      }} />}
+      {renameTarget && <RenameBotDialog bot={renameTarget} onCancel={() => setRenameTarget(null)} onRename={async name => {
+        const next = await api.renameBot(renameTarget.id, name)
+        setBots(current => current.map(item => item.id === next.id ? next : item))
+        setBot(current => current?.id === next.id ? next : current)
+        setRenameTarget(null)
       }} />}
     </div>
   )
@@ -1604,21 +1644,35 @@ function BotMenu(props: {
   </section>
 }
 
-function DeleteBotDialog(props: {bot: Bot;onCancel: () => void;onDelete: (name: string) => Promise<void>}) {
+export function DeleteBotDialog(props: {bot: Bot;onCancel: () => void;onDelete: (name: string) => Promise<void>}) {
   const dialog = useRef<HTMLDialogElement>(null)
-  const [confirmation,setConfirmation] = useState('')
   const [busy,setBusy] = useState(false)
   const [error,setError] = useState('')
   useEffect(()=>{const element=dialog.current;element?.showModal();return()=>element?.close()},[])
   return <dialog ref={dialog} className="delete-bot-dialog" aria-labelledby="delete-bot-title" onCancel={(event)=>{event.preventDefault();if(!busy)props.onCancel()}}>
-    <form onSubmit={(event)=>{event.preventDefault();if(busy||confirmation!==props.bot.name)return;setBusy(true);setError('');void props.onDelete(confirmation).catch((reason:unknown)=>{setError(messageOf(reason));setBusy(false)})}}>
+    <form onSubmit={(event)=>{event.preventDefault();if(busy)return;setBusy(true);setError('');void props.onDelete(props.bot.name).catch((reason:unknown)=>{setError(messageOf(reason));setBusy(false)})}}>
       <h2 id="delete-bot-title">Delete {props.bot.name}?</h2>
-      <p>This removes this bot’s chats, memories, skills, queued tasks, saved file copies, avatar and browser profile from Riot.</p>
-      <p>Your project folder and shared provider sign-ins stay. Usage totals and Codex’s own managed session history remain.</p>
-      <p className="help">Project folder: {props.bot.workspacePath || 'None'}</p>
-      <label><span>Type <strong>{props.bot.name}</strong> to confirm</span><input autoFocus aria-label="Bot name to confirm deletion" value={confirmation} disabled={busy} onChange={(event)=>setConfirmation(event.target.value)} /></label>
+      <p>This permanently removes this bot’s chats, memories, skills, schedules, queued tasks, saved file copies and browser profile from Riot.</p>
+      <p>Your working folder and shared AI connections will be kept. Usage totals and Codex’s managed session history remain.</p>
+      {props.bot.workspacePath && <p className="help folder-path">Working folder kept: {props.bot.workspacePath}</p>}
       {error && <p className="delete-error" role="alert">{error}</p>}
-      <div className="row"><button type="button" disabled={busy} onClick={props.onCancel}>Cancel</button><button type="submit" className="danger" disabled={busy||confirmation!==props.bot.name}>{busy ? 'Deleting…' : 'Delete Bot'}</button></div>
+      <div className="row"><button type="button" autoFocus disabled={busy} onClick={props.onCancel}>Cancel</button><button type="submit" className="danger" disabled={busy}>{busy ? 'Deleting…' : 'Delete bot'}</button></div>
+    </form>
+  </dialog>
+}
+
+export function RenameBotDialog(props: { bot: Bot; onCancel: () => void; onRename: (name: string) => Promise<void> }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [name, setName] = useState(props.bot.name)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close() }, [])
+  return <dialog ref={dialog} className="delete-bot-dialog rename-bot-dialog" aria-labelledby="rename-bot-title" onCancel={event => { event.preventDefault(); if (!busy) props.onCancel() }}>
+    <form onSubmit={event => { event.preventDefault(); if (busy || name.trim().length < 2) return; setBusy(true); setError(''); void props.onRename(name.trim()).catch(reason => { setError(messageOf(reason)); setBusy(false) }) }}>
+      <h2 id="rename-bot-title">Rename {props.bot.name}</h2>
+      <label>Bot name<input autoFocus required minLength={2} maxLength={40} value={name} disabled={busy} onFocus={event => event.currentTarget.select()} onChange={event => setName(event.target.value)} /></label>
+      {error && <p className="delete-error" role="alert">{error}</p>}
+      <div className="row"><button type="button" disabled={busy} onClick={props.onCancel}>Cancel</button><button className="send" type="submit" disabled={busy || name.trim().length < 2}>{busy ? 'Saving…' : 'Save name'}</button></div>
     </form>
   </dialog>
 }
