@@ -353,6 +353,7 @@ function Shell({ api }: { api: RiotBridge }) {
         )}
         {approval && (
           <ApprovalCard
+            key={approval.id}
             approval={approval}
             onResolve={(approved) => {
               void api.resolveApproval(approval.id, approved).catch((reason: unknown) => setError(messageOf(reason)))
@@ -624,36 +625,31 @@ function ChatPane(props: {
   )
 }
 
-function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; onResolve: (approved: boolean) => void }) {
+export function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; onResolve: (approved: boolean) => void }) {
+  const files = approval.kind === 'codex' && approval.title === 'Allow this Codex file?'
+  const browser = approval.kind === 'browser'
+  const firstLine = approval.command.trim().split(/[\r\n]/, 1)[0]
+  const preview = firstLine.slice(0, 160) + (approval.command.trim().length > Math.min(firstLine.length,160) ? '…' : '')
   return (
-    <div className="approval">
-      <strong>{approval.title || 'Allow this command?'}</strong>
-      <p>{approval.warning}</p>
-      <dl>
-        <div>
-          <dt>Command</dt>
-          <dd>
-            <code>{approval.command}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Folder</dt>
-          <dd>{approval.cwd}</dd>
-        </div>
-        <div>
-          <dt>Time limit</dt>
-          <dd>{Math.round(approval.timeoutMs / 1000)} seconds</dd>
-        </div>
-      </dl>
-      <div className="row">
+    <section className="approval" aria-label="Approval request">
+      <strong>{files ? 'Allow file changes?' : browser ? 'Allow browser action?' : 'Allow command?'}</strong>
+      <p className="approval-summary">{files ? 'Codex wants to update project files.' : <code>{preview}</code>}</p>
+      <p className="approval-warning">{approval.warning}</p>
+      <p className="approval-folder" title={approval.cwd}>Folder: {approval.cwd}</p>
+      <details className="approval-details">
+        <summary>{files ? 'View changes' : browser ? 'View action details' : 'View command'}</summary>
+        <p className="help">Time limit: {Math.round(approval.timeoutMs / 1000)} seconds</p>
+        <pre tabIndex={0} aria-label="Request details"><code>{approval.command}</code></pre>
+      </details>
+      <div className="row approval-actions">
         <button type="button" onClick={() => onResolve(false)}>
           Don’t allow
         </button>
         <button type="button" className="send" onClick={() => onResolve(true)}>
-          Allow this command
+          {files ? 'Allow changes' : browser ? 'Allow action' : 'Allow command'}
         </button>
       </div>
-    </div>
+    </section>
   )
 }
 

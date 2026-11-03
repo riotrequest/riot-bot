@@ -142,10 +142,19 @@ textarea, input, select {
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: 12.5px;
 }
-.approval { margin: 12px 20px 0; }
-.approval dl, .tech { display: grid; gap: 8px; }
-.approval dt, .tech dt { color: #aaa79f; }
-.approval dd, .tech dd { margin: 0; }
+.approval { margin: 12px 20px 0; display: flex; flex-direction: column; flex-shrink: 0; gap: 8px; min-width: 0; max-height: min(52vh, 420px); overflow: hidden; }
+.approval > strong, .approval-summary, .approval-warning, .approval-folder, .approval-actions { flex-shrink: 0; }
+.approval .approval-summary { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.approval .approval-warning { margin: 0; font-size: 12px; color: #aaa79f; line-height: 1.4; }
+.approval .approval-folder { margin: 0; font-size: 12px; color: #aaa79f; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.approval-details { min-height: 0; overflow: auto; font-size: 13px; }
+.approval-details summary { cursor: pointer; color: #edcd9d; position: sticky; top: 0; background: #181b22; }
+.approval-details .help { margin-top: 8px; }
+.approval-details pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; padding: 10px; border-radius: 8px; background: #101217; }
+.approval-actions { padding-top: 2px; }
+.tech { display: grid; gap: 8px; }
+.tech dt { color: #aaa79f; }
+.tech dd { margin: 0; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .danger { color: #ffb4a8; }
 .card header, .card summary { display: flex; gap: 10px; flex-wrap: wrap; color: #aaa79f; }
