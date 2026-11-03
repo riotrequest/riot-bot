@@ -25,9 +25,9 @@ Google requires an OAuth app registration even when the software runs only on yo
    Readonly allows searching and reading mail. Compose allows creating drafts and sending; Riot still enforces each bot's access choice and the send review. This version does not request mailbox deletion, filter management, or full-mailbox modification permissions.
 
 5. In [Clients](https://console.cloud.google.com/auth/clients), create an OAuth client with application type **Desktop app**, then download its JSON file. A Web application client or service-account file will not work. You do not need to enter a fixed redirect address.
-6. Open Riot's left-sidebar **Settings → Email**. Choose **Choose Google setup file…** and select that JSON file.
+6. Select your bot, then open **Apps** in its right-hand **Workspace** navigation. On the Gmail card, choose **Connect Gmail**, then **Choose Google setup file…** and select that JSON file.
 7. Choose **Connect Gmail**. Complete sign-in in your usual browser, choose the account, and review Google's requested permissions. Return to Riot when sign-in finishes. Riot should show the connected email address.
-8. Under **Email access for [bot name]**, choose what the selected bot may do. This choice saves immediately. You can also change it in **Bot settings → Files & tools**, then choose **Save bot settings**.
+8. Under **Email access for [bot name]**, choose what the selected bot may do. This choice saves immediately. Return to **Workspace → Apps → Gmail → Manage Gmail** to change or turn off its access. Each bot has its own Apps page and permissions. Shared sign-in settings remain available under **Manage shared Gmail connection**, or in the left-sidebar **Settings → Email**.
 
 Keep the downloaded file private and outside your bot's working folder. Do not paste it, your password, or any Google tokens into Chat. Riot does not need your Gmail password or an app password.
 
@@ -55,11 +55,11 @@ Riot must be open or running in the tray, and the computer must be on and awake.
 
 ## If something needs attention
 
-- **Sign-in expired or access revoked:** open **Settings → Email → Connect Gmail**. Check Google's app status, test users, scopes, API enablement, and Workspace policy if Google refuses access.
+- **Sign-in expired or access revoked:** open **Workspace → Apps → Gmail → Connect Gmail**. Check Google's app status, test users, scopes, API enablement, and Workspace policy if Google refuses access.
 - **Different mailbox connected:** a bot stays bound to the address you chose. Select access again to explicitly give it the new mailbox; Riot will not silently switch its email account.
 - **Changing the connection during work:** stop jobs that have Gmail access first. Queued email-enabled jobs pause so you can review the new connection before resuming them.
 - **Unconfirmed send:** check Gmail's **Sent** folder before trying again. A lost network response does not prove that the email failed. Riot records the uncertainty across restart and blocks automatic re-sending of that draft or an identical replacement. A confirmed send has a Gmail message ID; this confirms Google's acceptance, rather than delivery to the recipient.
-- **Disconnect:** use **Settings → Email → Disconnect Gmail**. This removes Riot's saved account tokens, while retaining your local app setup for reconnecting. To revoke the grant at Google as well, remove your app from your [Google Account connections](https://myaccount.google.com/connections).
+- **Disconnect:** open **Workspace → Apps → Gmail → Manage Gmail → Manage shared Gmail connection → Disconnect Gmail**. This signs the account out for all bots. To stop only the selected bot, choose **No email access** in its Apps page instead. This removes Riot's saved account tokens, while retaining your local app setup for reconnecting. To revoke the grant at Google as well, remove your app from your [Google Account connections](https://myaccount.google.com/connections).
 
 ## Where the data goes
 

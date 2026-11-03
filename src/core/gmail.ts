@@ -119,7 +119,7 @@ export class GmailService {
 
   private async tokens(): Promise<GoogleTokens> {
     const saved = this.read<GoogleTokens>('gmail'), client = this.read<GoogleClient>('gmail-client')
-    if (!saved?.refreshToken || !client) throw new ConfigError('Connect Gmail in app Settings → Email first.')
+    if (!saved?.refreshToken || !client) throw new ConfigError('Connect Gmail in Workspace → Apps → Gmail first.')
     if (saved.expiresAt > this.now() + 60_000) return saved
     if (this.refreshing) return this.refreshing
     const generation = this.generation
@@ -129,7 +129,7 @@ export class GmailService {
       this.options.credentials.set('gmail', JSON.stringify(next))
       return next
     }).catch(error => {
-      if (generation === this.generation && error instanceof ConfigError && error.message.includes('Reconnect Gmail')) { this.options.credentials.clear('gmail'); this.publish('Google needs you to reconnect Gmail in Settings → Email.') }
+      if (generation === this.generation && error instanceof ConfigError && error.message.includes('Reconnect Gmail')) { this.options.credentials.clear('gmail'); this.publish('Google needs you to reconnect Gmail in Workspace → Apps → Gmail.') }
       throw error
     }).finally(() => { this.refreshing = null })
     return this.refreshing
@@ -137,7 +137,7 @@ export class GmailService {
 
   assertAccount(account: string): void {
     const current = this.status()
-    if (!current.connected || !account || current.email !== account.toLowerCase()) throw new ConfigError('This bot’s Gmail account is not connected. Choose the connected mailbox in Bot settings → Files & tools → Email access.')
+    if (!current.connected || !account || current.email !== account.toLowerCase()) throw new ConfigError('This bot’s Gmail account is not connected. Choose the connected mailbox in Workspace → Apps → Gmail.')
   }
 
   async request(account: string, path: string, signal: AbortSignal, init: RequestInit = {}, beforeSend?: () => void): Promise<any> {
@@ -149,7 +149,7 @@ export class GmailService {
     beforeSend?.()
     try { return await this.fetchJson(`${API}${path}`, { ...init, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.accessToken}` }, signal }) }
     catch (error) {
-      if (error instanceof GmailRejectedError && error.message.includes('Reconnect Gmail') && this.status().email === account) { this.options.credentials.clear('gmail'); this.publish('Google needs you to reconnect Gmail in Settings → Email.') }
+      if (error instanceof GmailRejectedError && error.message.includes('Reconnect Gmail') && this.status().email === account) { this.options.credentials.clear('gmail'); this.publish('Google needs you to reconnect Gmail in Workspace → Apps → Gmail.') }
       throw error
     }
   }
@@ -159,7 +159,7 @@ export class GmailService {
       const signal = init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000)
       const response = await this.fetchImpl(url, { ...init, signal, redirect: 'error' })
       if (!response.ok) {
-        if (response.status === 401 || tokenRequest && [400, 403].includes(response.status)) throw new GmailRejectedError('Google authorization expired or was refused. Reconnect Gmail in Settings → Email.')
+        if (response.status === 401 || tokenRequest && [400, 403].includes(response.status)) throw new GmailRejectedError('Google authorization expired or was refused. Reconnect Gmail in Workspace → Apps → Gmail.')
         if (response.status === 403) throw new GmailRejectedError('Google refused this Gmail action. Check that Gmail API is enabled and your account or Workspace administrator allows the requested permissions.')
         if (response.status === 404) throw new GmailRejectedError('That Gmail message or draft is no longer available.')
         if ([400, 409, 422, 429].includes(response.status)) throw new GmailRejectedError(`Gmail refused this request (HTTP ${response.status}). No automatic retry was made.`)

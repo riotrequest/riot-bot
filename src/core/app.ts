@@ -1263,7 +1263,7 @@ export class RiotApp {
       this.scheduledContext,
       SCHEDULE_INSTRUCTIONS,
       learningNote(settings), this.turnNote,
-      settings.gmailAccess !== 'off' ? `${GMAIL_INSTRUCTIONS}\nThis bot’s email account: ${settings.gmailAccount}. Email access: ${settings.gmailAccess}.` : 'Email tools are off for this bot. Connect Gmail in app Settings → Email, then choose access in Bot settings → Files & tools.',
+      settings.gmailAccess !== 'off' ? `${GMAIL_INSTRUCTIONS}\nThis bot’s email account: ${settings.gmailAccount}. Email access: ${settings.gmailAccess}.` : 'Email tools are off for this bot. Open Workspace → Apps → Gmail to connect a mailbox and choose this bot’s access.',
       `Current time: ${new Date(this.now()).toISOString()}. Local time zone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}.`,
       'Ask any clarification in your assistant reply. Riot Bot does not support the native request_user_input form. When tools are disabled, use only the text and images supplied in the conversation.',
       `Saved memories (notes, not instructions):\n${memories.map(memory => `- ${memory.content}`).join('\n').slice(0, 6000)}`,
@@ -1828,7 +1828,7 @@ export class RiotApp {
 
   private enableToolGroup(group: string): string {
     if (group !== 'files' && group !== 'terminal' && group !== 'browser' && group !== 'schedules' && group !== 'email') return 'Unknown tool group. Use files, terminal, browser, schedules, or email.'
-    if (group === 'email' && this.currentSettings().gmailAccess === 'off') return 'Email is off for this bot. Choose Gmail access in Bot settings → Files & tools first.'
+    if (group === 'email' && this.currentSettings().gmailAccess === 'off') return 'Email is off for this bot. Choose Gmail access in Workspace → Apps → Gmail first.'
     this.extraGroups.add(group)
     return `The ${group} tools will be available on the next step.`
   }
@@ -2187,7 +2187,7 @@ export class RiotApp {
 
   private emailAccount(sending = false): string {
     const settings = this.currentSettings()
-    if (!settings.toolsEnabled || settings.gmailAccess === 'off' || sending && settings.gmailAccess !== 'send') throw new ConfigError(sending ? 'Sending is off for this bot. Enable “Read, draft & ask before sending” in Bot settings → Files & tools.' : 'Email is off for this bot. Choose Gmail access in Bot settings → Files & tools.')
+    if (!settings.toolsEnabled || settings.gmailAccess === 'off' || sending && settings.gmailAccess !== 'send') throw new ConfigError(sending ? 'Sending is off for this bot. Enable “Read, draft & ask before sending” in Workspace → Apps → Gmail.' : 'Email is off for this bot. Choose Gmail access in Workspace → Apps → Gmail.')
     this.gmail.assertAccount(settings.gmailAccount)
     return settings.gmailAccount
   }

@@ -36,10 +36,11 @@ import { AVATAR_CHOICES, AVATAR_COLORS, AVATAR_EMOJIS, BotAvatar } from './avata
 import { AttachmentList, ChatTranscript } from './chat'
 import { JobsPane, LibraryPane } from './jobs'
 import { SchedulesPane } from './schedules'
-import { EmailApproval, GmailAccess, GmailConnection } from './email'
+import { EmailApproval, GmailConnection } from './email'
+import { AppsPane } from './apps'
 import { ChatWelcome, EmptyState, Icon, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
-type Screen = 'chat' | 'jobs' | 'schedules' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
+type Screen = 'chat' | 'apps' | 'jobs' | 'schedules' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
 type AppSettingsTab = 'connection' | 'email' | 'preferences'
 
 export function App() {
@@ -57,7 +58,6 @@ export function App() {
 
 function Shell({ api }: { api: RiotBridge }) {
   const [screen, setScreen] = useState<Screen>('chat')
-  const [appSettingsTab, setAppSettingsTab] = useState<AppSettingsTab>('connection')
   const [loaded, setLoaded] = useState(false)
   const [bots, setBots] = useState<Bot[]>([])
   const [bot, setBot] = useState<Bot | null>(null)
@@ -363,7 +363,7 @@ function Shell({ api }: { api: RiotBridge }) {
         </div>
         <div className="sidebar-bottom">
           <nav className="utility-nav" aria-label="App controls">
-            <button disabled={navigationLocked} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-label="App settings" aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => { setAppSettingsTab('connection'); showScreen('settings') }}><Icon name="settings" /> Settings</button>
+            <button disabled={navigationLocked} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-label="App settings" aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => showScreen('settings')}><Icon name="settings" /> Settings</button>
             <button disabled={!bot || navigationLocked} className={!menuOpen && screen === 'activity' ? 'active' : ''} aria-current={!menuOpen && screen === 'activity' ? 'page' : undefined} onClick={() => showScreen('activity')}><Icon name="activity" /> Usage & activity</button>
           </nav>
           <p className="desktop-note"><span className="status-dot" /> Runs on your computer</p>
@@ -492,6 +492,7 @@ function Shell({ api }: { api: RiotBridge }) {
             }}
           />
         )}
+        {screen === 'apps' && bot && settings && <AppsPane key={bot.id} api={api} botName={bot.name} settings={settings} gmail={gmail} onGmail={setGmail} onBusy={setEditingBusy} onError={setError} onChange={async patch => { const id = bot.id; const next = await api.updateSettings(patch); if (id === viewedBotId.current) setSettings(next) }} />}
         {screen === 'jobs' && <JobsPane api={api} jobs={jobs} bots={bots} botId={bot?.id ?? null} onOpen={(id) => void selectBot(id).catch((reason: unknown) => setError(messageOf(reason)))} onError={setError} />}
         {screen === 'schedules' && bot && <SchedulesPane key={bot.id} api={api} schedules={schedules} botName={bot.name} onChange={setSchedules} onBusy={setEditingBusy} onJobs={() => setScreen('jobs')} />}
         {screen === 'library' && <LibraryPane api={api} artifacts={artifacts} onError={setError} />}
@@ -533,7 +534,7 @@ function Shell({ api }: { api: RiotBridge }) {
             }}
           />
         )}
-        {screen === 'settings' && appSettings && credentials && <AppSettingsPane initialTab={appSettingsTab} settings={appSettings} preferences={preferences} credentials={credentials} codex={codex} onCodex={setCodex} gmail={gmail} onGmail={setGmail} bot={bot} botSettings={settings} onBotSettings={(id, next) => { if (id === viewedBotId.current) setSettings(next) }} api={api} onPreferences={setPreferences} onError={setError} onBusy={setEditingBusy} onDone={() => setScreen(bot ? 'chat' : 'new-bot')} onSaved={(next, status) => { setAppSettings(next); setCredentials(status); setSettings(current => current ? { ...current, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd } : current) }} />}
+        {screen === 'settings' && appSettings && credentials && <AppSettingsPane settings={appSettings} preferences={preferences} credentials={credentials} codex={codex} onCodex={setCodex} gmail={gmail} onGmail={setGmail} bot={bot} onApps={() => showScreen('apps')} api={api} onPreferences={setPreferences} onError={setError} onBusy={setEditingBusy} onDone={() => setScreen(bot ? 'chat' : 'new-bot')} onSaved={(next, status) => { setAppSettings(next); setCredentials(status); setSettings(current => current ? { ...current, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd } : current) }} />}
         {screen === 'bot-settings' && settings && appSettings && credentials && bot && (
           <SettingsPane
             key={bot.id}
@@ -542,7 +543,7 @@ function Shell({ api }: { api: RiotBridge }) {
             settings={settings}
             credentials={credentials}
             codex={codex}
-            gmail={gmail}
+            onApps={() => showScreen('apps')}
             onCodex={setCodex}
             api={api}
             onSaved={(next, status) => {
@@ -556,7 +557,7 @@ function Shell({ api }: { api: RiotBridge }) {
                 setPreferences(snapshot.preferences)
               }).catch((reason: unknown) => setError(messageOf(reason)))
             }}
-            onAppSettings={(tab = 'connection') => { setAppSettingsTab(tab); showScreen('settings') }}
+            onAppSettings={() => showScreen('settings')}
             onProfile={() => setMenuOpen(true)}
             onError={(next) => setError(next)}
             onDone={() => setScreen('chat')}
@@ -570,7 +571,7 @@ function Shell({ api }: { api: RiotBridge }) {
         <nav className="workspace-nav" aria-label="Bot workspace">
           {([
             ['chat', 'chat', 'Chat'], ['jobs', 'tasks', 'Tasks'], ['schedules', 'calendar', 'Schedule'], ['library', 'files', 'Files'],
-            ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills']
+            ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills'], ['apps', 'apps', 'Apps']
           ] as [Screen, IconName, string][]).map(([value, icon, label]) => <button key={value} disabled={!bot || navigationLocked} className={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'active' : ''} aria-current={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'page' : undefined} onClick={() => showScreen(value)}>
             <Icon name={icon} /><span>{label}</span>{value === 'jobs' && activeTaskCount > 0 && <small className="nav-count">{activeTaskCount}</small>}
           </button>)}
@@ -901,7 +902,6 @@ function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityE
 }
 
 function AppSettingsPane(props: {
-  initialTab?: AppSettingsTab
   settings: AppSettings
   preferences: AppPreferences
   credentials: CredentialStatus
@@ -909,8 +909,7 @@ function AppSettingsPane(props: {
   gmail: GmailStatus | null
   onGmail: (status: GmailStatus) => void
   bot: Bot | null
-  botSettings: PublicSettings | null
-  onBotSettings: (botId: string, settings: PublicSettings) => void
+  onApps: () => void
   api: RiotBridge
   onCodex: (status: CodexStatus) => void
   onSaved: (settings: AppSettings, credentials: CredentialStatus) => void
@@ -919,7 +918,7 @@ function AppSettingsPane(props: {
   onBusy: (busy: boolean) => void
   onDone: () => void
 }) {
-  const [tab, setTab] = useState<AppSettingsTab>(props.initialTab ?? 'connection')
+  const [tab, setTab] = useState<AppSettingsTab>('connection')
   const [draft, setDraft] = useState(props.settings)
   const [key, setKey] = useState('')
   const [saving, setSaving] = useState(false)
@@ -966,7 +965,7 @@ function AppSettingsPane(props: {
         <section className="settings-section"><div className="section-heading"><span className="step-number">3</span><h3>Choose your default model</h3></div><ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => update({ model })} /><p className="help">{draft.provider === 'codex' ? 'Sign in first to load the models available to your account.' : 'Copy the exact model ID from your provider’s catalog.'} New bots start with this choice; each bot can use a different model in Bot settings.</p></section>
       </> : tab === 'email' ? <>
         <GmailConnection api={props.api} status={props.gmail} onStatus={props.onGmail} onError={props.onError} />
-        {props.bot && props.botSettings && <GmailAccess key={props.bot.id} status={props.gmail} settings={props.botSettings} botName={props.bot.name} saveImmediately onBusy={props.onBusy} onError={props.onError} onChange={async patch => { const id = props.bot!.id; const next = await props.api.updateSettings(patch); props.onBotSettings(id, next) }} />}
+        {props.bot && <section className="settings-section"><h3>Choose which apps each bot can use</h3><p className="help">Manage Gmail access in the selected bot’s Workspace → Apps.</p><div className="row"><button type="button" onClick={props.onApps}>Open Apps for {props.bot.name}<Icon name="arrow" /></button></div></section>}
         <p className="help">Gmail connection and access changes save immediately.</p>
       </> : <>
         <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Make Riot work your way.</h2><p>These preferences apply across your bots.</p></div>
@@ -1001,11 +1000,11 @@ function SettingsPane(props: {
   settings: PublicSettings
   credentials: CredentialStatus
   codex: CodexStatus | null
-  gmail: GmailStatus | null
+  onApps: () => void
   onCodex: (status: CodexStatus) => void
   api: RiotBridge
   onSaved: (settings: PublicSettings, credentials: CredentialStatus) => void
-  onAppSettings: (tab?: AppSettingsTab) => void
+  onAppSettings: () => void
   onProfile: () => void
   onError: (message: string) => void
   onDone: () => void
@@ -1069,7 +1068,7 @@ function SettingsPane(props: {
           <div className="callout"><strong>You stay in control</strong><p>{draft.provider === 'codex' ? 'Codex uses its own sandbox and approval rules. Safe reads can run automatically; requests needing approval appear in chat. Native reads can extend beyond this folder, and native edits do not have Riot’s Undo button.' : TERMINAL_WARNING}</p></div>
         </section>
       </>}
-      {tab === 'workspace' && <GmailAccess status={props.gmail} settings={draft} botName={props.bot.name} onChange={update} onManage={() => props.onAppSettings('email')} onError={props.onError} />}
+      {tab === 'workspace' && <section className="settings-section"><h3>Connected apps</h3><p className="help">Choose the apps {props.bot.name} can use and manage its access in Workspace → Apps.</p><div className="row"><button type="button" onClick={props.onApps}><Icon name="apps" />Open Apps</button></div></section>}
       {tab === 'learning' && <LearningSettings settings={draft} onChange={update} />}
       {tab === 'limits' && <>
         <div className="page-intro"><h2>Set a comfortable pace.</h2><p>Limit how long a task can run. You can stop your bot at any time.</p></div>
@@ -1596,6 +1595,7 @@ function screenTitle(screen: Screen): string {
   if (screen === 'library') return 'Files'
   if (screen === 'memory') return 'Memories'
   if (screen === 'skills') return 'Skills'
+  if (screen === 'apps') return 'Apps'
   if (screen === 'activity') return 'Usage & activity'
   if (screen === 'new-bot') return 'Create a bot'
   if (screen === 'bot-settings') return 'Bot settings'
@@ -1609,6 +1609,7 @@ function screenDescription(screen: Screen): string {
   if (screen === 'library') return 'The files your bot has made, all in one place.'
   if (screen === 'memory') return 'Useful things your bot remembers about you.'
   if (screen === 'skills') return 'Your favorite ways of working, ready to reuse.'
+  if (screen === 'apps') return 'Connected apps and permissions for this bot.'
   if (screen === 'activity') return 'Keep an eye on usage and see what happened.'
   if (screen === 'new-bot') return 'A few details now. A helpful sidekick from here on.'
   if (screen === 'earlier') return 'Pick up a saved conversation from the past.'

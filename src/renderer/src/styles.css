@@ -305,6 +305,24 @@ button .ui-icon { vertical-align: middle; }
 .settings-section label { font-size: 12px; font-weight: 500; }
 .settings-section input, .settings-section textarea, .settings-section select { font-size: 13px; font-weight: 400; }
 .section-heading { display: flex; align-items: center; gap: 10px; }
+.app-card { padding: 22px; border: 1px solid #393f41; border-radius: 14px; background: #202426; }
+.app-card-heading { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.app-card-icon { display: grid; place-items: center; flex-shrink: 0; width: 46px; height: 46px; border: 1px solid #52574b; border-radius: 12px; background: #30352c; color: #d2d5ac; }
+.app-card-icon .ui-icon { width: 25px; height: 25px; }
+.app-card-title { flex: 1; min-width: 155px; }
+.app-card-title h3 { margin: 0 0 2px; font-size: 17px; font-weight: 600; }
+.app-card-title .help { font-size: 12px; }
+.app-card-heading > button { font-size: 12px; }
+.app-access-status { display: inline-block; margin-top: 9px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.app-access-status.enabled { color: #a5c9b2; }
+.app-access-status.paused { color: #f0bda0; }
+.app-card-description { margin: 18px 0 0; color: #bac2bc; font-size: 13px; overflow-wrap: anywhere; }
+.app-card-account { margin: 8px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.app-card-details { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 20px; }
+.app-account-details > .help { margin: 12px 0 16px; }
+.app-account-details > summary { color: var(--accent); font-size: 12px; }
+.app-account-details .settings-section { margin-top: 16px; }
+.apps-save-note { font-size: 12px; }
 .section-heading h3 { flex: 1; }
 .small-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: #a5c9b2; }
 .small-badge .ui-icon { width: 13px; height: 13px; }

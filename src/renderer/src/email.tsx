@@ -2,17 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import type { EmailPreview, GmailStatus, PublicSettings, RiotBridge } from '../../shared/types'
 import { messageOf } from './ui'
 
-export function GmailConnection({ api, status, onStatus, onError }: { api: RiotBridge; status: GmailStatus | null; onStatus: (status: GmailStatus) => void; onError: (message: string) => void }) {
+export function GmailConnection({ api, status, onStatus, onError, showIntro = true }: { api: RiotBridge; status: GmailStatus | null; onStatus: (status: GmailStatus) => void; onError: (message: string) => void; showIntro?: boolean }) {
   const [busy, setBusy] = useState(false)
   async function action(work: () => Promise<GmailStatus | null>): Promise<void> {
     setBusy(true)
     try { const next = await work(); if (next) onStatus(next) } catch (error) { onError(messageOf(error)) } finally { setBusy(false) }
   }
   return <>
-    <div className="page-intro"><h2>Your inbox, connected.</h2><p>Let your bots work with your existing Gmail or Google Workspace mailbox. The connection runs directly from this computer.</p></div>
+    {showIntro && <div className="page-intro"><h2>Your inbox, connected.</h2><p>Let your bots work with your existing Gmail or Google Workspace mailbox. The connection runs directly from this computer.</p></div>}
     <section className="settings-section">
       <h3>{status?.connected ? status.email : status?.connecting ? 'Finish signing in with Google' : 'Connect Gmail'}</h3>
-      <p className="help">{status?.connected ? 'Connected. Each bot gets access only when you enable it below or in Bot settings.' : status?.configured ? 'Your Google setup is ready. Sign in to choose the Gmail account you want to connect.' : 'For a self-hosted copy of Riot, Google needs a one-time app setup that you own. Choose its downloaded setup file, then sign in.'}</p>
+      <p className="help">{status?.connected ? 'Connected to Riot. Choose each bot’s access in Workspace → Apps → Gmail.' : status?.configured ? 'Your Google setup is ready. Sign in to choose the Gmail account you want to connect.' : 'For a self-hosted copy of Riot, Google needs a one-time app setup that you own. Choose its downloaded setup file, then sign in.'}</p>
       {status?.note && <p role="status">{status.note}</p>}
       {!status?.persistent && <p className="help">Windows credential protection is unavailable. This connection will last for this session only.</p>}
       <div className="row">
@@ -38,17 +38,17 @@ export function GmailConnection({ api, status, onStatus, onError }: { api: RiotB
   </>
 }
 
-export function GmailAccess({ status, settings, botName, onChange, onManage, onError, onBusy, saveImmediately = false }: { status: GmailStatus | null; settings: PublicSettings; botName: string; onChange: (patch: Partial<PublicSettings>) => void | Promise<void>; onManage?: () => void; onError: (message: string) => void; onBusy?: (busy: boolean) => void; saveImmediately?: boolean }) {
+export function GmailAccess({ status, settings, botName, onChange, onError, onBusy }: { status: GmailStatus | null; settings: PublicSettings; botName: string; onChange: (patch: Partial<PublicSettings>) => void | Promise<void>; onError: (message: string) => void; onBusy?: (busy: boolean) => void; }) {
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
   const bound = Boolean(status?.connected && settings.gmailAccount === status.email)
   async function change(access: PublicSettings['gmailAccess']): Promise<void> {
     setSaving(true); onBusy?.(true); setNote('')
-    try { await onChange({ gmailAccess: access, gmailAccount: access === 'off' ? '' : status?.email ?? '' }); setNote(saveImmediately ? 'Email access saved.' : 'Save bot settings below to apply this change.') } catch (error) { onError(messageOf(error)) } finally { setSaving(false); onBusy?.(false) }
+    try { await onChange({ gmailAccess: access, gmailAccount: access === 'off' ? '' : status?.email ?? '' }); setNote('Email access saved.') } catch (error) { onError(messageOf(error)) } finally { setSaving(false); onBusy?.(false) }
   }
   return <section className="settings-section">
     <h3>Email access for {botName}</h3>
-    <p className="help">{status?.connected ? `Connected mailbox: ${status.email}` : 'Connect Gmail in app Settings → Email, then choose what this bot can do.'}</p>
+    <p className="help">{status?.connected ? `Connected mailbox: ${status.email}` : 'Connect Gmail in Workspace → Apps, then choose what this bot can do.'}</p>
     {settings.gmailAccount && !bound && <p className="help">This bot’s saved mailbox ({settings.gmailAccount}) is not connected. Choose access again to use the current mailbox.</p>}
     <label>What can this bot do?<select aria-label={`Email access for ${botName}`} value={bound ? settings.gmailAccess : settings.gmailAccount ? 'unavailable' : 'off'} disabled={saving || Boolean(status?.connecting)} onChange={event => void change(event.target.value as PublicSettings['gmailAccess'])}>
       {settings.gmailAccount && !bound && <option value="unavailable" disabled>Access paused — mailbox not connected</option>}
@@ -59,7 +59,6 @@ export function GmailAccess({ status, settings, botName, onChange, onManage, onE
     <p className="help">Sending shows a review card with the recipients and message. This version supports plain-text email; attachments and mailbox cleanup can be handled in Gmail.</p>
     {!settings.toolsEnabled && <p className="help">Tools are currently off for this bot. Enable Allow tools in Bot settings → Files & tools to use email.</p>}
     {note && <p className="help" role="status">{note}</p>}
-    {onManage && <button type="button" onClick={onManage}>Manage Gmail connection</button>}
   </section>
 }
 
