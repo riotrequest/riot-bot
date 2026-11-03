@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { ProviderId } from '../../shared/types'
+import type { CodexStatus, ProviderId } from '../../shared/types'
 
 export type IconName = 'chat' | 'tasks' | 'files' | 'memory' | 'spark' | 'settings' | 'activity' | 'plus' | 'arrow' | 'check' | 'attach' | 'image' | 'chevron' | 'back'
 
@@ -25,6 +25,11 @@ export function Icon({ name }: { name: IconName }) {
 }
 
 export const providerName = (provider: ProviderId): string => provider === 'codex' ? 'ChatGPT / Codex' : provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'
+
+export function ModelBadge({ provider, model, models, onClick }: { provider: ProviderId; model: string; models?: CodexStatus['models']; onClick: () => void }) {
+  const name = provider === 'codex' ? models?.find(item => item.id === model)?.name ?? model : model
+  return <button type="button" className="model-badge" onClick={onClick} title={model ? `${providerName(provider)} · ${model} — change in Bot settings` : 'Choose this bot’s model'} aria-label={model ? `Current model: ${providerName(provider)} · ${name}. Open Bot settings` : 'No model selected. Open Bot settings'}><Icon name="spark" /><span>{model ? `${providerName(provider)} · ${name}` : 'Choose a model'}</span><Icon name="chevron" /></button>
+}
 
 export function ProviderPicker({ value, onChange }: { value: ProviderId; onChange: (provider: ProviderId) => void }) {
   return <fieldset className="provider-picker">

@@ -59,6 +59,7 @@ const api: RiotBridge = {
   listActivity: (scope) => ipcRenderer.invoke('activity:list', scope),
   getUsage: () => ipcRenderer.invoke('usage:get'),
   updateSettings: (patch: Partial<PublicSettings>) => ipcRenderer.invoke('settings:update', patch),
+  updateAppSettings: (patch) => ipcRenderer.invoke('settings:updateApp', patch),
   setCredential: (provider, secret) => ipcRenderer.invoke('credentials:set', provider, secret),
   clearCredential: (provider) => ipcRenderer.invoke('credentials:clear', provider),
   pickWorkspace: () => ipcRenderer.invoke('workspace:pick'),

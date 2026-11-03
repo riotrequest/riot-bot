@@ -4,11 +4,11 @@ Riot Bot is a personal Windows desktop assistant. Each bot has one ongoing conve
 
 ## Easier setup and everyday use — November 3, 2026
 
-Start in Chat with **Let’s set up**. **Settings → Connection** walks through choosing an AI connection, signing in or adding an API key, and choosing a model. Save settings, then return to Chat. A starter idea fills your draft without sending it. Trying to send before connecting opens setup and keeps your draft.
+Start in Chat with **Let’s set up**. **Settings** at the bottom of the left sidebar manages shared connections and the default model for new bots. **Bot settings** at the bottom of the right Workspace sidebar controls the selected bot’s model, profile, working folder, tools, and limits. Save the app default, then use **Bot settings → Model → Use app default** to apply it to an existing bot. New bots start with the app default automatically. A starter idea fills your draft without sending it. Trying to send before connecting opens setup and keeps your draft.
 
-The sidebar uses **Tasks** for work in progress, **Files** for saved versions, and **Memories** for facts and preferences. **Usage & activity** is below Settings. Empty screens explain how to get started. **New bot** offers a few starting ideas and inherits the selected bot’s provider and model. Its default name avoids a naming request; connection overrides, folders, and appearance are optional disclosures.
+The right Workspace sidebar uses **Tasks** for work in progress, **Files** for saved versions, and **Memories** for facts and preferences. **Usage & activity** is below Settings on the left. Empty screens explain how to get started. **New bot** offers a few starting ideas and starts with the app-wide default provider and model. Its default name avoids a naming request; connection overrides, folders, and appearance are optional disclosures.
 
-Settings has four sections: **Connection**, **Files & tools**, **Limits**, and **Advanced**. Model/context tuning and the optional connection test live in Advanced. Use **Customize bot** in the header for its name, purpose, extra instructions, icon, browser, earlier conversations, and deletion. Choosing a different working folder turns editing off in the form until you explicitly enable it and save. Existing saved permissions are preserved.
+**Bot settings** has **Profile & browser**, **Model**, **Files & tools**, **Limits**, and **Advanced**. Model/context tuning and the optional connection test live in Advanced. Profile & browser contains its name, purpose, extra instructions, icon, browser, earlier conversations, and deletion. Shared credentials, display preferences, the app-wide spending ceiling, and defaults live in the left sidebar’s app Settings. Defaults are seeded once from the previously selected bot on upgrade; later changes apply to new bots and do not switch existing bots. Chat shows the current provider and model below the bot’s name. The working status and View tasks stay together above the composer, using the same content width. Choosing a different working folder turns editing off in the form until you explicitly enable it and save. Existing saved permissions are preserved.
 
 ## Persistent jobs and saved files — November 2, 2026
 
@@ -75,7 +75,7 @@ The sidebar is **New Bot** and a vertical list of bots. Each row shows the avata
 
 There is no New Chat button. Compaction, memory, and history search stay automatic. A bot that already had several chats keeps every message. The most recently active chat becomes the ongoing conversation. The others stay in the bot menu under **Earlier conversations**, and search there stays on that bot. Those chats are read-only. New messages go to the ongoing conversation. Nothing is merged or deleted.
 
-The **Customize bot** button in the main header opens the selected bot’s controls in the main panel: rename, purpose, instructions, avatar, **Open Workspace**, earlier conversations, Settings, and browser controls. **Customize bot → Delete this bot → Delete bot…** opens a confirmation requiring the bot’s exact name. Stop its active work first. Deletion discards its queue and removes Riot’s chats, memories, skills, Library copies, avatar and browser profile. The project folder, shared provider sign-ins, anonymous usage totals and Codex’s managed session history remain. Other bots stay intact. You can delete the last bot and create another from the empty app.
+**Bot settings → Profile & browser** opens the selected bot’s controls in the main panel: rename, purpose, instructions, avatar, **Open Workspace**, earlier conversations, Settings, and browser controls. **Bot settings → Profile & browser → Delete this bot → Delete bot…** opens a confirmation requiring the bot’s exact name. Stop its active work first. Deletion discards its queue and removes Riot’s chats, memories, skills, Library copies, avatar and browser profile. The project folder, shared provider sign-ins, anonymous usage totals and Codex’s managed session history remain. Other bots stay intact. You can delete the last bot and create another from the empty app.
 
 Switching bots keeps the unsent draft for each bot during the session. A running task, its approval, and its browser stay with the bot that started them. Memory, skills, workspace, history, and the browser profile stay separate.
 
@@ -109,16 +109,16 @@ Every bot has an avatar in the bot list, the chat header, and once beside each a
 
 ## Credentials
 
-Open **Settings → Connection**.
+Open the left sidebar’s **Settings → Connections & default model**.
 
-For **ChatGPT account**, sign in with ChatGPT, choose a model from the account’s picker, and choose **Save settings**. This uses the Codex preview connection and requires the official Codex CLI. Full instructions and permission differences are in [docs/codex.md](docs/codex.md).
+For **ChatGPT account**, sign in with ChatGPT, choose a model from the account’s picker, and choose **Save app settings**. This uses the Codex preview connection and requires the official Codex CLI. Full instructions and permission differences are in [docs/codex.md](docs/codex.md).
 
 For **OpenAI API** or **OpenRouter**:
 
 1. Choose the connection card for your provider.
 2. Paste your API key. If a key is already saved, leave the box empty to keep it.
 3. Copy the exact model ID from that provider’s catalog into Model ID. Riot does not select or substitute an API model.
-4. Choose **Save settings**, then **Back to chat**. This saves the settings and any new key together.
+4. Choose **Save app settings**. New bots start with this model. For an existing bot, open **Bot settings → Model → Use app default**, then save that bot’s settings.
 
 A ChatGPT Plus, Codex, or Cursor subscription does not supply this key. The key is shared by every bot. Keys stay in the main process. The window only learns whether a key is saved. On this machine Windows credential protection is available, so a saved key survives restart. If that protection is unavailable, the key is kept in memory for the session and forgotten on quit.
 
@@ -148,7 +148,7 @@ The bot menu shows the available browser. Riot Bot prefers its downloaded Chromi
 
 Browser tools can list tabs, open an `http` or `https` URL, read the page, take a compact snapshot with element references, click or fill an observed element, scroll, go back, close a tab, and search. A reference belongs to one tab and one snapshot. A stale or ambiguous reference is rejected. There is no tool for arbitrary page scripts, a shell inside the page, or the browser’s debugging protocol. Automatic downloads are cancelled. A file upload is not chosen by the bot; take over the window and pick the file yourself.
 
-Search opens a public search page in that browser. The default template is `https://search.brave.com/search?q={query}`. On first startup of this version, saved copies of the old DuckDuckGo default are changed to Brave; custom templates are preserved. You can explicitly request Brave, Google, or DuckDuckGo, or set another public `https` template containing `{query}` under **Settings → Advanced → Web search settings**. There is no separate search API fee. The model still spends tokens from the task budget to read the results. Snippets are only a way to find a page. Open the source before treating a detailed claim as verified, and include the source URL. Brave result numbers count parent web cards, excluding ads and grouped sitelinks. Only the returned numbered cards were observed; eight cards do not establish a top-ten sweep.
+Search opens a public search page in that browser. The default template is `https://search.brave.com/search?q={query}`. On first startup of this version, saved copies of the old DuckDuckGo default are changed to Brave; custom templates are preserved. You can explicitly request Brave, Google, or DuckDuckGo, or set another public `https` template containing `{query}` under **Bot settings → Advanced → Web search settings**. There is no separate search API fee. The model still spends tokens from the task budget to read the results. Snippets are only a way to find a page. Open the source before treating a detailed claim as verified, and include the source URL. Brave result numbers count parent web cards, excluding ads and grouped sitelinks. Only the returned numbered cards were observed; eight cards do not establish a top-ten sweep.
 
 An explicit Google search uses Google even when the default is Brave. The tool accepts `engine: "google"`, `"brave"`, `"duckduckgo"`, or `"default"`. A request such as “forget Google” overrides a stale Google tool argument. It keeps the exact query and records the engine, actual results URL, observation time, and observed organic result cards. Ads and grouped sitelinks are excluded from the numbered cards. The explicit Google route requests US English results with personalization off; it is one observation, not a universal SEO rank. Another engine's result numbers do not establish a Google position.
 
@@ -162,11 +162,11 @@ The browser is not isolated from your local network. Typed addresses must be `ht
 
 ## Limits
 
-Context fitting is automatic. Riot Bot uses the model’s documented context length when the provider publishes one, or a capacity you enter under **Settings → Advanced → Model limits & context**. For OpenRouter, the public model list also supplies the output cap when available. This metadata is cached and is not a model completion. Without a documented or configured context size, automatic mode uses a labeled conservative limit of 32,768 tokens. Older chat is compacted toward about 12,000 fitted input tokens; a larger window does not send the whole transcript.
+Context fitting is automatic. Riot Bot uses the model’s documented context length when the provider publishes one, or a capacity you enter under **Bot settings → Advanced → Model limits & context**. For OpenRouter, the public model list also supplies the output cap when available. This metadata is cached and is not a model completion. Without a documented or configured context size, automatic mode uses a labeled conservative limit of 32,768 tokens. Older chat is compacted toward about 12,000 fitted input tokens; a larger window does not send the whole transcript.
 
 Reply allowance is automatic too. It starts at 8,192 tokens, includes model reasoning, and can grow after a truncated tool request or an empty reply that exhausted its allowance. Growth stays within the published output cap, context reserve, and an application ceiling of 32,768. Replies can continue across calls. Every call still checks time and spending limits. A custom manual reply cap remains available in Advanced; saved custom caps are preserved. An incomplete tool batch is rejected before any of its actions run, then retried within the same task limits. The old untouched 2,048-token setting migrates to automatic mode.
 
-The manual input working budget, default 8000, applies only when context fitting is set to manual. It stays under **Settings → Advanced → Model limits & context**, with the per-response allowance and model-call cap. Ordinary use does not require tuning these controls.
+The manual input working budget, default 8000, applies only when context fitting is set to manual. It stays under **Bot settings → Advanced → Model limits & context**, with the per-response allowance and model-call cap. Ordinary use does not require tuning these controls.
 
 Other defaults: 24 model calls per task and 10 minutes. Migration raises the old 12-call default only for automatic replies; custom caps remain unchanged. The last four calls include a reminder to finish the deliverable and reserve a final handoff instead of continuing optional polishing. Dollar limits are off until you enter both a spend cap and a price per million input tokens and output tokens. The app daily ceiling applies across bots. If a dollar cap is on and a price is missing, the call is refused. Figures are labeled estimated or reported. They are not a provider invoice. A cancelled or failed call that already left the app keeps a conservative estimate when the provider does not report usage. Compaction, retries, and tool follow-ups share the same budget. Riot Bot does not raise a spending limit to make a request fit.
 
@@ -252,7 +252,7 @@ The running window was also checked at 1180 and 880 pixels wide. The sidebar sta
 This does not call a model until you send a message. Installed Chrome or Edge can be used without downloading Chromium.
 
 1. `cd riot-bot` then `npm run dev`.
-2. Open **Customize bot → Browser & website sign-ins** and check the available browser. If none is available, choose **Install Chromium** and wait for the size and progress line.
+2. Open **Bot settings → Profile & browser → Browser & website sign-ins** and check the available browser. If none is available, choose **Install Chromium** and wait for the size and progress line.
 3. Choose **Open Browser**. A normal browser window opens using that bot’s separate profile.
 4. In the ongoing chat, ask it to search for something and open one of the results. Search has no separate API fee. The model calls that read the pages still use your normal task budget.
 5. For a site that needs a login, choose **Use browser myself**, sign in yourself in that window, then choose **Let bot continue**. Do not paste the password into chat.

@@ -6,6 +6,7 @@ import type {
   ActivityEntry,
   AppEvent,
   AppPreferences,
+  AppSettings,
   ApprovalView,
   AttachmentView,
   CodexStatus,
@@ -167,6 +168,11 @@ export class RiotApp {
 
   boot(): { interrupted: number } {
     this.db.migrate()
+    const config = this.db.appConfig()
+    if (config.defaultProvider === undefined || config.defaultModel === undefined) {
+      const current = this.db.getSettings()
+      this.db.saveAppConfig({ ...config, defaultProvider: config.defaultProvider ?? current.provider, defaultModel: config.defaultModel ?? current.model })
+    }
     const interrupted = this.db.interruptUnfinished(this.now())
     this.db.ensureOngoingConversations(this.now())
     this.logger.info('boot', { interrupted, providerCalls: 'none' })
@@ -205,6 +211,7 @@ export class RiotApp {
       current,
       browser: this.browsers.view(bot?.id ?? ''),
       settings: this.db.getSettings(bot?.id ?? ''),
+      appSettings: this.getAppSettings(),
       preferences: { showToolDetails: this.db.appConfig().showToolDetails },
       credentials: this.credentialStatus(),
       usage: this.getUsage(),
@@ -319,8 +326,10 @@ export class RiotApp {
     if (this.active) throw new ConfigError('Riot Bot is already working. Stop it before creating a bot.')
     const purpose = draft.purpose.replace(/\s+/g, ' ').trim()
     if (purpose.length < 2 || purpose.length > 400) throw new ConfigError('Say what this bot should help with, in a sentence or two.')
-    const provider = draft.provider === 'codex' ? 'codex' : draft.provider === 'openrouter' ? 'openrouter' : 'openai'
-    const model = String(draft.model ?? '').replace(/[\r\n]/g, '').trim().slice(0, 200)
+    const defaults = this.getAppSettings()
+    const choice = draft.provider ?? defaults.provider
+    const provider = choice === 'codex' ? 'codex' : choice === 'openrouter' ? 'openrouter' : 'openai'
+    const model = String(draft.model ?? (provider === defaults.provider ? defaults.model : '')).replace(/[\r\n]/g, '').trim().slice(0, 200)
     let name = draft.name.trim() ? cleanBotName(draft.name) : null
     if (draft.name.trim() && !name) throw new ConfigError('Use a display name of 2 to 40 characters, without a file path.')
     let instructions = ''
@@ -861,6 +870,17 @@ export class RiotApp {
     }
     this.db.saveSettings(next)
     return this.db.getSettings()
+  }
+
+  getAppSettings(): AppSettings {
+    const config = this.db.appConfig()
+    return { provider: config.defaultProvider ?? 'openai', model: config.defaultModel ?? '', maxEstimatedSpendPerDayUsd: config.maxEstimatedSpendPerDayUsd }
+  }
+
+  updateAppSettings(patch: Partial<AppSettings>): AppSettings {
+    const next = sanitizeSettings({ ...DEFAULT_SETTINGS, ...this.getAppSettings(), ...patch })
+    this.db.saveAppConfig({ ...this.db.appConfig(), defaultProvider: next.provider, defaultModel: next.model, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd })
+    return this.getAppSettings()
   }
 
   setCredential(provider: 'openai' | 'openrouter', secret: string): CredentialSaveResult {

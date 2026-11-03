@@ -159,6 +159,10 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('activity:list', (app, args) => app.listActivity(args[0] === 'app' ? 'app' : 'bot'))
   handle('usage:get', (app) => app.getUsage())
   handle('settings:update', (app, args) => app.updateSettings(pickSettings(args[0])))
+  handle('settings:updateApp', (app, args) => {
+    const patch = pickSettings(args[0])
+    return app.updateAppSettings({ ...(patch.provider !== undefined ? { provider: requireProvider(patch.provider) } : {}), ...(patch.model !== undefined ? { model: patch.model } : {}), ...(patch.maxEstimatedSpendPerDayUsd !== undefined ? { maxEstimatedSpendPerDayUsd: patch.maxEstimatedSpendPerDayUsd } : {}) })
+  })
   handle('codex:status', (app) => app.getCodexStatus())
   handle('codex:connect', (app) => app.connectCodex())
   handle('codex:cancelLogin', (app) => app.cancelCodexLogin())
@@ -263,8 +267,8 @@ function botDraft(value: unknown): BotDraft {
   return {
     purpose: requireText(record.purpose, 'Say what this bot should help with.'),
     name: typeof record.name === 'string' ? record.name : '',
-    provider: requireProvider(record.provider),
-    model: typeof record.model === 'string' ? record.model : '',
+    provider: record.provider == null ? undefined : requireProvider(record.provider),
+    model: typeof record.model === 'string' ? record.model : undefined,
     workspaceKind: record.workspaceKind === 'existing' ? 'existing' : 'suggested',
     workspacePath: typeof record.workspacePath === 'string' ? record.workspacePath : '',
     avatarKind: record.avatarKind === 'emoji' || record.avatarKind === 'image' ? record.avatarKind : 'builtin',

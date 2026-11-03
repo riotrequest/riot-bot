@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type {
   ActivityEntry,
   AppPreferences,
+  AppSettings,
   ApprovalView,
   AttachmentView,
   ArtifactView,
@@ -31,9 +32,9 @@ import { formatUsd, TERMINAL_WARNING } from '../../shared/types'
 import { AVATAR_CHOICES, AVATAR_COLORS, AVATAR_EMOJIS, BotAvatar } from './avatar'
 import { AttachmentList, ChatTranscript } from './chat'
 import { JobsPane, LibraryPane } from './jobs'
-import { ChatWelcome, EmptyState, Icon, ProviderPicker, messageOf, providerName, type IconName } from './ui'
+import { ChatWelcome, EmptyState, Icon, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
-type Screen = 'chat' | 'jobs' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'new-bot' | 'earlier'
+type Screen = 'chat' | 'jobs' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
 
 export function App() {
   const api = window.riot
@@ -60,6 +61,7 @@ function Shell({ api }: { api: RiotBridge }) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [settings, setSettings] = useState<PublicSettings | null>(null)
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null)
   const [codex, setCodex] = useState<CodexStatus | null>(null)
   const [usage, setUsage] = useState<UsageSummary | null>(null)
@@ -108,6 +110,7 @@ function Shell({ api }: { api: RiotBridge }) {
     setOngoingId(snapshot.ongoingConversationId)
     setConversations(snapshot.conversations)
     setSettings(snapshot.settings)
+    setAppSettings(snapshot.appSettings)
     setCredentials(snapshot.credentials)
     setCodex(snapshot.codex)
     setUsage(snapshot.usage)
@@ -216,7 +219,7 @@ function Shell({ api }: { api: RiotBridge }) {
 
   async function send(): Promise<void> {
     if (!detail || (!draft.trim() && !draftAttachments.length) || busy) return
-    if (!configured) { showScreen('settings'); return }
+    if (!configured) { showScreen('bot-settings'); return }
     const text = draft
     const attachmentIds = draftAttachments.map((item) => item.id)
     const sendingBotId = bot?.id
@@ -256,7 +259,7 @@ function Shell({ api }: { api: RiotBridge }) {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <aside className="sidebar" aria-label="Bots and app settings">
         <div className="brand">
           <span className="mark"><Icon name="spark" /></span>
           <div>
@@ -295,19 +298,9 @@ function Shell({ api }: { api: RiotBridge }) {
             </div>
           ))}
         </div>
-        <nav className="workspace-nav" aria-label="Bot workspace">
-          <p className="sidebar-label">WORKSPACE</p>
-          {([
-            ['chat', 'chat', 'Chat'], ['jobs', 'tasks', 'Tasks'], ['library', 'files', 'Files'],
-            ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills']
-          ] as [Screen, IconName, string][]).map(([value, icon, label]) => <button key={value} disabled={!bot || editingBusy} className={!menuOpen && screen === value ? 'active' : ''} aria-current={!menuOpen && screen === value ? 'page' : undefined} onClick={() => showScreen(value)}>
-            <Icon name={icon} /><span>{label}</span>{value === 'jobs' && activeTaskCount > 0 && <small className="nav-count">{activeTaskCount}</small>}
-          </button>)}
-        </nav>
         <div className="sidebar-bottom">
-          {bot && !configured && <button className="connection-nudge" disabled={editingBusy} onClick={() => showScreen('settings')}><span className="status-dot pending" /><span><strong>Connect your AI</strong><small>One step to your first chat</small></span><Icon name="chevron" /></button>}
           <nav className="utility-nav" aria-label="App controls">
-            <button disabled={!bot || editingBusy} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => showScreen('settings')}><Icon name="settings" /> Settings</button>
+            <button disabled={editingBusy} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-label="App settings" aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => showScreen('settings')}><Icon name="settings" /> Settings</button>
             <button disabled={!bot || editingBusy} className={!menuOpen && screen === 'activity' ? 'active' : ''} aria-current={!menuOpen && screen === 'activity' ? 'page' : undefined} onClick={() => showScreen('activity')}><Icon name="activity" /> Usage & activity</button>
           </nav>
           <p className="desktop-note"><span className="status-dot" /> Runs on your computer</p>
@@ -318,15 +311,15 @@ function Shell({ api }: { api: RiotBridge }) {
           <div className="title-lockup">
             {bot && (screen === 'chat' || menuOpen) && <BotAvatar avatar={bot.avatar} label={bot.name} size={36} />}
             <div>
-              <h1>{menuOpen ? 'Customize your bot' : screen === 'chat' ? (viewingEarlier ? detail?.conversation.title : bot?.name) ?? 'Welcome to Riot' : screenTitle(screen)}</h1>
-              <p className="status">
+              <h1>{menuOpen ? 'Bot settings' : screen === 'chat' ? (viewingEarlier ? detail?.conversation.title : bot?.name) ?? 'Welcome to Riot' : screenTitle(screen)}</h1>
+              {screen === 'chat' && !menuOpen && settings ? <ModelBadge provider={settings.provider} model={settings.model} models={codex?.models} onClick={() => showScreen('bot-settings')} /> : <p className="status">
                 {menuOpen ? 'A name, a personality, and a space of its own.' : screen === 'chat' ? running ? 'Working on it. You can add your next message.' : queued ? 'Your request is in line. You can add another message.' : configured ? 'Your ongoing conversation. Pick up anywhere.' : 'Let’s get your assistant ready.' : screenDescription(screen)}
-              </p>
+              </p>}
             </div>
           </div>
           <div className="topbar-actions">
             {screen === 'chat' && bot && <span className={`connection-status ${configured ? '' : 'pending'}`}><span className={`status-dot ${configured ? '' : 'pending'}`} />{running ? 'Working' : queued ? 'In queue' : configured ? 'Ready to chat' : 'Setup needed'}</span>}
-            {menuOpen ? <button type="button" className="back-button" disabled={editingBusy} onClick={() => setMenuOpen(false)}><Icon name="back" /> Back</button> : bot && screen !== 'new-bot' && <button type="button" className="bot-settings-toggle" disabled={editingBusy} aria-label="Customize bot" title="Customize bot" aria-expanded={menuOpen} aria-controls="bot-settings-panel" onClick={() => setMenuOpen(true)}><Icon name="settings" /></button>}
+            {menuOpen && <button type="button" className="back-button" disabled={editingBusy} onClick={() => { setMenuOpen(false); setScreen('bot-settings') }}><Icon name="back" /> Back</button>}
             {running && <button className="stop" onClick={() => void api.stop().catch((reason: unknown) => setError(messageOf(reason)))}>Stop</button>}
           </div>
         </header>
@@ -362,13 +355,13 @@ function Shell({ api }: { api: RiotBridge }) {
               setSettings(current => current ? { ...current, pinnedInstructions: next.instructions } : current)
             }}
             onEarlier={() => { setMenuOpen(false);setScreen('earlier') }}
-            onSettings={() => { setMenuOpen(false);setScreen('settings') }}
+            onSettings={() => { setMenuOpen(false);setScreen('bot-settings') }}
           />
         ) : <>
         {!loaded && <div className="empty-state" role="status">Getting your workspace ready…</div>}
-        {screen === 'new-bot' && settings && (
+        {screen === 'new-bot' && settings && appSettings && (
           <NewBotForm
-            settings={settings}
+            settings={{ ...settings, ...appSettings }}
             api={api}
             codex={codex}
             onCodex={setCodex}
@@ -410,9 +403,9 @@ function Shell({ api }: { api: RiotBridge }) {
               if (!ongoingId) return
               void loadConversation(ongoingId).catch((reason: unknown) => setError(messageOf(reason)))
             }}
-            onOpenSettings={() => setScreen('settings')}
+            onOpenSettings={() => setScreen('bot-settings')}
             configured={configured}
-            configurationNote={settings?.provider === 'codex' && codex?.connected && codex.models.length > 0 && !codex.models.some((model) => model.id === settings.model) ? `The saved model ${settings.model} is not listed for this Codex account. Choose an available model in Settings.` : undefined}
+            configurationNote={settings?.provider === 'codex' && codex?.connected && codex.models.length > 0 && !codex.models.some((model) => model.id === settings.model) ? `The saved model ${settings.model} is not listed for this Codex account. Choose an available model in Bot settings.` : undefined}
             showToolDetails={preferences.showToolDetails}
             avatar={bot?.avatar ?? null}
             proposal={proposal}
@@ -475,11 +468,12 @@ function Shell({ api }: { api: RiotBridge }) {
             }}
           />
         )}
-        {screen === 'settings' && settings && credentials && bot && (
+        {screen === 'settings' && appSettings && credentials && <AppSettingsPane settings={appSettings} preferences={preferences} credentials={credentials} codex={codex} onCodex={setCodex} api={api} onPreferences={setPreferences} onError={setError} onBusy={setEditingBusy} onDone={() => setScreen(bot ? 'chat' : 'new-bot')} onSaved={(next, status) => { setAppSettings(next); setCredentials(status); setSettings(current => current ? { ...current, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd } : current) }} />}
+        {screen === 'bot-settings' && settings && appSettings && credentials && bot && (
           <SettingsPane
             key={bot.id}
             bot={bot}
-            preferences={preferences}
+            appSettings={appSettings}
             settings={settings}
             credentials={credentials}
             codex={codex}
@@ -496,7 +490,8 @@ function Shell({ api }: { api: RiotBridge }) {
                 setPreferences(snapshot.preferences)
               }).catch((reason: unknown) => setError(messageOf(reason)))
             }}
-            onPreferences={setPreferences}
+            onAppSettings={() => showScreen('settings')}
+            onProfile={() => setMenuOpen(true)}
             onError={(next) => setError(next)}
             onDone={() => setScreen('chat')}
             onBusy={setEditingBusy}
@@ -504,6 +499,22 @@ function Shell({ api }: { api: RiotBridge }) {
         )}
         </>}
       </main>
+      <aside className="workspace-sidebar" aria-label="Workspace">
+        <div className="workspace-heading"><p className="sidebar-label">WORKSPACE</p><strong title={bot?.name}>{bot?.name ?? 'Choose a bot to get started'}</strong></div>
+        <nav className="workspace-nav" aria-label="Bot workspace">
+          {([
+            ['chat', 'chat', 'Chat'], ['jobs', 'tasks', 'Tasks'], ['library', 'files', 'Files'],
+            ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills']
+          ] as [Screen, IconName, string][]).map(([value, icon, label]) => <button key={value} disabled={!bot || editingBusy} className={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'active' : ''} aria-current={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'page' : undefined} onClick={() => showScreen(value)}>
+            <Icon name={icon} /><span>{label}</span>{value === 'jobs' && activeTaskCount > 0 && <small className="nav-count">{activeTaskCount}</small>}
+          </button>)}
+        </nav>
+        <div className="workspace-footer">
+          {bot && !configured && <button className="connection-nudge" disabled={editingBusy} onClick={() => showScreen('bot-settings')}><span className="status-dot pending" /><span><strong>Connect your AI</strong><small>One step to your first chat</small></span><Icon name="chevron" /></button>}
+          <nav className="workspace-nav" aria-label="Bot controls"><button disabled={!bot || editingBusy} className={menuOpen || screen === 'bot-settings' ? 'active' : ''} aria-current={menuOpen || screen === 'bot-settings' ? 'page' : undefined} onClick={() => showScreen('bot-settings')}><Icon name="settings" /><span>Bot settings</span></button></nav>
+          <p>Model, profile, files & tools<br />for this bot.</p>
+        </div>
+      </aside>
       {deleteTarget && <DeleteBotDialog bot={deleteTarget} onCancel={() => setDeleteTarget(null)} onDelete={async (confirmationName) => {
         const result = await api.deleteBot(deleteTarget.id,confirmationName)
         delete drafts.current[deleteTarget.id]
@@ -816,33 +827,103 @@ function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityE
   )
 }
 
+function AppSettingsPane(props: {
+  settings: AppSettings
+  preferences: AppPreferences
+  credentials: CredentialStatus
+  codex: CodexStatus | null
+  api: RiotBridge
+  onCodex: (status: CodexStatus) => void
+  onSaved: (settings: AppSettings, credentials: CredentialStatus) => void
+  onPreferences: (preferences: AppPreferences) => void
+  onError: (message: string) => void
+  onBusy: (busy: boolean) => void
+  onDone: () => void
+}) {
+  const [tab, setTab] = useState<'connection' | 'preferences'>('connection')
+  const [draft, setDraft] = useState(props.settings)
+  const [key, setKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const keySaved = draft.provider === 'openai' ? props.credentials.openaiConfigured : draft.provider === 'openrouter' && props.credentials.openrouterConfigured
+  const changed = JSON.stringify(draft) !== JSON.stringify(props.settings) || Boolean(key.trim())
+  function update(patch: Partial<AppSettings>): void { setDraft(current => ({ ...current, ...patch })); setNote(''); setError('') }
+  async function save(): Promise<void> {
+    if (saving) return
+    setSaving(true); props.onBusy(true); setNote(''); setError('')
+    try {
+      let credentials = props.credentials
+      if (key.trim() && draft.provider !== 'codex') {
+        credentials = (await props.api.setCredential(draft.provider, key.trim())).status
+        setKey('')
+        props.onSaved(props.settings, credentials)
+      }
+      const next = await props.api.updateAppSettings(draft)
+      setDraft(next)
+      props.onSaved(next, credentials)
+      setNote('App settings saved. Existing bots keep their chosen models.')
+    } catch (reason) { setError(messageOf(reason)) }
+    finally { setSaving(false); props.onBusy(false) }
+  }
+  return <form className="settings-page" noValidate onSubmit={event => { event.preventDefault(); void save() }}>
+    <nav className="settings-tabs" aria-label="App settings sections">
+      <button type="button" disabled={saving} className={tab === 'connection' ? 'active' : ''} aria-current={tab === 'connection' ? 'page' : undefined} onClick={() => setTab('connection')}>Connections & default model</button>
+      <button type="button" disabled={saving} className={tab === 'preferences' ? 'active' : ''} aria-current={tab === 'preferences' ? 'page' : undefined} onClick={() => setTab('preferences')}>Preferences & spending</button>
+    </nav>
+    <fieldset className="settings-content" disabled={saving}>
+      {tab === 'connection' ? <>
+        <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Your starting point for every new bot.</h2><p>Manage shared connections and choose the model new bots start with. Existing bots keep their own choices.</p></div>
+        <section className="settings-section"><div className="section-heading"><span className="step-number">1</span><h3>Choose your default connection</h3></div><ProviderPicker value={draft.provider} onChange={provider => { setKey(''); update({ provider, model: '' }) }} /></section>
+        <section className="settings-section"><div className="section-heading"><span className="step-number">2</span><h3>{draft.provider === 'codex' ? 'Connect your ChatGPT account' : 'Connect your provider'}</h3>{keySaved && <span className="small-badge"><Icon name="check" /> Key saved</span>}</div>
+          {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : <>
+            <p className="help">This key is shared by all bots using {providerName(draft.provider)}. API usage is billed by your provider.</p>
+            <label>API key<input type="password" autoComplete="off" spellCheck={false} value={key} placeholder={keySaved ? 'A key is saved. Paste here only to replace it.' : `Paste your ${providerName(draft.provider)} API key`} onChange={event => { setKey(event.target.value); setNote('') }} /></label>
+            <p className="help">{props.credentials.explanation} New keys are saved with Save app settings.</p>
+            {keySaved && <details className="subtle-details"><summary>Manage saved key</summary><p className="help">Removing this key disconnects all bots using {providerName(draft.provider)}.</p><button type="button" className="danger" onClick={() => { if (draft.provider !== 'codex') void props.api.clearCredential(draft.provider).then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove saved key</button></details>}
+          </>}
+        </section>
+        <section className="settings-section"><div className="section-heading"><span className="step-number">3</span><h3>Choose your default model</h3></div><ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => update({ model })} /><p className="help">{draft.provider === 'codex' ? 'Sign in first to load the models available to your account.' : 'Copy the exact model ID from your provider’s catalog.'} New bots start with this choice; each bot can use a different model in Bot settings.</p></section>
+      </> : <>
+        <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Make Riot work your way.</h2><p>These preferences apply across your bots.</p></div>
+        <section className="settings-section"><h3>Conversation display</h3><label className="check permission-option"><input type="checkbox" checked={props.preferences.showToolDetails} onChange={event => void props.api.updatePreferences({ showToolDetails: event.target.checked }).then(props.onPreferences).catch(reason => props.onError(messageOf(reason)))} /><span><strong>Show tool details by default</strong><small>Expand technical action logs in every chat. This preference saves immediately.</small></span></label></section>
+        <section className="settings-section"><h3>App-wide spending ceiling</h3><OptionalMoney label="All bots, per day (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={maxEstimatedSpendPerDayUsd => update({ maxEstimatedSpendPerDayUsd })} /><p className="help">Leave blank to turn this ceiling off. It covers API spending across all bots. Each API bot needs its model’s input and output prices in Bot settings → Limits for spending estimates. Codex account usage is managed separately.</p></section>
+      </>}
+    </fieldset>
+    <footer className="settings-savebar"><div role="status" aria-live="polite">{error ? <p className="danger" role="alert">{error}</p> : <p className={note ? 'save-success' : 'help'}>{note || (changed ? 'You have unsaved app settings.' : 'Shared settings for Riot Bot')}</p>}</div><div className="row"><button type="button" disabled={saving} onClick={props.onDone}>{changed ? 'Discard changes' : 'Done'}</button><button className="send" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save app settings'}<Icon name="check" /></button></div></footer>
+  </form>
+}
+
 function SettingsPane(props: {
   bot: Bot
-  preferences: AppPreferences
+  appSettings: AppSettings
   settings: PublicSettings
   credentials: CredentialStatus
   codex: CodexStatus | null
   onCodex: (status: CodexStatus) => void
   api: RiotBridge
   onSaved: (settings: PublicSettings, credentials: CredentialStatus) => void
-  onPreferences: (preferences: AppPreferences) => void
+  onAppSettings: () => void
+  onProfile: () => void
   onError: (message: string) => void
   onDone: () => void
   onBusy: (busy: boolean) => void
 }) {
   const [tab, setTab] = useState<'connection' | 'workspace' | 'limits' | 'advanced'>('connection')
   const [draft, setDraft] = useState(props.settings)
-  const [key, setKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedNote, setSavedNote] = useState('')
   const [saveError, setSaveError] = useState('')
   useEffect(() => setDraft(props.settings), [props.settings])
-  const keySaved = draft.provider === 'openai' ? props.credentials.openaiConfigured : draft.provider === 'openrouter' && props.credentials.openrouterConfigured
-  const changed = JSON.stringify(draft) !== JSON.stringify(props.settings) || Boolean(key.trim())
+  const changed = JSON.stringify(draft) !== JSON.stringify(props.settings)
+  useEffect(() => { if (draft.provider === 'codex') void props.api.getCodexStatus().then(props.onCodex).catch(reason => props.onError(messageOf(reason))) }, [props.api, draft.provider])
   function update(patch: Partial<PublicSettings>): void {
     setDraft(current => ({ ...current, ...patch }))
     setSavedNote('')
     setSaveError('')
+  }
+  function chooseModel(provider: PublicSettings['provider'], model: string): void {
+    update({ provider, model, ...(provider !== draft.provider || model !== draft.model ? { modelContextTokens: null, inputUsdPerMillion: null, outputUsdPerMillion: null } : {}) })
   }
   async function save(): Promise<void> {
     if (saving) return
@@ -851,46 +932,28 @@ function SettingsPane(props: {
     setSavedNote('')
     setSaveError('')
     try {
-      let credentials = props.credentials
-      if (key.trim() && draft.provider !== 'codex') {
-        const result = await props.api.setCredential(draft.provider, key.trim())
-        credentials = result.status
-        setKey('')
-        props.onSaved(props.settings, credentials)
-      }
       const next = await props.api.updateSettings(draft)
-      props.onSaved(next, credentials)
+      props.onSaved(next, props.credentials)
       setDraft(next)
-      setSavedNote(providerReady(next, credentials, props.codex) ? 'Saved. You’re ready to chat.' : 'Saved. Finish connecting your AI to start chatting.')
+      setSavedNote(providerReady(next, props.credentials, props.codex) ? 'Saved. You’re ready to chat.' : 'Saved. Finish connecting your AI to start chatting.')
     } catch (reason) { setSaveError(messageOf(reason)) }
     finally { setSaving(false); props.onBusy(false) }
   }
   return <form className="settings-page" noValidate onSubmit={event => { event.preventDefault(); void save() }}>
-    <nav className="settings-tabs" aria-label="Settings sections">
-      {([['connection', 'Connection'], ['workspace', 'Files & tools'], ['limits', 'Limits'], ['advanced', 'Advanced']] as const).map(([value, label]) => <button key={value} type="button" disabled={saving} aria-current={tab === value ? 'page' : undefined} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{label}</button>)}
+    <nav className="settings-tabs" aria-label="Bot settings sections">
+      <button type="button" disabled={saving} onClick={props.onProfile}>Profile & browser</button>
+      {([['connection', 'Model'], ['workspace', 'Files & tools'], ['limits', 'Limits'], ['advanced', 'Advanced']] as const).map(([value, label]) => <button key={value} type="button" disabled={saving} aria-current={tab === value ? 'page' : undefined} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{label}</button>)}
     </nav>
     <fieldset className="settings-content" disabled={saving}>
       {tab === 'connection' && <>
-        <div className="page-intro"><p className="eyebrow">LET’S GET CONNECTED</p><h2>Your bot. Your choice of AI.</h2><p>Connect an account, choose a model, and you’re ready. You can change this later.</p></div>
-        <section className="settings-section">
-          <div className="section-heading"><span className="step-number">1</span><h3>Choose a connection</h3></div>
-          <ProviderPicker value={draft.provider} onChange={provider => { setKey(''); update({ provider, model: '', modelContextTokens: null, inputUsdPerMillion: null, outputUsdPerMillion: null }) }} />
+        <div className="page-intro"><p className="eyebrow">JUST FOR {props.bot.name.toUpperCase()}</p><h2>This bot’s model.</h2><p>Choose what powers {props.bot.name}. Other bots keep their own settings.</p></div>
+        <section className="settings-section"><h3>Start with your app default</h3><p className="help">{props.appSettings.model ? `${providerName(props.appSettings.provider)} · ${props.appSettings.model}` : 'No app default has been chosen yet.'}</p><div className="row"><button type="button" disabled={!props.appSettings.model} onClick={() => chooseModel(props.appSettings.provider, props.appSettings.model)}>Use app default</button><button type="button" onClick={props.onAppSettings}>App settings</button></div><p className="help">Use app default copies that choice to this form. Save below to apply it to this bot.</p></section>
+        <section className="settings-section"><h3>Or choose a model for this bot</h3>
+          <ProviderPicker value={draft.provider} onChange={provider => chooseModel(provider, '')} />
+          <ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => chooseModel(draft.provider, model)} />
+          <p className="help">{draft.provider === 'codex' ? props.codex?.connected ? 'Choose from the models available to your ChatGPT account.' : 'Connect your ChatGPT account in app Settings to load models.' : 'Copy the exact model ID from your provider’s catalog.'}</p>
         </section>
-        <section className="settings-section">
-          <div className="section-heading"><span className="step-number">2</span><h3>{draft.provider === 'codex' ? 'Sign in to your account' : 'Add your API key'}</h3>{keySaved && <span className="small-badge"><Icon name="check" /> Key saved</span>}</div>
-          {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : <>
-            <p className="help">An API key connects Riot to your {providerName(draft.provider)} account. API usage is billed by that provider.</p>
-            <label>API key<input type="password" value={key} autoComplete="off" spellCheck={false} placeholder={keySaved ? 'A key is saved. Paste here only to replace it.' : `Paste your ${providerName(draft.provider)} API key`} onChange={event => { setKey(event.target.value); setSavedNote('') }} /></label>
-            <p className="help">{props.credentials.explanation} Your key is saved when you choose Save settings.</p>
-            {keySaved && <details className="subtle-details"><summary>Manage saved key</summary><p className="help">This key is shared by bots using {providerName(draft.provider)}. Removing it disconnects those bots.</p><button type="button" className="danger" onClick={() => { if (draft.provider !== 'codex') void props.api.clearCredential(draft.provider).then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove saved key</button></details>}
-          </>}
-        </section>
-        <section className="settings-section">
-          <div className="section-heading"><span className="step-number">3</span><h3>Choose a model</h3></div>
-          <ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => update({ model, modelContextTokens: null, inputUsdPerMillion: null, outputUsdPerMillion: null })} />
-          <p className="help">{draft.provider === 'codex' ? 'Sign in first to see the models available to your account.' : 'Copy the exact model ID from your provider’s model catalog. Models differ in price and support for images and tools.'}</p>
-        </section>
-        <p className="settings-scope">This connection is for <strong>{props.bot.name}</strong>. Account sign-ins and API keys are shared across your bots.</p>
+        <div className="callout"><strong>Connections are shared across the app</strong><p>{draft.provider === 'codex' ? props.codex?.connected ? 'Your ChatGPT account is connected.' : 'Your ChatGPT account needs to be connected.' : (draft.provider === 'openai' ? props.credentials.openaiConfigured : props.credentials.openrouterConfigured) ? `An API key for ${providerName(draft.provider)} is saved.` : `Add a ${providerName(draft.provider)} API key in app Settings.`}</p><button type="button" onClick={props.onAppSettings}>Manage connections in app Settings</button></div>
       </>}
       {tab === 'workspace' && <>
         <div className="page-intro"><h2>A place to get things done.</h2><p>Choose where your bot works and what it can do.</p></div>
@@ -908,17 +971,14 @@ function SettingsPane(props: {
         <div className="page-intro"><h2>Set a comfortable pace.</h2><p>Limit how long a task can run. You can stop your bot at any time.</p></div>
         <section className="settings-section"><h3>Time per task</h3><NumberField label="Maximum minutes" value={Math.round(draft.maxTaskDurationMs / 60000)} onChange={value => update({ maxTaskDurationMs: value * 60 * 1000 })} /><p className="help">When time runs out, work pauses and partial results are kept.</p></section>
         {draft.provider === 'codex' ? <div className="callout"><strong>Uses your ChatGPT account limits</strong><p>Codex manages its own usage and context. Riot’s API dollar and token limits do not apply. The task timer and Stop still work.</p></div> : <section className="settings-section"><h3>Optional spending limits</h3><p className="help">Leave these blank to use time and call limits only. To estimate spending, Riot needs both token prices from your provider.</p>
-          <div className="grid"><OptionalMoney label="Per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={value => update({ maxEstimatedSpendPerTaskUsd: value })} /><OptionalMoney label="This bot, per day (USD)" value={draft.botSpendPerDayUsd} onChange={value => update({ botSpendPerDayUsd: value })} /><OptionalMoney label="All bots, per day (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={value => update({ maxEstimatedSpendPerDayUsd: value })} /></div>
-          <p className="help">The all-bots limit applies across the app. This bot’s limit can make it tighter.</p>
+          <div className="grid"><OptionalMoney label="Per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={value => update({ maxEstimatedSpendPerTaskUsd: value })} /><OptionalMoney label="This bot, per day (USD)" value={draft.botSpendPerDayUsd} onChange={value => update({ botSpendPerDayUsd: value })} /></div>
+          <p className="help">The app-wide spending ceiling is managed in app Settings. This bot’s limit can make it tighter.</p>
           <h4>Model prices, per million tokens</h4><div className="grid"><OptionalMoney label="Input price (USD)" value={draft.inputUsdPerMillion} onChange={value => update({ inputUsdPerMillion: value })} /><OptionalMoney label="Output price (USD)" value={draft.outputUsdPerMillion} onChange={value => update({ outputUsdPerMillion: value })} /></div><p className="help">These are estimates. Your provider’s bill may differ.</p>
         </section>}
       </>}
       {tab === 'advanced' && <>
         <div className="page-intro"><p className="eyebrow">FOR WHEN YOU NEED MORE CONTROL</p><h2>The finer details.</h2><p>The defaults work for most tasks. Change these only when you have a specific reason.</p></div>
-        <section className="settings-section"><h3>Conversation display</h3>
-          <label className="check permission-option"><input type="checkbox" checked={props.preferences.showToolDetails} onChange={event => void props.api.updatePreferences({ showToolDetails: event.target.checked }).then(props.onPreferences).catch(reason => props.onError(messageOf(reason)))} /><span><strong>Show tool details by default</strong><small>Display the technical action log in chat. This preference saves immediately.</small></span></label>
-          {draft.provider !== 'codex' && <label className="check"><input type="checkbox" checked={draft.streaming} onChange={event => update({ streaming: event.target.checked })} />Show replies as they’re written (streaming)</label>}
-        </section>
+        {draft.provider !== 'codex' && <section className="settings-section"><h3>Replies</h3><label className="check"><input type="checkbox" checked={draft.streaming} onChange={event => update({ streaming: event.target.checked })} />Show replies as they’re written (streaming)</label></section>}
         {draft.provider !== 'codex' && <>
           <details className="settings-section advanced-details"><summary>Model limits & context</summary><div className="grid">
             <NumberField label="Model calls per task" value={draft.maxModelCallsPerTask} onChange={value => update({ maxModelCallsPerTask: value })} />
@@ -1433,8 +1493,9 @@ function screenTitle(screen: Screen): string {
   if (screen === 'skills') return 'Skills'
   if (screen === 'activity') return 'Usage & activity'
   if (screen === 'new-bot') return 'Create a bot'
+  if (screen === 'bot-settings') return 'Bot settings'
   if (screen === 'earlier') return 'Earlier conversations'
-  return 'Settings'
+  return 'App settings'
 }
 
 function screenDescription(screen: Screen): string {
@@ -1445,7 +1506,8 @@ function screenDescription(screen: Screen): string {
   if (screen === 'activity') return 'Keep an eye on usage and see what happened.'
   if (screen === 'new-bot') return 'A few details now. A helpful sidekick from here on.'
   if (screen === 'earlier') return 'Pick up a saved conversation from the past.'
-  return 'Connect your AI and make Riot work for you.'
+  if (screen === 'bot-settings') return 'Model, personality, files, and tools for this bot.'
+  return 'Shared connections, defaults, and preferences for Riot.'
 }
 
 function BotMenu(props: {
@@ -1507,7 +1569,7 @@ function BotMenu(props: {
         void props.api.setAvatar({ kind: avatar.kind, value: avatar.value, background: color }).then(props.onBot).catch(reason => props.onError(messageOf(reason)))
       }} />)}</div>
     </details>
-    <section className="settings-section"><h3>Your bot’s space</h3><p className="folder-path">{props.bot.workspacePath || 'No folder chosen yet.'}</p><div className="row"><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}><Icon name="files" /> Open working folder</button><button type="button" disabled={saving} onClick={props.onSettings}>Connection & settings</button><button type="button" disabled={saving} onClick={props.onEarlier}>Earlier conversations</button></div></section>
+    <section className="settings-section"><h3>Your bot’s space</h3><p className="folder-path">{props.bot.workspacePath || 'No folder chosen yet.'}</p><div className="row"><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}><Icon name="files" /> Open working folder</button><button type="button" disabled={saving} onClick={props.onSettings}>Model, files & limits</button><button type="button" disabled={saving} onClick={props.onEarlier}>Earlier conversations</button></div></section>
     <details className="settings-section advanced-details"><summary>Browser & website sign-ins</summary><p className="help">Your bot has a separate browser profile. Open its browser to sign in to a website yourself, then let your bot continue.</p>
       <p className="help">{browser?.installed ? `${browser.browserName || 'A browser'} is available.` : 'Install a browser to get started.'} {browser?.downloadNote}</p>
       <div className="row">{!browser?.open ? <button type="button" disabled={browserBusy || !browser?.installed} onClick={() => void browserAction(() => props.api.openBrowser())}>Open browser</button> : <>
@@ -1630,8 +1692,8 @@ export function NewBotForm(props: { settings: PublicSettings; api: RiotBridge; c
         <label>Give it a name<input value={name} maxLength={40} placeholder="For example: Scout" onChange={event => setName(event.target.value)} /></label>
         <p className="help">Use any name you like. If you clear it, an API connection may use one short setup request to suggest one.</p>
       </section>
-      <div className="inherit-note"><Icon name="check" /><div><strong>{model ? `Uses your current connection: ${providerName(provider)}` : 'You can connect your AI after creating your bot'}</strong><p>{model ? model : 'Create it now, then we’ll guide you through setup.'}</p></div></div>
-      <details className="settings-section advanced-details"><summary>Connection & model <span>Optional</span></summary><p className="help">Your current connection is filled in. Change it only if you want this bot to use a different one. Sign-ins and API keys are managed in Settings.</p>
+      <div className="inherit-note"><Icon name="check" /><div><strong>{model ? `Uses ${provider === props.settings.provider && model === props.settings.model ? 'app default' : 'custom connection'}: ${providerName(provider)}` : 'You can connect your AI after creating your bot'}</strong><p>{model ? model : 'Create it now, then we’ll guide you through setup.'}</p></div></div>
+      <details className="settings-section advanced-details"><summary>Connection & model <span>Optional</span></summary><p className="help">Your app default is filled in. Change it only if you want this bot to use a different model. Shared sign-ins and API keys are managed in app Settings.</p>
         <ProviderPicker value={provider} onChange={value => { setProvider(value); setModel('') }} />
         <ModelField provider={provider} model={model} codex={props.codex} loading={loadingModels} onChange={setModel} />
       </details>

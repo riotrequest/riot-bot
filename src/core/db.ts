@@ -529,6 +529,8 @@ interface AppConfig {
   maxEstimatedSpendPerDayUsd: number | null
   showToolDetails: boolean
   activeBotId: string
+  defaultProvider?: Settings['provider']
+  defaultModel?: string
 }
 
 export class Database {
@@ -924,7 +926,9 @@ export class Database {
       return {
         maxEstimatedSpendPerDayUsd: parsed.maxEstimatedSpendPerDayUsd ?? null,
         showToolDetails: Boolean(parsed.showToolDetails),
-        activeBotId: typeof parsed.activeBotId === 'string' ? parsed.activeBotId : ''
+        activeBotId: typeof parsed.activeBotId === 'string' ? parsed.activeBotId : '',
+        defaultProvider: parsed.defaultProvider === 'codex' ? 'codex' : parsed.defaultProvider === 'openrouter' ? 'openrouter' : parsed.defaultProvider === 'openai' ? 'openai' : undefined,
+        defaultModel: typeof parsed.defaultModel === 'string' ? parsed.defaultModel.replace(/[\r\n]/g, '').trim().slice(0, 200) : undefined
       }
     } catch {
       return { maxEstimatedSpendPerDayUsd: null, showToolDetails: false, activeBotId: '' }

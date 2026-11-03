@@ -85,6 +85,12 @@ export interface AppPreferences {
   showToolDetails: boolean
 }
 
+export interface AppSettings {
+  provider: ProviderId
+  model: string
+  maxEstimatedSpendPerDayUsd: number | null
+}
+
 export interface AttachmentView {
   id: string
   name: string
@@ -339,6 +345,7 @@ export interface Snapshot {
   current: ConversationDetail | null
   browser: BrowserView
   settings: PublicSettings
+  appSettings: AppSettings
   preferences: AppPreferences
   credentials: CredentialStatus
   usage: UsageSummary
@@ -393,8 +400,8 @@ export interface ArtifactView {
 export interface BotDraft {
   purpose: string
   name: string
-  provider: ProviderId
-  model: string
+  provider?: ProviderId
+  model?: string
   workspaceKind: 'suggested' | 'existing'
   workspacePath: string
   avatarKind: 'builtin' | 'emoji' | 'image'
@@ -482,6 +489,7 @@ export interface RiotBridge {
   listActivity(scope?: 'bot' | 'app'): Promise<ActivityEntry[]>
   getUsage(): Promise<UsageSummary>
   updateSettings(patch: Partial<PublicSettings>): Promise<PublicSettings>
+  updateAppSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   setCredential(provider: ApiProviderId, secret: string): Promise<CredentialSaveResult>
   clearCredential(provider: ApiProviderId): Promise<CredentialStatus>
   pickWorkspace(): Promise<string | null>
