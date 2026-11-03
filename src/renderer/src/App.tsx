@@ -31,6 +31,7 @@ import { formatUsd, TERMINAL_WARNING } from '../../shared/types'
 import { AVATAR_CHOICES, AVATAR_COLORS, AVATAR_EMOJIS, BotAvatar } from './avatar'
 import { AttachmentList, ChatTranscript } from './chat'
 import { JobsPane, LibraryPane } from './jobs'
+import { ChatWelcome, EmptyState, Icon, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
 type Screen = 'chat' | 'jobs' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'new-bot' | 'earlier'
 
@@ -49,6 +50,7 @@ export function App() {
 
 function Shell({ api }: { api: RiotBridge }) {
   const [screen, setScreen] = useState<Screen>('chat')
+  const [loaded, setLoaded] = useState(false)
   const [bots, setBots] = useState<Bot[]>([])
   const [bot, setBot] = useState<Bot | null>(null)
   const [jobs, setJobs] = useState<JobView[]>([])
@@ -70,6 +72,7 @@ function Shell({ api }: { api: RiotBridge }) {
   const [draft, setDraft] = useState('')
   const [draftAttachments, setDraftAttachments] = useState<AttachmentView[]>([])
   const [busy, setBusy] = useState(false)
+  const [editingBusy, setEditingBusy] = useState(false)
   const [ongoingId, setOngoingId] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null)
@@ -122,6 +125,8 @@ function Shell({ api }: { api: RiotBridge }) {
       conversationId.current = null
       setDetail(null)
     }
+    setLoaded(true)
+    if (!snapshot.bot) setScreen('new-bot')
   }
 
   useEffect(() => {
@@ -201,6 +206,7 @@ function Shell({ api }: { api: RiotBridge }) {
   const botJobs = jobs.filter((job) => job.botId === bot?.id)
   const running = botJobs.some((job) => job.status === 'running') || detail?.run?.status === 'running'
   const queued = botJobs.filter((job) => job.status === 'queued').length
+  const activeTaskCount = botJobs.filter(job => job.status === 'running' || job.status === 'queued').length
   const viewingEarlier = Boolean(detail && ongoingId && detail.conversation.id !== ongoingId && screen === 'chat')
   useEffect(() => {
     if (settings?.provider === 'codex') void api.getCodexStatus().then(setCodex).catch(() => undefined)
@@ -210,6 +216,7 @@ function Shell({ api }: { api: RiotBridge }) {
 
   async function send(): Promise<void> {
     if (!detail || (!draft.trim() && !draftAttachments.length) || busy) return
+    if (!configured) { showScreen('settings'); return }
     const text = draft
     const attachmentIds = draftAttachments.map((item) => item.id)
     const sendingBotId = bot?.id
@@ -232,6 +239,7 @@ function Shell({ api }: { api: RiotBridge }) {
   }
 
   async function selectBot(id: string): Promise<void> {
+    if (editingBusy) return
     if (bot) drafts.current[bot.id] = draft
     setMenuOpen(false)
     await api.selectBot(id)
@@ -241,6 +249,7 @@ function Shell({ api }: { api: RiotBridge }) {
   }
 
   function showScreen(next: Screen): void {
+    if (editingBusy) return
     setMenuOpen(false)
     setScreen(next)
   }
@@ -249,85 +258,81 @@ function Shell({ api }: { api: RiotBridge }) {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="mark">R</span>
+          <span className="mark"><Icon name="spark" /></span>
           <div>
             <strong>Riot Bot</strong>
-            <p>On this computer</p>
+            <p>A little help, every day.</p>
           </div>
         </div>
         <button
           className="new-chat"
+          disabled={editingBusy}
           onClick={() => {
             if (bot) drafts.current[bot.id] = draft
             setMenuOpen(false)
             setScreen('new-bot')
           }}
         >
-          New Bot
+          <Icon name="plus" /> New bot
         </button>
+        <p className="sidebar-label">YOUR BOTS <span>{bots.length}</span></p>
         <div className="bot-list">
           {bots.map((item) => (
             <div key={item.id} className={item.id === bot?.id ? 'bot-row active' : 'bot-row'}>
               <button
                 type="button"
                 className="bot-select"
+                disabled={editingBusy}
                 aria-current={item.id === bot?.id ? 'true' : undefined}
                 onClick={() => {
                   void selectBot(item.id).catch((reason: unknown) => setError(messageOf(reason)))
                 }}
               >
                 <BotAvatar avatar={item.avatar} label={item.name} size={28} />
-                <span>{item.name}</span>
+                <span className="bot-row-label"><strong>{item.name}</strong><small>{item.purpose || 'Your personal assistant'}</small></span>
                 {jobs.some((job) => job.botId === item.id && (job.status === 'running' || job.status === 'queued')) && <small className="bot-job-status">{jobs.some((job) => job.botId === item.id && job.awaitingApproval) ? 'Approval' : jobs.some((job) => job.botId === item.id && job.status === 'running') ? 'Working' : 'Queued'}</small>}
               </button>
             </div>
           ))}
         </div>
-        <nav>
-          <button className={!menuOpen && screen === 'chat' ? 'active' : ''} onClick={() => showScreen('chat')}>
-            Chat
-          </button>
-          <button className={!menuOpen && screen === 'jobs' ? 'active' : ''} onClick={() => showScreen('jobs')}>Jobs</button>
-          <button className={!menuOpen && screen === 'library' ? 'active' : ''} onClick={() => showScreen('library')}>Library</button>
-          <button className={!menuOpen && screen === 'memory' ? 'active' : ''} onClick={() => showScreen('memory')}>
-            Memory
-          </button>
-          <button className={!menuOpen && screen === 'skills' ? 'active' : ''} onClick={() => showScreen('skills')}>
-            Skills
-          </button>
-          <button className={!menuOpen && screen === 'activity' ? 'active' : ''} onClick={() => showScreen('activity')}>
-            Activity
-          </button>
-          <button className={!menuOpen && screen === 'settings' ? 'active' : ''} onClick={() => showScreen('settings')}>
-            Settings
-          </button>
+        <nav className="workspace-nav" aria-label="Bot workspace">
+          <p className="sidebar-label">WORKSPACE</p>
+          {([
+            ['chat', 'chat', 'Chat'], ['jobs', 'tasks', 'Tasks'], ['library', 'files', 'Files'],
+            ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills']
+          ] as [Screen, IconName, string][]).map(([value, icon, label]) => <button key={value} disabled={!bot || editingBusy} className={!menuOpen && screen === value ? 'active' : ''} aria-current={!menuOpen && screen === value ? 'page' : undefined} onClick={() => showScreen(value)}>
+            <Icon name={icon} /><span>{label}</span>{value === 'jobs' && activeTaskCount > 0 && <small className="nav-count">{activeTaskCount}</small>}
+          </button>)}
         </nav>
-        <p className="desktop-note">Close to tray · Quit from the tray menu</p>
+        <div className="sidebar-bottom">
+          {bot && !configured && <button className="connection-nudge" disabled={editingBusy} onClick={() => showScreen('settings')}><span className="status-dot pending" /><span><strong>Connect your AI</strong><small>One step to your first chat</small></span><Icon name="chevron" /></button>}
+          <nav className="utility-nav" aria-label="App controls">
+            <button disabled={!bot || editingBusy} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => showScreen('settings')}><Icon name="settings" /> Settings</button>
+            <button disabled={!bot || editingBusy} className={!menuOpen && screen === 'activity' ? 'active' : ''} aria-current={!menuOpen && screen === 'activity' ? 'page' : undefined} onClick={() => showScreen('activity')}><Icon name="activity" /> Usage & activity</button>
+          </nav>
+          <p className="desktop-note"><span className="status-dot" /> Runs on your computer</p>
+        </div>
       </aside>
-      <section className="main">
+      <main className="main">
         <header className="topbar">
           <div className="title-lockup">
             {bot && (screen === 'chat' || menuOpen) && <BotAvatar avatar={bot.avatar} label={bot.name} size={36} />}
             <div>
-              <h1>{menuOpen ? 'Bot settings' : screen === 'chat' ? (viewingEarlier ? detail?.conversation.title : bot?.name) ?? 'Chat' : screenTitle(screen)}</h1>
+              <h1>{menuOpen ? 'Customize your bot' : screen === 'chat' ? (viewingEarlier ? detail?.conversation.title : bot?.name) ?? 'Welcome to Riot' : screenTitle(screen)}</h1>
               <p className="status">
-                {bot ? bot.name : 'Riot Bot'}
-                {bot?.purpose ? ` · ${bot.purpose}` : ''}
-                {running ? ' · Working. You can queue your next message.' : queued ? ' · Queued.' : ' · Ready.'}
-                {jobs.some((job) => job.botId !== bot?.id && job.status === 'running') ? ' Other bots are working.' : ''}
+                {menuOpen ? 'A name, a personality, and a space of its own.' : screen === 'chat' ? running ? 'Working on it. You can add your next message.' : queued ? 'Your request is in line. You can add another message.' : configured ? 'Your ongoing conversation. Pick up anywhere.' : 'Let’s get your assistant ready.' : screenDescription(screen)}
               </p>
             </div>
           </div>
           <div className="topbar-actions">
-            {bot && screen !== 'new-bot' && <button type="button" className="bot-settings-toggle" aria-label="Bot settings" title="Bot settings" aria-expanded={menuOpen} aria-controls="bot-settings-panel" onClick={() => setMenuOpen((open) => !open)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="m9.5 3 .6-2h3.8l.6 2 2 .8 1.9-1 2.7 2.7-1 1.9.8 2 2 .6v3.8l-2 .6-.8 2 1 1.9-2.7 2.7-1.9-1-2 .8-.6 2h-3.8l-.6-2-2-.8-1.9 1-2.7-2.7 1-1.9-.8-2-2-.6V10l2-.6.8-2-1-1.9 2.7-2.7 1.9 1z" /><circle cx="12" cy="12" r="3.4" /></svg>
-            </button>}
-            <button className="stop" disabled={!running} onClick={() => void api.stop()}>Stop</button>
+            {screen === 'chat' && bot && <span className={`connection-status ${configured ? '' : 'pending'}`}><span className={`status-dot ${configured ? '' : 'pending'}`} />{running ? 'Working' : queued ? 'In queue' : configured ? 'Ready to chat' : 'Setup needed'}</span>}
+            {menuOpen ? <button type="button" className="back-button" disabled={editingBusy} onClick={() => setMenuOpen(false)}><Icon name="back" /> Back</button> : bot && screen !== 'new-bot' && <button type="button" className="bot-settings-toggle" disabled={editingBusy} aria-label="Customize bot" title="Customize bot" aria-expanded={menuOpen} aria-controls="bot-settings-panel" onClick={() => setMenuOpen(true)}><Icon name="settings" /></button>}
+            {running && <button className="stop" onClick={() => void api.stop().catch((reason: unknown) => setError(messageOf(reason)))}>Stop</button>}
           </div>
         </header>
         {error && (
-          <div className="banner warn">
-            {error}
+          <div className="banner warn" role="alert">
+            <span>{error}</span>
             <button onClick={() => setError(null)}>Dismiss</button>
           </div>
         )}
@@ -349,14 +354,18 @@ function Shell({ api }: { api: RiotBridge }) {
             note={browserNote}
             onNote={setBrowserNote}
             onError={setError}
+            onBusy={setEditingBusy}
             onBot={(next) => {
+              if (next.id !== viewedBotId.current) return
               setBot(next)
               setBots((current) => current.map((item) => (item.id === next.id ? next : item)))
+              setSettings(current => current ? { ...current, pinnedInstructions: next.instructions } : current)
             }}
             onEarlier={() => { setMenuOpen(false);setScreen('earlier') }}
             onSettings={() => { setMenuOpen(false);setScreen('settings') }}
           />
         ) : <>
+        {!loaded && <div className="empty-state" role="status">Getting your workspace ready…</div>}
         {screen === 'new-bot' && settings && (
           <NewBotForm
             settings={settings}
@@ -372,6 +381,8 @@ function Shell({ api }: { api: RiotBridge }) {
               setError(/failed|stopped|temporary|not available/i.test(result.status) ? result.status : null)
             }}
             onError={setError}
+            onCancel={bot ? () => setScreen('chat') : undefined}
+            onBusy={setEditingBusy}
           />
         )}
         {screen === 'earlier' && (
@@ -386,6 +397,8 @@ function Shell({ api }: { api: RiotBridge }) {
           <ChatPane
             key={detail.conversation.id}
             detail={detail}
+            botName={bot?.name ?? 'Riot Bot'}
+            botPurpose={bot?.purpose ?? ''}
             draft={draft}
             attachments={draftAttachments}
             running={running}
@@ -464,6 +477,7 @@ function Shell({ api }: { api: RiotBridge }) {
         )}
         {screen === 'settings' && settings && credentials && bot && (
           <SettingsPane
+            key={bot.id}
             bot={bot}
             preferences={preferences}
             settings={settings}
@@ -472,21 +486,24 @@ function Shell({ api }: { api: RiotBridge }) {
             onCodex={setCodex}
             api={api}
             onSaved={(next, status) => {
-              setSettings(next)
               setCredentials(status)
+              if (bot.id !== viewedBotId.current) return
+              setSettings(next)
               void api.getSnapshot().then((snapshot) => {
                 if (snapshot.bot?.id !== viewedBotId.current) return
                 setBots(snapshot.bots)
                 setBot(snapshot.bot)
                 setPreferences(snapshot.preferences)
-              })
+              }).catch((reason: unknown) => setError(messageOf(reason)))
             }}
             onPreferences={setPreferences}
             onError={(next) => setError(next)}
+            onDone={() => setScreen('chat')}
+            onBusy={setEditingBusy}
           />
         )}
         </>}
-      </section>
+      </main>
       {deleteTarget && <DeleteBotDialog bot={deleteTarget} onCancel={() => setDeleteTarget(null)} onDelete={async (confirmationName) => {
         const result = await api.deleteBot(deleteTarget.id,confirmationName)
         delete drafts.current[deleteTarget.id]
@@ -503,6 +520,8 @@ function Shell({ api }: { api: RiotBridge }) {
 
 function ChatPane(props: {
   detail: ConversationDetail
+  botName: string
+  botPurpose: string
   draft: string
   attachments: AttachmentView[]
   running: boolean
@@ -528,6 +547,7 @@ function ChatPane(props: {
   onRemoveAttachment: (id: string) => void
 }) {
   const [attaching, setAttaching] = useState(false)
+  const composer = useRef<HTMLTextAreaElement>(null)
 
   async function attach(work: () => Promise<AttachmentView[]>): Promise<void> {
     if (attaching) return
@@ -547,15 +567,14 @@ function ChatPane(props: {
   }
   return (
     <>
-      {!props.configured && (
+      {!props.configured && props.detail.messages.length > 0 && (
         <div className="banner">
-          <span>{props.configurationNote ?? 'Choose a model in Settings and connect Codex with ChatGPT, or add an API key for OpenAI or OpenRouter. Opening the app does not start a model turn.'}</span>
-          <button type="button" onClick={props.onOpenSettings}>Open Settings</button>
+          <span>{props.configurationNote ?? 'Connect your AI to continue this conversation. Your messages are saved here.'}</span>
+          <button type="button" onClick={props.onOpenSettings}>Connect your AI</button>
         </div>
       )}
       {props.proposal && <SkillProposalCard key={props.proposal.id} proposal={props.proposal} api={props.api} onProposal={props.onProposal} onError={props.onError} />}
-      {props.detail.messages.length === 0 && <p className="empty">This chat is empty. Send a message when you are ready.</p>}
-      <ChatTranscript
+      {props.detail.messages.length === 0 && !props.readOnly ? <ChatWelcome name={props.botName} purpose={props.botPurpose} configured={props.configured} onConnect={props.onOpenSettings} onPrompt={(prompt) => { props.onDraft(prompt); composer.current?.focus() }} /> : <ChatTranscript
         detail={props.detail}
         running={props.detail.run?.status === 'running'}
         statusLabel={props.detail.task?.outstandingSteps[0] || 'Working…'}
@@ -566,7 +585,7 @@ function ChatPane(props: {
         onError={props.onError}
         onOpenSettings={props.onOpenSettings}
         onOlderPage={props.onOlderPage}
-      />
+      />}
       {props.readOnly && (
         <div className="banner">
           <span>This is an earlier conversation. New messages stay in the ongoing chat.</span>
@@ -577,12 +596,12 @@ function ChatPane(props: {
       )}
       {!props.readOnly && (
       <>
-      {(props.running || props.queued > 0) && <div className="queue-strip"><span>{props.running ? 'This bot is working.' : 'Waiting for a worker.'} {props.queued > 0 ? `${props.queued} message${props.queued === 1 ? '' : 's'} queued.` : 'Your next message will wait its turn.'}</span><button onClick={props.onJobs}>View jobs</button></div>}
+      {(props.running || props.queued > 0) && <div className="queue-strip"><span>{props.running ? 'Your bot is working.' : 'Your message is waiting its turn.'} {props.queued > 0 ? `${props.queued} message${props.queued === 1 ? '' : 's'} in line.` : 'You can add your next request below.'}</span><button onClick={props.onJobs}>View tasks</button></div>}
       <form
         className="composer"
         onSubmit={(event) => {
           event.preventDefault()
-          if (!attaching) props.onSend()
+          if (!attaching) { if (props.configured) props.onSend(); else props.onOpenSettings?.() }
         }}
         onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }}
         onDrop={(event) => {
@@ -594,14 +613,17 @@ function ChatPane(props: {
         <div className="composer-body">
           <AttachmentList attachments={props.attachments} onRemove={props.onRemoveAttachment} />
           <textarea
+            ref={composer}
+            aria-label={`Message ${props.botName}`}
+            aria-describedby="composer-hint"
             value={props.draft}
-            placeholder={props.running ? 'Queue a message for this bot' : 'Message Riot Bot'}
-            rows={3}
+            placeholder={props.running ? 'Add your next request…' : `Ask ${props.botName} anything, or describe a task…`}
+            rows={2}
             onChange={(event) => props.onDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault()
-                if (!attaching) props.onSend()
+                if (!attaching) { if (props.configured) props.onSend(); else props.onOpenSettings?.() }
               }
             }}
             onPaste={(event) => {
@@ -611,15 +633,16 @@ function ChatPane(props: {
             }}
           />
           <div className="attachment-controls">
-            <button type="button" disabled={attaching} onClick={() => void attach(() => props.api.pickAttachments())}>Attach files</button>
-            <button type="button" disabled={attaching} onClick={() => void attach(async () => [await props.api.pasteScreenshot()])}>Paste screenshot</button>
-            <span className="help">{attaching ? 'Adding attachment…' : 'Win+Shift+S, then Ctrl+V · PNG/JPEG or UTF-8 text/code · Up to 4 files'}</span>
+            <button type="button" disabled={attaching} title="Add up to 4 images or text files" onClick={() => void attach(() => props.api.pickAttachments())}><Icon name="attach" /> Attach files</button>
+            <button type="button" disabled={attaching} title="Copy a screenshot, then paste it here" onClick={() => void attach(async () => [await props.api.pasteScreenshot()])}><Icon name="image" /> Paste screenshot</button>
+            <span className="help" role="status">{attaching ? 'Adding attachment…' : 'Images & text · Up to 4 files'}</span>
           </div>
         </div>
         <button className="send" type="submit" disabled={attaching || props.submitting || (!props.draft.trim() && !props.attachments.length)}>
-          {props.submitting ? 'Saving…' : props.running || props.queued ? 'Queue' : 'Send'}
+          {props.submitting ? 'Saving…' : !props.configured ? 'Connect to send' : props.running || props.queued ? 'Add to queue' : 'Send'} <Icon name="arrow" />
         </button>
       </form>
+      <p className="composer-hint" id="composer-hint">Enter to send <span>·</span> Shift + Enter for a new line</p>
       </>
       )}
     </>
@@ -665,9 +688,10 @@ function MemoryPane(props: {
   const shown = props.memories.filter((memory) => memory.content.toLowerCase().includes(query.trim().toLowerCase()))
   return (
     <div className="panel">
-      <p className="help">A memory is a fact or preference. A skill, on the Skills screen, is a procedure. Explicit “remember this” saves the wording you gave, including a guess, and you can correct or delete it. Obvious secret patterns are blocked, but that check does not catch every secret. Deleting a memory removes it from later requests. The original chat can still mention it.</p>
-      <input value={query} placeholder="Filter memories" onChange={(event) => setQuery(event.target.value)} />
-      {shown.length === 0 && <p className="empty">No memories yet. Say “remember this: …” in a chat, or let Riot Bot save a confirmed fact.</p>}
+      <div className="page-intro"><h2>A little context goes a long way.</h2><p>Facts and preferences your bot can remember for next time. You can edit or remove them whenever you like.</p></div>
+      <input aria-label="Search memories" value={query} placeholder="Find a memory…" onChange={(event) => setQuery(event.target.value)} />
+      {shown.length === 0 && <EmptyState icon="memory" title={query ? 'No matching memories' : 'Your bot is getting to know you'}>{query ? 'Try a different word or clear your search.' : 'Try saying “Remember this: I prefer short, straightforward answers” in chat.'}</EmptyState>}
+      <details className="subtle-details"><summary>How memories work</summary><p className="help">“Remember this” saves your wording. Removing a memory stops it being used in future replies; earlier chats can still mention it. Avoid saving passwords or other secrets.</p></details>
       {shown.map((memory) => (
         <MemoryCard key={memory.id} memory={memory} {...props} />
       ))}
@@ -721,8 +745,9 @@ function MemoryCard({
 function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityEntry[]; usage: UsageSummary | null; scope: 'bot' | 'app'; onScope: (scope: 'bot' | 'app') => void }) {
   return (
     <div className="panel">
+      <div className="page-intro"><h2>Know where things stand.</h2><p>See today’s usage across the app. Expand an entry below when you need the details.</p></div>
       <div className="row">
-        <button type="button" className={scope === 'bot' ? 'send' : ''} onClick={() => onScope('bot')}>
+        <button type="button" aria-pressed={scope === 'bot'} className={scope === 'bot' ? 'send' : ''} onClick={() => onScope('bot')}>
           This bot
         </button>
         <button type="button" className={scope === 'app' ? 'send' : ''} onClick={() => onScope('app')}>
@@ -731,7 +756,7 @@ function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityE
       </div>
       {usage && (
         <div className="usage">
-          <h2>Today, all bots, {usage.day}</h2>
+          <h2>Today across all bots</h2><p className="help">{usage.day}</p>
           <p>{usage.modelCalls} API model calls · {usage.codexTurns ?? 0} native Codex turns</p>
           <p>API estimated {formatUsd(usage.estimatedUsd)}</p>
           <p>API reported {formatUsd(usage.reportedUsd)}</p>
@@ -739,7 +764,7 @@ function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityE
           <p className="help">{usage.disclaimer}</p>
         </div>
       )}
-      {activity.length === 0 && <p className="empty">No model calls yet.</p>}
+      {activity.length === 0 && <EmptyState icon="activity" title="Nothing to track yet">Usage appears here after you send a message. Opening the app doesn’t start an AI task.</EmptyState>}
       {activity.map((entry) => (
         <details key={entry.id} className="card">
           <summary>
@@ -802,218 +827,118 @@ function SettingsPane(props: {
   onSaved: (settings: PublicSettings, credentials: CredentialStatus) => void
   onPreferences: (preferences: AppPreferences) => void
   onError: (message: string) => void
+  onDone: () => void
+  onBusy: (busy: boolean) => void
 }) {
+  const [tab, setTab] = useState<'connection' | 'workspace' | 'limits' | 'advanced'>('connection')
   const [draft, setDraft] = useState(props.settings)
   const [key, setKey] = useState('')
-  const [keyNote, setKeyNote] = useState(props.credentials.explanation)
+  const [saving, setSaving] = useState(false)
   const [savedNote, setSavedNote] = useState('')
-  const [botName, setBotName] = useState(props.bot.name)
-  const [botPurpose, setBotPurpose] = useState(props.bot.purpose)
+  const [saveError, setSaveError] = useState('')
   useEffect(() => setDraft(props.settings), [props.settings])
-  useEffect(() => {
-    setBotName(props.bot.name)
-    setBotPurpose(props.bot.purpose)
-  }, [props.bot])
-  const configured = props.settings.provider === 'openai' ? props.credentials.openaiConfigured : props.credentials.openrouterConfigured
-  return (
-    <form
-      className="panel settings"
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault()
-        setSavedNote('')
-        const pendingKey = key.trim()
-        void props.api
-          .updateBot({ name: botName, purpose: botPurpose, instructions: draft.pinnedInstructions })
-          .then(() => props.api.updateSettings(draft))
-          .then(async (next) => {
-            if (!pendingKey || draft.provider === 'codex') {
-              props.onSaved(next, props.credentials)
-              setSavedNote('Settings saved.')
-              return
-            }
-            const result = await props.api.setCredential(draft.provider, pendingKey)
-            setKey('')
-            setKeyNote(result.message)
-            props.onSaved(next, result.status)
-            setSavedNote('Settings and API key saved.')
-          })
-          .catch((reason: unknown) => props.onError(messageOf(reason)))
-      }}
-    >
-      <p className="help">Each bot chooses its own backend and model. API keys and the Codex connection are shared across this app’s bots.</p>
-      <label>
-        Bot name
-        <input value={botName} onChange={(event) => setBotName(event.target.value)} />
-      </label>
-      <p className="help">Renaming does not move the workspace folder.</p>
-      <label>
-        Purpose
-        <input value={botPurpose} onChange={(event) => setBotPurpose(event.target.value)} />
-      </label>
-      <p className="help">Workspace: {props.bot.workspacePath || 'No folder yet.'}</p>
-      <button type="button" onClick={() => void props.api.openWorkspace().catch((reason: unknown) => props.onError(messageOf(reason)))}>
-        Open workspace
-      </button>
-      <label>
-        Provider
-        <select aria-label="Provider" value={draft.provider} onChange={(event) => { setKey(''); setDraft({ ...draft, provider: event.target.value as PublicSettings['provider'], model: '' }) }}>
-          <option value="openai">OpenAI</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="codex">Codex · ChatGPT sign-in (preview)</option>
-        </select>
-      </label>
-      <ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={(model) => setDraft({ ...draft, model })} />
-      <p className="help">Riot Bot does not pick a model for you, and it does not assume every model can use tools or streaming.</p>
-      {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : <>
-      <label>
-        API key
-        <input type="password" value={key} autoComplete="off" placeholder={configured ? 'A key is saved. Paste a new one to replace it.' : 'Paste an API key'} onChange={(event) => setKey(event.target.value)} />
-      </label>
-      <div className="row">
-        <button
-          type="button"
-          onClick={() => {
-            if (draft.provider === 'codex') return
-            void props.api
-              .setCredential(draft.provider, key)
-              .then((result) => {
-                setKey('')
-                setKeyNote(result.message)
-                props.onSaved(draft, result.status)
-              })
-              .catch((reason: unknown) => props.onError(messageOf(reason)))
-          }}
-        >
-          Save key
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (draft.provider === 'codex') return
-            void props.api
-              .clearCredential(draft.provider)
-              .then((status) => {
-                setKeyNote(status.explanation)
-                props.onSaved(draft, status)
-              })
-              .catch((reason: unknown) => props.onError(messageOf(reason)))
-          }}
-        >
-          Clear key
-        </button>
-      </div>
-      <p className="help">{keyNote}</p>
-      </>}
-      <label>
-        Workspace folder
-        <input value={draft.workspacePath} onChange={(event) => setDraft({ ...draft, workspacePath: event.target.value })} />
-      </label>
-      <button
-        type="button"
-        onClick={() => {
-          void props.api.pickWorkspace().then((folder) => {
-            if (folder) setDraft((current) => ({ ...current, workspacePath: folder }))
-          })
-        }}
-      >
-        Browse…
-      </button>
-      <label className="check">
-        <input type="checkbox" checked={draft.workspaceEditing} onChange={(event) => setDraft({ ...draft, workspaceEditing: event.target.checked })} />
-        Allow Riot Bot to create and edit files in this folder
-      </label>
-      <div className="callout">
-        <strong>Terminal commands</strong>
-        <p>{draft.provider === 'codex' ? 'Codex uses its native sandbox and approval rules. Safe read commands can run automatically. Commands that need approval appear here; broader network and filesystem permission grants are declined. Read-only mode prevents writes, but does not limit every native file read to this workspace. Native edits do not have Riot’s Undo button.' : TERMINAL_WARNING}</p>
-      </div>
-      {draft.provider !== 'codex' &&
-      <label className="check">
-        <input type="checkbox" checked={draft.streaming} onChange={(event) => setDraft({ ...draft, streaming: event.target.checked })} />
-        Stream replies. Turn this off if a model rejects streaming.
-      </label>
+  const keySaved = draft.provider === 'openai' ? props.credentials.openaiConfigured : draft.provider === 'openrouter' && props.credentials.openrouterConfigured
+  const changed = JSON.stringify(draft) !== JSON.stringify(props.settings) || Boolean(key.trim())
+  function update(patch: Partial<PublicSettings>): void {
+    setDraft(current => ({ ...current, ...patch }))
+    setSavedNote('')
+    setSaveError('')
+  }
+  async function save(): Promise<void> {
+    if (saving) return
+    setSaving(true)
+    props.onBusy(true)
+    setSavedNote('')
+    setSaveError('')
+    try {
+      let credentials = props.credentials
+      if (key.trim() && draft.provider !== 'codex') {
+        const result = await props.api.setCredential(draft.provider, key.trim())
+        credentials = result.status
+        setKey('')
+        props.onSaved(props.settings, credentials)
       }
-      <label className="check">
-        <input type="checkbox" checked={draft.toolsEnabled} onChange={(event) => setDraft({ ...draft, toolsEnabled: event.target.checked })} />
-        {draft.provider === 'codex' ? 'Allow native shell, web search, and Riot memory/file tools.' : 'Allow tools. Turn this off if a model cannot use them.'}
-      </label>
-      <label>
-        Instructions
-        <textarea value={draft.pinnedInstructions} rows={4} onChange={(event) => setDraft({ ...draft, pinnedInstructions: event.target.value })} />
-      </label>
-      <div className="grid">
-        <NumberField label="Task minutes" value={Math.round(draft.maxTaskDurationMs / 60000)} onChange={(value) => setDraft({ ...draft, maxTaskDurationMs: value * 60 * 1000 })} />
-        {draft.provider !== 'codex' && <>
-        <OptionalMoney label="Estimated spend per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={(value) => setDraft({ ...draft, maxEstimatedSpendPerTaskUsd: value })} />
-        <OptionalMoney label="App daily spend ceiling (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={(value) => setDraft({ ...draft, maxEstimatedSpendPerDayUsd: value })} />
-        <OptionalMoney label="This bot’s daily limit (USD)" value={draft.botSpendPerDayUsd} onChange={(value) => setDraft({ ...draft, botSpendPerDayUsd: value })} />
-        <OptionalMoney label="Input price per million tokens" value={draft.inputUsdPerMillion} onChange={(value) => setDraft({ ...draft, inputUsdPerMillion: value })} />
-        <OptionalMoney label="Output price per million tokens" value={draft.outputUsdPerMillion} onChange={(value) => setDraft({ ...draft, outputUsdPerMillion: value })} />
-        </>}
-      </div>
-      {draft.provider === 'codex' ? <p className="help">Codex manages its native tool loop, streaming, and context compaction. Riot’s API call, reply-token, context, and dollar limits do not control native turns. The task timer and Stop still apply. Native turns use your signed-in account’s Codex limits and any usage settings you have enabled there. Riot never switches to an API key automatically.</p> : <>
-      <p className="help">
-        Replies continue automatically when needed, and large files can be written in chunks. Context is managed automatically. Your task time and spending limits still apply. Browser search has no separate search fee.
-      </p>
-      <details className="tool">
-        <summary>Advanced model limits</summary>
-        <div className="grid">
-          <NumberField label="Model calls per task" value={draft.maxModelCallsPerTask} onChange={(value) => setDraft({ ...draft, maxModelCallsPerTask: value })} />
-          <label>Reply allowance<select value={draft.replyMode} onChange={event => setDraft({ ...draft, replyMode: event.target.value === 'manual' ? 'manual' : 'automatic' })}><option value="automatic">Automatic · includes model reasoning</option><option value="manual">Manual cap</option></select></label>
-          {draft.replyMode === 'manual' && <NumberField label="Reply chunk token limit" value={draft.maxOutputTokens} onChange={(value) => setDraft({ ...draft, maxOutputTokens: value })} />}
-          <label>
-            Context fitting
-            <select value={draft.contextMode} onChange={(event) => setDraft({ ...draft, contextMode: event.target.value === 'manual' ? 'manual' : 'automatic' })}>
-              <option value="automatic">Automatic</option>
-              <option value="manual">Manual input budget</option>
-            </select>
-          </label>
-          <NumberField label="Manual input working budget" value={draft.contextTokenBudget} onChange={(value) => setDraft({ ...draft, contextTokenBudget: value })} />
-          <label>
-            Model context capacity
-            <input
-              type="number"
-              min="1024"
-              step="1"
-              placeholder="Use documented size"
-              value={draft.modelContextTokens ?? ''}
-              onChange={(event) => setDraft({ ...draft, modelContextTokens: event.target.value === '' ? null : Number(event.target.value) })}
-            />
-          </label>
-          <NumberField label="Tool detail preview characters" value={draft.maxToolOutputChars} onChange={(value) => setDraft({ ...draft, maxToolOutputChars: value })} />
-          <label>
-            Search URL template
-            <input value={draft.searchUrlTemplate} onChange={(event) => setDraft({ ...draft, searchUrlTemplate: event.target.value })} />
-          </label>
-        </div>
-        <p className="help">
-          Automatic mode compacts older chat toward about 12,000 fitted input tokens and reserves the reply limit once. If the provider does not publish a context length, enter one here or leave it blank. Blank uses a labeled conservative limit of 32,768 tokens. That number is not a claim about the model. Manual mode uses the input working budget as the hard ceiling. The default manual budget is 8,000 estimated tokens.
-        </p>
-      </details>
-      <p className="help">Leave the dollar boxes blank to turn dollar limits off. The app daily ceiling applies to every bot. A bot limit can only tighten it. If a dollar box is filled in, both prices are required. Prices are your estimate, not a promise of the invoice.</p>
+      const next = await props.api.updateSettings(draft)
+      props.onSaved(next, credentials)
+      setDraft(next)
+      setSavedNote(providerReady(next, credentials, props.codex) ? 'Saved. You’re ready to chat.' : 'Saved. Finish connecting your AI to start chatting.')
+    } catch (reason) { setSaveError(messageOf(reason)) }
+    finally { setSaving(false); props.onBusy(false) }
+  }
+  return <form className="settings-page" noValidate onSubmit={event => { event.preventDefault(); void save() }}>
+    <nav className="settings-tabs" aria-label="Settings sections">
+      {([['connection', 'Connection'], ['workspace', 'Files & tools'], ['limits', 'Limits'], ['advanced', 'Advanced']] as const).map(([value, label]) => <button key={value} type="button" disabled={saving} aria-current={tab === value ? 'page' : undefined} className={tab === value ? 'active' : ''} onClick={() => setTab(value)}>{label}</button>)}
+    </nav>
+    <fieldset className="settings-content" disabled={saving}>
+      {tab === 'connection' && <>
+        <div className="page-intro"><p className="eyebrow">LET’S GET CONNECTED</p><h2>Your bot. Your choice of AI.</h2><p>Connect an account, choose a model, and you’re ready. You can change this later.</p></div>
+        <section className="settings-section">
+          <div className="section-heading"><span className="step-number">1</span><h3>Choose a connection</h3></div>
+          <ProviderPicker value={draft.provider} onChange={provider => { setKey(''); update({ provider, model: '', modelContextTokens: null, inputUsdPerMillion: null, outputUsdPerMillion: null }) }} />
+        </section>
+        <section className="settings-section">
+          <div className="section-heading"><span className="step-number">2</span><h3>{draft.provider === 'codex' ? 'Sign in to your account' : 'Add your API key'}</h3>{keySaved && <span className="small-badge"><Icon name="check" /> Key saved</span>}</div>
+          {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : <>
+            <p className="help">An API key connects Riot to your {providerName(draft.provider)} account. API usage is billed by that provider.</p>
+            <label>API key<input type="password" value={key} autoComplete="off" spellCheck={false} placeholder={keySaved ? 'A key is saved. Paste here only to replace it.' : `Paste your ${providerName(draft.provider)} API key`} onChange={event => { setKey(event.target.value); setSavedNote('') }} /></label>
+            <p className="help">{props.credentials.explanation} Your key is saved when you choose Save settings.</p>
+            {keySaved && <details className="subtle-details"><summary>Manage saved key</summary><p className="help">This key is shared by bots using {providerName(draft.provider)}. Removing it disconnects those bots.</p><button type="button" className="danger" onClick={() => { if (draft.provider !== 'codex') void props.api.clearCredential(draft.provider).then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove saved key</button></details>}
+          </>}
+        </section>
+        <section className="settings-section">
+          <div className="section-heading"><span className="step-number">3</span><h3>Choose a model</h3></div>
+          <ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => update({ model, modelContextTokens: null, inputUsdPerMillion: null, outputUsdPerMillion: null })} />
+          <p className="help">{draft.provider === 'codex' ? 'Sign in first to see the models available to your account.' : 'Copy the exact model ID from your provider’s model catalog. Models differ in price and support for images and tools.'}</p>
+        </section>
+        <p className="settings-scope">This connection is for <strong>{props.bot.name}</strong>. Account sign-ins and API keys are shared across your bots.</p>
       </>}
-      <label className="check">
-        <input
-          type="checkbox"
-          checked={props.preferences.showToolDetails}
-          onChange={(event) => {
-            void props.api
-              .updatePreferences({ showToolDetails: event.target.checked })
-              .then((next) => props.onPreferences(next))
-              .catch((reason: unknown) => props.onError(messageOf(reason)))
-          }}
-        />
-        Show tool details by default
-      </label>
-      {draft.provider !== 'codex' && <ProviderCheck api={props.api} onError={props.onError} />}
-      <div className="row">
-        <button className="send" type="submit">
-          Save settings
-        </button>
-        {savedNote && <p className="help">{savedNote}</p>}
-      </div>
-    </form>
-  )
+      {tab === 'workspace' && <>
+        <div className="page-intro"><h2>A place to get things done.</h2><p>Choose where your bot works and what it can do.</p></div>
+        <section className="settings-section"><h3>Your bot’s working folder</h3><p className="help">Files your bot creates are kept here. Saved versions also appear in Files.</p>
+          <label>Folder location<input value={draft.workspacePath} onChange={event => update({ workspacePath: event.target.value, workspaceEditing: false })} /></label>
+          <div className="row"><button type="button" onClick={() => void props.api.pickWorkspace().then(folder => { if (folder) update({ workspacePath: folder, workspaceEditing: false }) }).catch(reason => props.onError(messageOf(reason)))}>Choose folder…</button><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}>Open saved folder</button></div>
+          <label className="check permission-option"><input type="checkbox" checked={draft.workspaceEditing} onChange={event => update({ workspaceEditing: event.target.checked })} /><span><strong>Allow creating and editing files</strong><small>Enable this only for a folder you want this bot to work in. Changing folders turns this off until you enable it again.</small></span></label>
+        </section>
+        <section className="settings-section"><h3>Help beyond the conversation</h3>
+          <label className="check permission-option"><input type="checkbox" checked={draft.toolsEnabled} onChange={event => update({ toolsEnabled: event.target.checked })} /><span><strong>Allow tools</strong><small>{draft.provider === 'codex' ? 'Use Codex’s shell and web search, plus Riot’s memory and file tools.' : 'Let your bot use available tools to search, work with files, and remember useful details.'}</small></span></label>
+          <div className="callout"><strong>You stay in control</strong><p>{draft.provider === 'codex' ? 'Codex uses its own sandbox and approval rules. Safe reads can run automatically; requests needing approval appear in chat. Native reads can extend beyond this folder, and native edits do not have Riot’s Undo button.' : TERMINAL_WARNING}</p></div>
+        </section>
+      </>}
+      {tab === 'limits' && <>
+        <div className="page-intro"><h2>Set a comfortable pace.</h2><p>Limit how long a task can run. You can stop your bot at any time.</p></div>
+        <section className="settings-section"><h3>Time per task</h3><NumberField label="Maximum minutes" value={Math.round(draft.maxTaskDurationMs / 60000)} onChange={value => update({ maxTaskDurationMs: value * 60 * 1000 })} /><p className="help">When time runs out, work pauses and partial results are kept.</p></section>
+        {draft.provider === 'codex' ? <div className="callout"><strong>Uses your ChatGPT account limits</strong><p>Codex manages its own usage and context. Riot’s API dollar and token limits do not apply. The task timer and Stop still work.</p></div> : <section className="settings-section"><h3>Optional spending limits</h3><p className="help">Leave these blank to use time and call limits only. To estimate spending, Riot needs both token prices from your provider.</p>
+          <div className="grid"><OptionalMoney label="Per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={value => update({ maxEstimatedSpendPerTaskUsd: value })} /><OptionalMoney label="This bot, per day (USD)" value={draft.botSpendPerDayUsd} onChange={value => update({ botSpendPerDayUsd: value })} /><OptionalMoney label="All bots, per day (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={value => update({ maxEstimatedSpendPerDayUsd: value })} /></div>
+          <p className="help">The all-bots limit applies across the app. This bot’s limit can make it tighter.</p>
+          <h4>Model prices, per million tokens</h4><div className="grid"><OptionalMoney label="Input price (USD)" value={draft.inputUsdPerMillion} onChange={value => update({ inputUsdPerMillion: value })} /><OptionalMoney label="Output price (USD)" value={draft.outputUsdPerMillion} onChange={value => update({ outputUsdPerMillion: value })} /></div><p className="help">These are estimates. Your provider’s bill may differ.</p>
+        </section>}
+      </>}
+      {tab === 'advanced' && <>
+        <div className="page-intro"><p className="eyebrow">FOR WHEN YOU NEED MORE CONTROL</p><h2>The finer details.</h2><p>The defaults work for most tasks. Change these only when you have a specific reason.</p></div>
+        <section className="settings-section"><h3>Conversation display</h3>
+          <label className="check permission-option"><input type="checkbox" checked={props.preferences.showToolDetails} onChange={event => void props.api.updatePreferences({ showToolDetails: event.target.checked }).then(props.onPreferences).catch(reason => props.onError(messageOf(reason)))} /><span><strong>Show tool details by default</strong><small>Display the technical action log in chat. This preference saves immediately.</small></span></label>
+          {draft.provider !== 'codex' && <label className="check"><input type="checkbox" checked={draft.streaming} onChange={event => update({ streaming: event.target.checked })} />Show replies as they’re written (streaming)</label>}
+        </section>
+        {draft.provider !== 'codex' && <>
+          <details className="settings-section advanced-details"><summary>Model limits & context</summary><div className="grid">
+            <NumberField label="Model calls per task" value={draft.maxModelCallsPerTask} onChange={value => update({ maxModelCallsPerTask: value })} />
+            <label>Reply allowance<select value={draft.replyMode} onChange={event => update({ replyMode: event.target.value === 'manual' ? 'manual' : 'automatic' })}><option value="automatic">Automatic</option><option value="manual">Manual cap</option></select></label>
+            {draft.replyMode === 'manual' && <NumberField label="Reply chunk token limit" value={draft.maxOutputTokens} onChange={value => update({ maxOutputTokens: value })} />}
+            <label>Context fitting<select value={draft.contextMode} onChange={event => update({ contextMode: event.target.value === 'manual' ? 'manual' : 'automatic' })}><option value="automatic">Automatic</option><option value="manual">Manual input budget</option></select></label>
+            {draft.contextMode === 'manual' && <NumberField label="Manual input working budget" value={draft.contextTokenBudget} onChange={value => update({ contextTokenBudget: value })} />}
+            <label>Model context capacity<input type="number" min="1024" step="1" placeholder="Use documented size" value={draft.modelContextTokens ?? ''} onChange={event => update({ modelContextTokens: event.target.value === '' ? null : Number(event.target.value) })} /></label>
+            <NumberField label="Tool preview characters" value={draft.maxToolOutputChars} onChange={value => update({ maxToolOutputChars: value })} />
+          </div><p className="help">Automatic mode manages older messages and reserves room for replies. If the provider does not publish a context capacity, a blank value uses a conservative 32,768-token fallback. Manual mode uses your input budget as the ceiling.</p></details>
+          <details className="settings-section advanced-details"><summary>Web search settings</summary><label>Search URL template<input value={draft.searchUrlTemplate} onChange={event => update({ searchUrlTemplate: event.target.value })} /></label><p className="help">Use an HTTPS search address containing {'{query}'}. Browser search has no separate search fee; AI calls still use your normal budget.</p></details>
+          <details className="settings-section advanced-details"><summary>Test your saved connection</summary><p className="help">Save settings first. The test preview explains the API calls before you run them.</p><ProviderCheck api={props.api} onError={props.onError} /></details>
+        </>}
+      </>}
+    </fieldset>
+    <footer className="settings-savebar">
+      <div role="status" aria-live="polite">{saveError ? <p className="danger" role="alert">{saveError}</p> : <p className={savedNote ? 'save-success' : 'help'}>{savedNote || (changed ? 'You have unsaved changes.' : `Settings for ${props.bot.name}`)}</p>}</div>
+      <div className="row"><button type="button" disabled={saving} onClick={props.onDone}>{changed ? 'Discard changes' : 'Back to chat'}</button><button type="submit" className="send" disabled={saving}>{saving ? 'Saving…' : 'Save settings'}<Icon name="check" /></button></div>
+    </footer>
+  </form>
 }
 
 function CodexConnection({ api, status, onChange, onError }: { api: RiotBridge; status: CodexStatus | null; onChange: (status: CodexStatus) => void; onError: (message: string) => void }) {
@@ -1024,18 +949,16 @@ function CodexConnection({ api, status, onChange, onError }: { api: RiotBridge; 
   }
   useEffect(() => { void api.getCodexStatus().then(onChange).catch(error => onError(messageOf(error))) }, [api])
   return <div className="callout">
-    <strong>Codex connection (preview)</strong>
-    <p>{status?.connected ? `Connected: ${status.email ?? 'ChatGPT account'}${status.plan ? ` · ${status.plan}` : ''}` : 'Sign in with your own ChatGPT account through the official Codex CLI.'}</p>
-    <p className="help">{status?.note}</p>
-    <p className="help">Sending a message starts a native Codex turn with its own tools and web search. Sign-in and status checks do not start a turn. Credentials stay in Riot Bot’s separate Codex profile and are managed by the official CLI.</p>
+    <strong>{status?.connected ? 'Your ChatGPT account is connected' : status?.installed === false ? 'One-time Codex setup needed' : status?.loginPending ? 'Finish signing in in your browser' : 'Connect with your ChatGPT account'}</strong>
+    <p>{status?.connected ? `${status.email ?? 'ChatGPT account'}${status.plan ? ` · ${status.plan}` : ''}` : status?.installed === false ? 'This connection needs the official Codex CLI installed on your computer. Install it, then restart Riot Bot. You can also choose an API connection above.' : 'A browser window will open for sign-in. Come back here when you’re done.'}</p>
+    {status?.note && <p className="help" role="status">{status.note}</p>}
     {status?.limits.map((limit, index) => <p key={`${limit.name}-${index}`} className="help">{limit.name}: {limit.usedPercent}% used{limit.resetsAt ? ` · resets ${new Date(limit.resetsAt * 1000).toLocaleString()}` : ''}</p>)}
     <div className="row">
       {!status?.connected && !status?.loginPending && <button type="button" disabled={busy || status?.installed === false} onClick={() => void action(() => api.connectCodex())}>Sign in with ChatGPT</button>}
       {status?.loginPending && <button type="button" disabled={busy} onClick={() => void action(() => api.cancelCodexLogin())}>Cancel sign-in</button>}
-      <button type="button" disabled={busy} onClick={() => void action(() => api.getCodexStatus())}>Refresh Codex status</button>
-      {status?.connected && <button type="button" disabled={busy} onClick={() => void action(() => api.disconnectCodex())}>Disconnect Codex</button>}
+      <button type="button" disabled={busy} onClick={() => void action(() => api.getCodexStatus())}>{busy ? 'Checking…' : 'Refresh connection'}</button>
     </div>
-    <p className="help">The model catalog is a list of available model IDs, not a guarantee of account access. Subscription activity is shown separately from API dollars.</p>
+    <details className="subtle-details"><summary>About this connection</summary><p className="help">Sign-in and status checks do not start an AI task. Your account’s Codex usage limits apply when you send a message. Sign-in is shared by your Riot bots and kept separate from other apps. Listed models can still have account restrictions.</p>{status?.connected && <button type="button" disabled={busy} onClick={() => void action(() => api.disconnectCodex())}>Disconnect Codex</button>}</details>
   </div>
 }
 
@@ -1220,10 +1143,9 @@ function SkillsPane(props: { api: RiotBridge; skills: Skill[]; onChange: (skills
   }
   return (
     <div className="panel">
-      <p className="help">
-        A skill is a procedure you can reuse. Chats see a short catalog, then load the full procedure with a tool. Imported and suggested skills are lower-trust notes. They cannot change permissions, budgets, or rules, and importing one does not run code or install anything. A disabled or deleted skill leaves later requests. Older messages that mention it can remain in the transcript.
-      </p>
-      {props.skills.filter((skill) => !skill.deletedAt).length === 0 && <p className="empty">No skills yet. Save one here, or ask in a chat to save a workflow as a skill.</p>}
+      <div className="page-intro"><h2>Teach it once. Reuse it next time.</h2><p>Skills are repeatable instructions for things you do often, like drafting a newsletter or reviewing a document.</p></div>
+      {props.skills.filter((skill) => !skill.deletedAt).length === 0 && <EmptyState icon="spark" title="Keep your favorite ways of working">After working through a task in Chat, say “Save this workflow as a skill.” You’ll review it before it’s saved.</EmptyState>}
+      <details className="subtle-details"><summary>How skills work</summary><p className="help">Your bot can load a saved procedure when it is useful. Skills cannot change permissions or spending limits. Imported skills start disabled; importing does not install or run code. Disabled or deleted skills stop being used in later requests.</p></details>
       {props.skills.filter((skill) => !skill.deletedAt).map((skill) => (
         <article key={skill.id} className="card">
           <header>
@@ -1342,8 +1264,8 @@ function SkillsPane(props: { api: RiotBridge; skills: Skill[]; onChange: (skills
             ))}
         </article>
       )}
-      <article className="card">
-        <strong>{editingId ? 'Editing above' : 'New skill'}</strong>
+      <details className="card skill-editor">
+        <summary>{editingId ? 'A skill is being edited above' : 'Create a skill manually'}</summary>
         {!editingId && <SkillFields draft={draft} onChange={setDraft} />}
         {!editingId && (
           <button
@@ -1362,9 +1284,9 @@ function SkillsPane(props: { api: RiotBridge; skills: Skill[]; onChange: (skills
             Save skill
           </button>
         )}
-      </article>
-      <article className="card">
-        <strong>Import Markdown</strong>
+      </details>
+      <details className="card skill-editor">
+        <summary>Import a skill from text</summary>
         <p className="help">Preview comes first. Confirming adds the skill disabled, so it is not used until you enable it.</p>
         <textarea rows={6} value={importText} placeholder="Paste a skill file" onChange={(event) => setImportText(event.target.value)} />
         <div className="row">
@@ -1405,7 +1327,7 @@ function SkillsPane(props: { api: RiotBridge; skills: Skill[]; onChange: (skills
             <pre>{importPreview.procedure}</pre>
           </div>
         )}
-      </article>
+      </details>
       {exported && (
         <article className="card">
           <strong>Exported Markdown</strong>
@@ -1505,14 +1427,25 @@ function ProviderCheck(props: { api: RiotBridge; onError: (message: string) => v
 }
 
 function screenTitle(screen: Screen): string {
-  if (screen === 'jobs') return 'Jobs'
-  if (screen === 'library') return 'Library'
-  if (screen === 'memory') return 'Memory'
+  if (screen === 'jobs') return 'Tasks'
+  if (screen === 'library') return 'Files'
+  if (screen === 'memory') return 'Memories'
   if (screen === 'skills') return 'Skills'
-  if (screen === 'activity') return 'Activity'
-  if (screen === 'new-bot') return 'New Bot'
+  if (screen === 'activity') return 'Usage & activity'
+  if (screen === 'new-bot') return 'Create a bot'
   if (screen === 'earlier') return 'Earlier conversations'
   return 'Settings'
+}
+
+function screenDescription(screen: Screen): string {
+  if (screen === 'jobs') return 'See what’s in progress, finished, or waiting for you.'
+  if (screen === 'library') return 'The files your bot has made, all in one place.'
+  if (screen === 'memory') return 'Useful things your bot remembers about you.'
+  if (screen === 'skills') return 'Your favorite ways of working, ready to reuse.'
+  if (screen === 'activity') return 'Keep an eye on usage and see what happened.'
+  if (screen === 'new-bot') return 'A few details now. A helpful sidekick from here on.'
+  if (screen === 'earlier') return 'Pick up a saved conversation from the past.'
+  return 'Connect your AI and make Riot work for you.'
 }
 
 function BotMenu(props: {
@@ -1526,115 +1459,65 @@ function BotMenu(props: {
   onBot: (bot: Bot) => void
   onEarlier: () => void
   onSettings: () => void
+  onBusy: (busy: boolean) => void
 }) {
   const [name, setName] = useState(props.bot.name)
   const [purpose, setPurpose] = useState(props.bot.purpose)
   const [instructions, setInstructions] = useState(props.bot.instructions)
   const [browser, setBrowser] = useState<BrowserView | null>(null)
-
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [browserBusy, setBrowserBusy] = useState(false)
   useEffect(() => {
     setName(props.bot.name)
     setPurpose(props.bot.purpose)
     setInstructions(props.bot.instructions)
-    void props.api.getSnapshot().then((snapshot) => setBrowser(snapshot.browser)).catch(() => undefined)
-  }, [props.api, props.bot])
-
+  }, [props.bot])
+  useEffect(() => { void props.api.getSnapshot().then(snapshot => setBrowser(snapshot.browser)).catch(reason => props.onError(messageOf(reason))) }, [props.api, props.bot.id])
   async function saveProfile(): Promise<void> {
-    try {
-      props.onBot(await props.api.updateBot({ name, purpose, instructions }))
-    } catch (reason) {
-      props.onError(messageOf(reason))
-    }
+    if (saving) return
+    setSaving(true)
+    props.onBusy(true)
+    setSaved(false)
+    try { props.onBot(await props.api.updateBot({ name, purpose, instructions })); setSaved(true) }
+    catch (reason) { props.onError(messageOf(reason)) }
+    finally { setSaving(false); props.onBusy(false) }
   }
-
   async function browserAction(action: () => Promise<string>): Promise<void> {
-    try {
-      const message = await action()
-      props.onNote(message)
-      setBrowser((await props.api.getSnapshot()).browser)
-    } catch (reason) {
-      props.onError(messageOf(reason))
-    }
+    if (browserBusy) return
+    setBrowserBusy(true)
+    try { props.onNote(await action()); setBrowser((await props.api.getSnapshot()).browser) }
+    catch (reason) { props.onError(messageOf(reason)) }
+    finally { setBrowserBusy(false) }
   }
-
-  return (
-    <section className="bot-menu" id="bot-settings-panel" aria-label="Bot settings panel">
-      <div className="bot-menu-heading"><strong>Bot settings</strong><button className="danger" type="button" disabled={props.running} onClick={props.onDelete}>Delete Bot</button></div>
-      {props.running && <p className="help">Stop this bot’s work before deleting it.</p>}
-      <label>
-        Name
-        <input value={name} onChange={(event) => setName(event.target.value)} />
-      </label>
-      <label>
-        Purpose
-        <input value={purpose} onChange={(event) => setPurpose(event.target.value)} />
-      </label>
-      <label>
-        Instructions
-        <textarea rows={3} value={instructions} onChange={(event) => setInstructions(event.target.value)} />
-      </label>
-      <button type="button" onClick={() => void saveProfile()}>
-        Save bot
-      </button>
-      <div className="avatar-picker">
-        {AVATAR_CHOICES.map((choice) => (
-          <button
-            key={choice.value}
-            type="button"
-            className="swatch"
-            style={{ background: props.bot.avatar.background }}
-            onClick={() => {
-              void props.api.setAvatar({ kind: 'builtin', value: choice.value, background: props.bot.avatar.background }).then(props.onBot).catch((reason: unknown) => props.onError(messageOf(reason)))
-            }}
-          >
-            <BotAvatar avatar={{ kind: 'builtin', value: choice.value, background: props.bot.avatar.background, imageUrl: null }} size={22} />
-          </button>
-        ))}
-      </div>
-      <div className="avatar-picker">
-        {AVATAR_EMOJIS.slice(0, 8).map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => {
-              void props.api.setAvatar({ kind: 'emoji', value: emoji, background: props.bot.avatar.background }).then(props.onBot).catch((reason: unknown) => props.onError(messageOf(reason)))
-            }}
-          >
-            {emoji}
-          </button>
-        ))}
-        {AVATAR_COLORS.slice(0, 5).map((color) => (
-          <button key={color} type="button" className="swatch" style={{ background: color }} onClick={() => {
-            const kind = props.bot.avatar.kind === 'image' ? 'builtin' : props.bot.avatar.kind
-            void props.api.setAvatar({ kind, value: props.bot.avatar.value, background: color }).then(props.onBot).catch((reason: unknown) => props.onError(messageOf(reason)))
-          }} />
-        ))}
-      </div>
-      <button type="button" onClick={() => void props.api.openWorkspace().catch((reason: unknown) => props.onError(messageOf(reason)))}>
-        Open Workspace
-      </button>
-      <button type="button" onClick={props.onEarlier}>
-        Earlier conversations
-      </button>
-      <button type="button" onClick={props.onSettings}>
-        Settings
-      </button>
-      <p className="help">{browser?.installed ? `${browser.browserName || 'A browser'} is available.` : 'No supported browser was found.'} {browser?.downloadNote}</p>
-      {browser?.open && <p className="help">A signed-in page can keep making ordinary website requests while the window is open. That is not a model call.</p>}
-      <div className="row">
-        <button type="button" onClick={() => void browserAction(() => props.api.openBrowser())}>Open Browser</button>
-        <button type="button" onClick={() => void browserAction(() => props.api.closeBrowser())}>Close Browser</button>
-      </div>
-      <div className="row">
-        <button type="button" onClick={() => void browserAction(() => props.api.takeoverBrowser())}>Take over</button>
-        <button type="button" onClick={() => void browserAction(() => props.api.resumeBrowser())}>Resume</button>
-      </div>
-      <button type="button" disabled={browser?.installing} onClick={() => void browserAction(() => props.api.installBrowser())}>
-        Install Chromium
-      </button>
-      {props.note && <p className="help">{props.note}</p>}
-    </section>
-  )
+  return <section className="bot-menu" id="bot-settings-panel" aria-label="Bot settings panel">
+    <div className="page-intro"><h2>Make {props.bot.name} feel like yours.</h2><p>Give your bot a clear purpose and a personality that works for you.</p></div>
+    <form className="settings-section" onSubmit={event => { event.preventDefault(); void saveProfile() }} onChange={() => setSaved(false)}>
+      <label>Bot name<input disabled={saving} required minLength={2} maxLength={40} value={name} onChange={event => setName(event.target.value)} /></label>
+      <label>What it helps with<input disabled={saving} maxLength={400} value={purpose} onChange={event => setPurpose(event.target.value)} /></label>
+      <details className="subtle-details"><summary>Extra instructions <span>Optional</span></summary><p className="help">Tell your bot how you like things done. For example, “Keep answers short and ask if anything is unclear.”</p><label>Instructions<textarea disabled={saving} rows={4} maxLength={8000} value={instructions} onChange={event => setInstructions(event.target.value)} /></label></details>
+      <div className="row"><button className="send" disabled={saving} type="submit">{saving ? 'Saving…' : 'Save profile'}</button>{saved && <p className="save-success" role="status">Profile saved.</p>}</div>
+    </form>
+    <details className="settings-section advanced-details"><summary>Icon & color</summary><p className="help">Changes here save straight away.</p>
+      <div className="avatar-picker">{AVATAR_CHOICES.map(choice => <button key={choice.value} type="button" className="bot-chip" aria-label={`${choice.label} icon`} aria-pressed={props.bot.avatar.kind === 'builtin' && props.bot.avatar.value === choice.value} onClick={() => void props.api.setAvatar({ kind: 'builtin', value: choice.value, background: props.bot.avatar.background }).then(props.onBot).catch(reason => props.onError(messageOf(reason)))}><BotAvatar avatar={{ kind: 'builtin', value: choice.value, background: props.bot.avatar.background, imageUrl: null }} size={28} /></button>)}
+        {AVATAR_EMOJIS.map(emoji => <button key={emoji} type="button" className="bot-chip" aria-label={`${emoji} icon`} aria-pressed={props.bot.avatar.kind === 'emoji' && props.bot.avatar.value === emoji} onClick={() => void props.api.setAvatar({ kind: 'emoji', value: emoji, background: props.bot.avatar.background }).then(props.onBot).catch(reason => props.onError(messageOf(reason)))}>{emoji}</button>)}
+      </div><div className="row">{AVATAR_COLORS.map((color, index) => <button key={color} type="button" className="swatch" style={{ background: color }} aria-label={`${['Coral', 'Teal', 'Blue', 'Amber', 'Purple', 'Green'][index]} background`} aria-pressed={props.bot.avatar.background === color} onClick={() => {
+        const avatar = props.bot.avatar
+        if (avatar.kind === 'image') { props.onError('Choose an icon or emoji first to change its background.'); return }
+        void props.api.setAvatar({ kind: avatar.kind, value: avatar.value, background: color }).then(props.onBot).catch(reason => props.onError(messageOf(reason)))
+      }} />)}</div>
+    </details>
+    <section className="settings-section"><h3>Your bot’s space</h3><p className="folder-path">{props.bot.workspacePath || 'No folder chosen yet.'}</p><div className="row"><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}><Icon name="files" /> Open working folder</button><button type="button" disabled={saving} onClick={props.onSettings}>Connection & settings</button><button type="button" disabled={saving} onClick={props.onEarlier}>Earlier conversations</button></div></section>
+    <details className="settings-section advanced-details"><summary>Browser & website sign-ins</summary><p className="help">Your bot has a separate browser profile. Open its browser to sign in to a website yourself, then let your bot continue.</p>
+      <p className="help">{browser?.installed ? `${browser.browserName || 'A browser'} is available.` : 'Install a browser to get started.'} {browser?.downloadNote}</p>
+      <div className="row">{!browser?.open ? <button type="button" disabled={browserBusy || !browser?.installed} onClick={() => void browserAction(() => props.api.openBrowser())}>Open browser</button> : <>
+        <button type="button" disabled={browserBusy} onClick={() => void browserAction(() => props.api.closeBrowser())}>Close browser</button>
+        {browser.takeover ? <button type="button" disabled={browserBusy} onClick={() => void browserAction(() => props.api.resumeBrowser())}>Let bot continue</button> : <button type="button" disabled={browserBusy} onClick={() => void browserAction(() => props.api.takeoverBrowser())}>Use browser myself</button>}
+      </>}{!browser?.installed && <button type="button" disabled={browserBusy || browser?.installing} onClick={() => void browserAction(() => props.api.installBrowser())}>{browser?.installing ? 'Installing…' : 'Install Chromium'}</button>}</div>
+      {browser?.open && <p className="help">Open websites may keep making their own requests, even when your bot is idle.</p>}{props.note && <p className="help" role="status">{props.note}</p>}
+    </details>
+    <details className="settings-section advanced-details danger-zone"><summary>Delete this bot</summary><p className="help">Permanently remove this bot’s conversations, memories, skills, saved file copies, and browser profile. Your working folder stays.</p><button className="danger" type="button" disabled={props.running || saving} onClick={props.onDelete}>Delete bot…</button>{props.running && <p className="help">Stop this bot’s work before deleting it.</p>}</details>
+  </section>
 }
 
 function DeleteBotDialog(props: {bot: Bot;onCancel: () => void;onDelete: (name: string) => Promise<void>}) {
@@ -1646,7 +1529,7 @@ function DeleteBotDialog(props: {bot: Bot;onCancel: () => void;onDelete: (name: 
   return <dialog ref={dialog} className="delete-bot-dialog" aria-labelledby="delete-bot-title" onCancel={(event)=>{event.preventDefault();if(!busy)props.onCancel()}}>
     <form onSubmit={(event)=>{event.preventDefault();if(busy||confirmation!==props.bot.name)return;setBusy(true);setError('');void props.onDelete(confirmation).catch((reason:unknown)=>{setError(messageOf(reason));setBusy(false)})}}>
       <h2 id="delete-bot-title">Delete {props.bot.name}?</h2>
-      <p>This removes this bot’s chats, memories, skills, queued jobs, saved Library files, avatar and browser profile from Riot.</p>
+      <p>This removes this bot’s chats, memories, skills, queued tasks, saved file copies, avatar and browser profile from Riot.</p>
       <p>Your project folder and shared provider sign-ins stay. Usage totals and Codex’s own managed session history remain.</p>
       <p className="help">Project folder: {props.bot.workspacePath || 'None'}</p>
       <label><span>Type <strong>{props.bot.name}</strong> to confirm</span><input autoFocus aria-label="Bot name to confirm deletion" value={confirmation} disabled={busy} onChange={(event)=>setConfirmation(event.target.value)} /></label>
@@ -1706,9 +1589,9 @@ export function ModelField(props: {provider: PublicSettings['provider'];model: s
   </label>
 }
 
-export function NewBotForm(props: { settings: PublicSettings;api: RiotBridge;codex: CodexStatus | null;onCodex: (status: CodexStatus) => void;onCreate: (draft: BotDraft) => Promise<void>;onError: (message: string) => void }) {
+export function NewBotForm(props: { settings: PublicSettings; api: RiotBridge; codex: CodexStatus | null; onCodex: (status: CodexStatus) => void; onCreate: (draft: BotDraft) => Promise<void>; onError: (message: string) => void; onCancel?: () => void; onBusy?: (busy: boolean) => void }) {
   const [purpose, setPurpose] = useState('')
-  const [name, setName] = useState('')
+  const [name, setName] = useState('My helper')
   const [provider, setProvider] = useState(props.settings.provider)
   const [model, setModel] = useState(props.settings.model)
   const [folder, setFolder] = useState('')
@@ -1717,125 +1600,59 @@ export function NewBotForm(props: { settings: PublicSettings;api: RiotBridge;cod
   const [background, setBackground] = useState(AVATAR_COLORS[0])
   const [bytes, setBytes] = useState<number[] | undefined>(undefined)
   const [busy, setBusy] = useState(false)
-  const [loadingModels,setLoadingModels] = useState(false)
-  useEffect(()=>{
-    if (provider!=='codex') return
-    let current=true
+  const [loadingModels, setLoadingModels] = useState(false)
+  const [localError, setLocalError] = useState('')
+  useEffect(() => {
+    if (provider !== 'codex') return
+    let current = true
     setLoadingModels(true)
-    void props.api.getCodexStatus().then((status)=>{if(current)props.onCodex(status)}).catch((reason:unknown)=>{if(current)props.onError(messageOf(reason))}).finally(()=>{if(current)setLoadingModels(false)})
-    return()=>{current=false}
-  },[props.api,props.onCodex,props.onError,provider])
-  return (
-    <form
-      className="panel settings"
-      onSubmit={(event) => {
-        event.preventDefault()
-        setBusy(true)
-        void props
-          .onCreate({
-            purpose,
-            name,
-            provider,
-            model,
-            workspaceKind: folder ? 'existing' : 'suggested',
-            workspacePath: folder,
-            avatarKind,
-            avatarValue,
-            avatarBackground: background,
-            avatarBytes: bytes
-          })
-          .catch((reason: unknown) => props.onError(messageOf(reason)))
-          .finally(() => setBusy(false))
-      }}
-    >
-      <p className="help">A bot keeps its own chats, memories, skills, and workspace. It can create files in its new workspace. {provider === 'codex' ? 'Codex bots use a local default name when left blank; setup does not start a native turn.' : 'If you leave the name blank and a model is configured, one short setup request suggests a name and instructions.'}</p>
-      <label>
-        What should this bot help with?
-        <textarea value={purpose} rows={3} onChange={(event) => setPurpose(event.target.value)} />
-      </label>
-      <label>
-        Name
-        <input value={name} placeholder="Leave blank to let the bot choose." onChange={(event) => setName(event.target.value)} />
-      </label>
-      <label>
-        Provider
-        <select aria-label="Provider" value={provider} onChange={(event) => { setProvider(event.target.value as PublicSettings['provider']); setModel('') }}>
-          <option value="openai">OpenAI</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="codex">Codex · ChatGPT sign-in (preview)</option>
-        </select>
-      </label>
-      <ModelField provider={provider} model={model} codex={props.codex} loading={loadingModels} onChange={setModel} />
-      <p className="help">Suggested workspace: a new folder under your home directory in RiotBot\workspaces. Choose another folder if you already have one. Existing files stay where they are.</p>
-      <div className="row">
-        <button
-          type="button"
-          onClick={() => {
-            void window.riot?.pickWorkspace().then((picked) => {
-              if (picked) setFolder(picked)
-            })
-          }}
-        >
-          Choose another folder
-        </button>
-        {folder && <span>{folder}</span>}
-      </div>
-      <p className="help">Avatar</p>
-      <div className="avatar-picker">
-        {AVATAR_CHOICES.map((choice) => (
-          <button
-            key={choice.value}
-            type="button"
-            className={avatarKind === 'builtin' && avatarValue === choice.value ? 'bot-chip active' : 'bot-chip'}
-            onClick={() => {
-              setAvatarKind('builtin')
-              setAvatarValue(choice.value)
-              setBytes(undefined)
-            }}
-          >
-            <BotAvatar avatar={{ kind: 'builtin', value: choice.value, background, imageUrl: null }} label={choice.label} />
-          </button>
-        ))}
-        {AVATAR_EMOJIS.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            className={avatarKind === 'emoji' && avatarValue === emoji ? 'bot-chip active' : 'bot-chip'}
-            onClick={() => {
-              setAvatarKind('emoji')
-              setAvatarValue(emoji)
-              setBytes(undefined)
-            }}
-          >
-            {emoji}
-          </button>
-        ))}
-      </div>
-      <div className="row">
-        {AVATAR_COLORS.map((color) => (
-          <button key={color} type="button" className="swatch" style={{ background: color }} aria-label={color} onClick={() => setBackground(color)} />
-        ))}
-      </div>
-      <label>
-        Upload an image
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (!file) return
-            void file.arrayBuffer().then((buffer) => {
-              setBytes([...new Uint8Array(buffer)])
-              setAvatarKind('image')
-            })
-          }}
-        />
-      </label>
-      <button className="send" type="submit" disabled={busy || purpose.trim().length < 2}>
-        Create bot
-      </button>
-    </form>
-  )
+    void props.api.getCodexStatus().then(status => { if (current) props.onCodex(status) }).catch((reason: unknown) => { if (current) props.onError(messageOf(reason)) }).finally(() => { if (current) setLoadingModels(false) })
+    return () => { current = false }
+  }, [props.api, props.onCodex, props.onError, provider])
+  return <form className="new-bot-page" onSubmit={event => {
+    event.preventDefault()
+    if (busy || purpose.trim().length < 2) return
+    setBusy(true)
+    props.onBusy?.(true)
+    setLocalError('')
+    void props.onCreate({ purpose, name, provider, model, workspaceKind: folder ? 'existing' : 'suggested', workspacePath: folder, avatarKind, avatarValue, avatarBackground: background, avatarBytes: bytes })
+      .catch((reason: unknown) => setLocalError(messageOf(reason))).finally(() => { setBusy(false); props.onBusy?.(false) })
+  }}>
+    <fieldset disabled={busy} className="new-bot-content">
+      <div className="page-intro"><p className="eyebrow">A HELPER OF YOUR OWN</p><h2>What could you use a hand with?</h2><p>Give your bot a job. It gets its own conversation, memories, and files.</p></div>
+      <div className="bot-templates" aria-label="Bot ideas">{[
+        ['Everyday helper', 'Help me plan my day, answer questions, and get everyday tasks done.', 'spark'],
+        ['Writing partner', 'Help me draft, edit, and improve my writing in a clear, natural voice.', 'files'],
+        ['Research assistant', 'Help me research topics, compare options, and make sense of information.', 'memory']
+      ].map(([title, description, icon]) => <button type="button" key={title} className={purpose === description ? 'selected' : ''} aria-pressed={purpose === description} onClick={() => { setPurpose(description); setName(title); setAvatarKind('builtin'); setBytes(undefined); setAvatarValue(icon === 'files' ? 'leaf' : icon === 'memory' ? 'moon' : 'spark') }}><Icon name={icon as IconName} /><strong>{title}</strong></button>)}</div>
+      <section className="settings-section">
+        <label>What should this bot help with?<textarea autoFocus required minLength={2} maxLength={400} value={purpose} rows={3} placeholder="For example: Help me write newsletters for my small business." onChange={event => setPurpose(event.target.value)} /></label>
+        <label>Give it a name<input value={name} maxLength={40} placeholder="For example: Scout" onChange={event => setName(event.target.value)} /></label>
+        <p className="help">Use any name you like. If you clear it, an API connection may use one short setup request to suggest one.</p>
+      </section>
+      <div className="inherit-note"><Icon name="check" /><div><strong>{model ? `Uses your current connection: ${providerName(provider)}` : 'You can connect your AI after creating your bot'}</strong><p>{model ? model : 'Create it now, then we’ll guide you through setup.'}</p></div></div>
+      <details className="settings-section advanced-details"><summary>Connection & model <span>Optional</span></summary><p className="help">Your current connection is filled in. Change it only if you want this bot to use a different one. Sign-ins and API keys are managed in Settings.</p>
+        <ProviderPicker value={provider} onChange={value => { setProvider(value); setModel('') }} />
+        <ModelField provider={provider} model={model} codex={props.codex} loading={loadingModels} onChange={setModel} />
+      </details>
+      <details className="settings-section advanced-details"><summary>Working folder <span>Automatic</span></summary><p className="help">We’ll create a new folder for this bot in RiotBot\workspaces. You can also choose an existing folder; editing starts off for existing files.</p><div className="row">
+        <button type="button" onClick={() => void props.api.pickWorkspace().then(picked => { if (picked) setFolder(picked) }).catch(reason => props.onError(messageOf(reason)))}>Choose an existing folder…</button>{folder && <button type="button" onClick={() => setFolder('')}>Use a new folder instead</button>}
+      </div>{folder && <p className="folder-path">{folder}</p>}</details>
+      <details className="settings-section advanced-details"><summary>Icon & color <span>Make it yours</span></summary>
+        <div className="avatar-picker">{AVATAR_CHOICES.map(choice => <button key={choice.value} type="button" aria-label={`${choice.label} icon`} aria-pressed={avatarKind === 'builtin' && avatarValue === choice.value} className={avatarKind === 'builtin' && avatarValue === choice.value ? 'bot-chip active' : 'bot-chip'} onClick={() => { setAvatarKind('builtin'); setAvatarValue(choice.value); setBytes(undefined) }}><BotAvatar avatar={{ kind: 'builtin', value: choice.value, background, imageUrl: null }} label={choice.label} /></button>)}
+          {AVATAR_EMOJIS.map(emoji => <button key={emoji} type="button" aria-label={`${emoji} icon`} aria-pressed={avatarKind === 'emoji' && avatarValue === emoji} className={avatarKind === 'emoji' && avatarValue === emoji ? 'bot-chip active' : 'bot-chip'} onClick={() => { setAvatarKind('emoji'); setAvatarValue(emoji); setBytes(undefined) }}>{emoji}</button>)}
+        </div>
+        <div className="row">{AVATAR_COLORS.map((color, index) => <button key={color} type="button" className="swatch" style={{ background: color }} aria-label={`${['Coral', 'Teal', 'Blue', 'Amber', 'Purple', 'Green'][index]} background`} aria-pressed={background === color} onClick={() => setBackground(color)} />)}</div>
+        <label>Or upload an image<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={event => {
+          const file = event.target.files?.[0]
+          if (!file) return
+          if (file.size > 8_000_000) { setLocalError('Choose an image smaller than 8 MB.'); return }
+          void file.arrayBuffer().then(buffer => { setBytes([...new Uint8Array(buffer)]); setAvatarKind('image'); setLocalError('') }).catch(reason => setLocalError(messageOf(reason)))
+        }} /></label>{bytes && <p className="help">Your uploaded image is selected.</p>}
+      </details>
+    </fieldset>
+    <footer className="settings-savebar"><div role="status">{localError ? <p className="danger" role="alert">{localError}</p> : <p className="help">You can change all of this later.</p>}</div><div className="row">{props.onCancel && <button type="button" disabled={busy} onClick={props.onCancel}>Cancel</button>}<button className="send" type="submit" disabled={busy || purpose.trim().length < 2}>{busy ? 'Creating your bot…' : 'Create bot'}<Icon name="arrow" /></button></div></footer>
+  </form>
 }
 
 function labelPurpose(purpose: string): string {
@@ -1853,8 +1670,4 @@ function mergeMessage(current: ConversationDetail | null, message: ChatMessageVi
   const exists = current.messages.some((item) => item.id === message.id)
   const messages = exists ? current.messages.map((item) => (item.id === message.id ? message : item)) : [...current.messages, message]
   return { ...current, messages }
-}
-
-function messageOf(reason: unknown): string {
-  return reason instanceof Error ? reason.message : 'Something went wrong.'
 }

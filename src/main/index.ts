@@ -97,7 +97,7 @@ async function createWindow(): Promise<void> {
     minWidth: 880,
     minHeight: 640,
     show: false,
-    backgroundColor: '#12141a',
+    backgroundColor: '#191c1e',
     title: 'Riot Bot',
     autoHideMenuBar: true,
     webPreferences: {

@@ -1,4 +1,4 @@
-# Jobs, Library and local verification
+# Tasks, saved files and local verification
 
 Riot’s Electron main process owns execution independently of the chat renderer. The desktop window closes to the tray. There is no extra daemon to install and no model work starts on boot, bot selection, window opening, status refresh or sign-in.
 
@@ -6,7 +6,7 @@ Riot’s Electron main process owns execution independently of the chat renderer
 
 Sending a message saves its text and attachment references as a job in SQLite. It enters the conversation only when dispatch starts, so a follow-up cannot change the instructions of a job already running. Each bot has one executor with its own provider, native Codex connection, terminal, browser state, context bookkeeping and approvals. Two bot jobs may run concurrently. Ancestor/descendant and identical workspace paths serialize across bots.
 
-The queue allows 20 pending jobs per bot. Jobs displays pending work first and up to 200 recent/pending jobs across the app, or 100 for one bot. Job text previews are limited to 1,000 characters; the complete request remains saved. The app-wide API spending ceiling and in-flight reservations still apply across all bots. Native Codex usage stays separate from API dollars.
+The queue allows 20 pending jobs per bot. The **Tasks** screen displays pending work first and up to 200 recent/pending jobs across the app, or 100 for one bot. Job text previews are limited to 1,000 characters; the complete request remains saved. The app-wide API spending ceiling and in-flight reservations still apply across all bots. Native Codex usage stays separate from API dollars.
 
 Provider, model, workspace, editing, tools and instructions are bound when queued. If that setup changes before dispatch, the job pauses for review. Settings and instructions cannot change beneath an active job. Changing a key or Codex account requires stopping jobs on that connection; queued work using it pauses. Native workers close their old connection before an account change and read the new connection identity before reusing a thread.
 
@@ -20,17 +20,17 @@ Quit stops executors, waits for them to settle and closes the databases. On rest
 
 The desktop service requires this Windows session and an awake computer. It does not run after explicit Quit or across a PC shutdown. Routines, boot-start installation, remote controls and delegated bot tasks are later milestones.
 
-## Library
+## Files
 
 The service inventories the workspace before and after a job and includes files changed through Riot’s recorded file tools. It saves immutable copies and hashes in app data, with versions scoped by bot, workspace and relative path. An externally edited file that changes during a job can also be captured; this is a file snapshot, not proof of authorship or task success. Job status remains visible separately.
 
-Capture is bounded to 1,000 inventoried files, 2,000 folders, 12 folder levels, 100 saved files and 100 MB per job, with at most 20 MB per file. It excludes hidden names, dependency/vendor folders, recognized credential/key files, symlinks and content containing known API-key values. These exclusions are best effort, not a general secret scanner. Oversized or inaccessible files stay in the workspace. Library displays the latest 200 versions for the selected bot. Individual HTML copies may depend on companion files in the workspace; Library does not create a self-contained site bundle.
+Capture is bounded to 1,000 inventoried files, 2,000 folders, 12 folder levels, 100 saved files and 100 MB per job, with at most 20 MB per file. It excludes hidden names, dependency/vendor folders, recognized credential/key files, symlinks and content containing known API-key values. These exclusions are best effort, not a general secret scanner. Oversized or inaccessible files stay in the workspace. The **Files** screen displays the latest 200 versions for the selected bot. Individual HTML copies may depend on companion files in the workspace; Library does not create a self-contained site bundle.
 
-Show saved file uses Explorer to reveal the stored version without executing it. Deleting a conversation does not remove its saved Library files. There is no automatic retention deletion in this version. Include `artifacts` in private app-data backups, and separately back up your workspaces.
+**Show in folder** uses Explorer to reveal the stored version without executing it. Deleting a conversation does not remove its saved Library files. There is no automatic retention deletion in this version. Include `artifacts` in private app-data backups, and separately back up your workspaces.
 
 ## Deleting a bot
 
-Open that bot’s **Cogwheel → Delete Bot** and type its exact name. Active work must stop first; queued work is discarded. Deletion removes the bot and its Riot conversations, messages, reactions, attachments, memories, skills/versions, proposals, job records, file-edit backups, Library files, avatar and browser profile. It keeps the project workspace, other bots, shared credentials, existing backups and the shared Codex profile (including native session history). Usage requests and reservations are detached and stripped of conversation/context/error data so the app-wide spend ceiling and usage totals remain correct.
+Open that bot’s **Customize bot → Delete this bot → Delete bot…** and type its exact name. Active work must stop first; queued work is discarded. Deletion removes the bot and its Riot conversations, messages, reactions, attachments, memories, skills/versions, proposals, job records, file-edit backups, Library files, avatar and browser profile. It keeps the project workspace, other bots, shared credentials, existing backups and the shared Codex profile (including native session history). Usage requests and reservations are detached and stripped of conversation/context/error data so the app-wide spend ceiling and usage totals remain correct.
 
 The per-bot executor closes before data is removed. Database deletion runs in one transaction, and Quit waits for deletion to settle. File cleanup is limited to validated per-bot paths under Riot’s app-data directory, refuses parent junctions, and protects overlapping workspace paths. If a cache cannot be removed, the UI reports the remaining paths. Deletion is logical removal from Riot, not forensic erasure of SQLite pages, backups or provider-managed history. Deleting the last bot leaves a persistent empty state with no automatic model calls.
 

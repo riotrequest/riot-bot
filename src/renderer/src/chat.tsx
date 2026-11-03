@@ -3,6 +3,7 @@ import type { AttachmentView, AvatarView, ChatMessageView, ConversationDetail, M
 import { actionStatus, copyMarkdown, fileChange, isLongForm, stickToBottom } from '../../core/progress'
 import { BotAvatar } from './avatar'
 import { Markdown } from './markdown'
+import { messageOf } from './ui'
 
 export function ChatTranscript(props: {
   detail: ConversationDetail
@@ -49,7 +50,7 @@ export function ChatTranscript(props: {
       setAway(true)
       props.onOlderPage(page)
     } catch (reason) {
-      props.onError(reason instanceof Error ? reason.message : 'Earlier messages could not be loaded.')
+      props.onError(messageOf(reason, 'Earlier messages could not be loaded.'))
     } finally {
       setLoadingOlder(false)
     }
@@ -152,7 +153,7 @@ function TurnView(props: {
     try {
       await props.api.copyText(copyMarkdown(prose.map((message) => message.content)))
     } catch (reason) {
-      props.onError(reason instanceof Error ? reason.message : 'Could not copy that message.')
+      props.onError(messageOf(reason, 'Could not copy that message.'))
     }
   }
 
@@ -178,9 +179,9 @@ function TurnView(props: {
                   text={message.content}
                   compact={!isLongForm(message.content)}
                   onOpenLink={(url) => {
-                    void props.api.openExternal(url).catch((reason: unknown) => props.onError(reason instanceof Error ? reason.message : 'That link could not be opened.'))
+                    void props.api.openExternal(url).catch((reason: unknown) => props.onError(messageOf(reason, 'That link could not be opened.')))
                   }}
-                  onOpenFile={(path) => void props.api.revealWorkspaceFile(path).catch((reason: unknown) => props.onError(reason instanceof Error ? reason.message : 'That file could not be shown.'))}
+                  onOpenFile={(path) => void props.api.revealWorkspaceFile(path).catch((reason: unknown) => props.onError(messageOf(reason, 'That file could not be shown.')))}
                 />
                 {incomplete && message.id === prose.at(-1)?.id && <p className="interrupted">{props.outcome === 'paused' ? 'Paused · partial reply' : props.outcome === 'failed' ? 'Failed · partial reply' : 'Interrupted · partial reply'}</p>}
               </article>
@@ -190,7 +191,7 @@ function TurnView(props: {
               if (!change) return null
               return (
                 <div key={message.id} className="file-change">
-                  <p>{change.path ? <button type="button" className="linkish" title="Show file in folder" onClick={() => void props.api.revealWorkspaceFile(change.path!, change.editId).catch(reason => props.onError(reason instanceof Error ? reason.message : 'That file could not be shown.'))}>{change.path}</button> : 'Saved file change'}</p>
+                  <p>{change.path ? <button type="button" className="linkish" title="Show file in folder" onClick={() => void props.api.revealWorkspaceFile(change.path!, change.editId).catch(reason => props.onError(messageOf(reason, 'That file could not be shown.')))}>{change.path}</button> : 'Saved file change'}</p>
                   <button type="button" onClick={() => props.onUndo(change.editId)}>
                     Undo this edit
                   </button>
@@ -241,7 +242,7 @@ function TurnView(props: {
 function BrowserRecovery({ api, onError }: { api: RiotBridge; onError: (message: string) => void }) {
   const [note, setNote] = useState('')
   const act = (work: Promise<string>): void => {
-    void work.then(setNote).catch((error: unknown) => onError(error instanceof Error ? error.message : 'The browser could not be updated.'))
+    void work.then(setNote).catch((error: unknown) => onError(messageOf(error, 'The browser could not be updated.')))
   }
   return (
     <div>
@@ -277,7 +278,7 @@ function ReactionList(props: { message: ChatMessageView; api: RiotBridge; onErro
           className="reaction"
           aria-label={`${reaction.label}. Remove reaction`}
           onClick={() => {
-            void props.api.removeReaction(reaction.id).catch((reason: unknown) => props.onError(reason instanceof Error ? reason.message : 'Could not remove that reaction.'))
+            void props.api.removeReaction(reaction.id).catch((reason: unknown) => props.onError(messageOf(reason, 'Could not remove that reaction.')))
           }}
         >
           <span role="img" aria-label={reaction.label}>
