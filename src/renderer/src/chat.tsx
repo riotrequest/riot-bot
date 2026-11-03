@@ -145,7 +145,7 @@ function TurnView(props: {
     return change ? [[change.editId, message] as const] : []
   })).values()]
   const notices = props.turn.rest.filter((message) => message.role === 'notice')
-  const status = props.running ? props.statusLabel || 'Working…' : props.outcome ? actionStatus(tools.length, props.outcome) : `${tools.length} recorded actions · outcome unavailable`
+  const status = props.running ? props.statusLabel || 'Working…' : props.outcome ? actionStatus(tools.length, props.outcome, tools.filter(message => message.toolError).length) : `${tools.length} recorded actions · outcome unavailable`
   const incomplete = props.outcome && props.outcome !== 'completed' && props.outcome !== 'running'
   const long = prose.some((message) => isLongForm(message.content))
 

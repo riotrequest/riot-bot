@@ -1,6 +1,7 @@
 /** Present-tense status from the tool that is actually running. No model call. */
 export function progressLabel(name: string): string {
   switch (name) {
+    case 'get_disk_space': return 'Checking available disk space…'
     case 'create_schedule': return 'Saving your schedule…'
     case 'list_schedules': return 'Checking your schedules…'
     case 'manage_schedule': return 'Updating your schedule…'
@@ -63,9 +64,13 @@ export function completedStatus(actionCount: number): string {
   return actionStatus(actionCount, 'completed')
 }
 
-export function actionStatus(actionCount: number, outcome: 'completed' | 'failed' | 'paused' | 'stopped' | 'interrupted' | 'running'): string {
+export function actionStatus(actionCount: number, outcome: 'completed' | 'failed' | 'paused' | 'stopped' | 'interrupted' | 'running', failedCount = 0): string {
   if (actionCount <= 0) return ''
   const noun = actionCount === 1 ? 'action' : 'actions'
+  if (failedCount > 0) {
+    const label = outcome === 'completed' ? 'Finished' : outcome === 'paused' ? 'Paused' : outcome === 'failed' ? 'Failed' : 'Interrupted'
+    return `${label} · ${actionCount} ${noun} · ${failedCount} failed · View details`
+  }
   if (outcome === 'completed') return `Completed · ${actionCount} ${noun} · View details`
   if (outcome === 'paused') return `Paused · ${actionCount} ${noun} finished · View details`
   if (outcome === 'failed') return `Failed · ${actionCount} ${noun} finished · View details`

@@ -33,6 +33,20 @@ async function turn(params) {
     return
   }
   let text = 'Native reply'
+  if (config.scenario === 'disk-space') {
+    // Simulated command results only; validates that streamed errors belong to the right action.
+    for (const [index, status] of ['completed', 'failed'].entries()) {
+      const item = { id: 'old-command-' + index, type: 'commandExecution', command: 'fixture-only', status: 'inProgress' }
+      event('item/started', { ...base, item })
+      event('item/completed', { ...base, item: { ...item, status, exitCode: index, aggregatedOutput: index ? 'Access denied (fixture)' : 'No capacity values (fixture)' } })
+    }
+    const item = { id: 'disk-' + turnCount, type: 'dynamicToolCall', tool: 'riot_get_disk_space', arguments: {}, status: 'inProgress' }
+    event('item/started', { ...base, item })
+    const result = await ask('item/tool/call', { ...base, callId: item.id, tool: item.tool, arguments: {} })
+    event('item/completed', { ...base, item: { ...item, status: 'completed', ...result } })
+    log({ dynamicResult: result })
+    text += ': ' + result.contentItems[0].text
+  }
   if (config.scenario === 'approval' || config.scenario === 'network') {
     const item = { id: 'command-' + turnCount, type: 'commandExecution', command: 'Write-Output fixture-only', cwd: params.cwd, status: 'inProgress' }
     event('item/started', { ...base, item })

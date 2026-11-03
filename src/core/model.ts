@@ -69,6 +69,10 @@ const stringProp = (description: string): Record<string, unknown> => ({ type: 's
 
 export const TOOLS: ToolDefinition[] = [
   {
+    name: 'get_disk_space', description: 'Read available and total disk space directly, without a shell. Prefer this for disk-space questions. Checks one filesystem; defaults to this bot’s working folder.',
+    parameters: objectSchema({ path: stringProp('Optional existing drive or folder, e.g. C:\\ or D:\\.') }, [])
+  },
+  {
     name: 'list_schedules', description: 'List this bot’s saved reminders and scheduled bot tasks, including next run and last result.',
     parameters: objectSchema({}, [])
   },

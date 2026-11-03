@@ -22,6 +22,8 @@ With tools enabled, Codex retains native web search, shell, and file capabilitie
 
 Codex’s search source is not a verified Google organic position. Exact rank claims still require observed results from the named engine. A native search does not use Riot’s visible browser profile or its CAPTCHA handoff controls.
 
+Disk-space questions use `riot_get_disk_space`, a read-only capacity query in Riot’s runtime. The default checks the filesystem containing this bot’s working folder; a path can select another drive or folder. Results identify that scope, include a measurement timestamp, and distinguish byte counts from decimal GB. This tool reads no file contents and does not run a shell command. It avoids native Windows PowerShell language-mode and WMI/storage-query restrictions without changing the native sandbox or command approval policy. Existing native sessions start a fresh scoped thread once when this tool-set version changes, with Riot’s usual history bootstrap and search available.
+
 ## Permissions and sessions
 
 The connector selects native `untrusted` approvals and read-only or workspace-write policy, never bypass mode. Safe read commands can run automatically under Codex’s rules. Native command/file requests that need approval appear in Riot; approval applies once. Network and additional filesystem permission requests are declined. Native file edits do not have Riot’s Undo button.

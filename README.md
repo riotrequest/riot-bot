@@ -10,6 +10,12 @@ The right Workspace sidebar uses **Tasks** for work in progress, **Files** for s
 
 **Bot settings** has **Profile & browser**, **Model**, **Files & tools**, **Limits**, and **Advanced**. Model/context tuning and the optional connection test live in Advanced. Profile & browser contains its name, purpose, extra instructions, icon, browser, earlier conversations, and deletion. Shared credentials, display preferences, the app-wide spending ceiling, and defaults live in the left sidebar’s app Settings. Defaults are seeded once from the previously selected bot on upgrade; later changes apply to new bots and do not switch existing bots. Chat shows the current provider and model below the bot’s name. The working status and View tasks stay together above the composer, using the same content width. Choosing a different working folder turns editing off in the form until you explicitly enable it and save. Existing saved permissions are preserved.
 
+## Disk-space checks — November 3, 2026
+
+API and native Codex bots can now use **get_disk_space** (`riot_get_disk_space` in Codex) to read capacity directly from Riot’s runtime. It reports available/total bytes and decimal GB for the filesystem containing a specified drive or folder, defaulting to the bot’s working folder. It reads capacity counters only and requires tools to be enabled; workspace editing is unnecessary. It runs no terminal command and changes no system permissions. Unavailable values are reported as errors, with a full disk distinguished from missing counters.
+
+This avoids restricted native PowerShell/WMI queries for routine disk-space questions. Native instructions prefer this tool and discourage cycling through command variants after permission failures. Completed turns containing failed actions now show **Finished · … · … failed**, with streamed tool errors and timing matched to their recorded result.
+
 ## Reminders and scheduled work — November 3, 2026
 
 **Schedule** in the right Workspace supports reminders and bot tasks: once, daily, weekdays, or weekly. Ask in Chat (“Remind me to check email at 9 PM” or “Check the RLH email system every weekday at 8 AM”), or add one directly. Reminders show a desktop notification without an AI call. Bot tasks save conversation context, use that bot’s current setup and usual approvals, and put their results in Chat and Tasks. Both API and native Codex bots expose the built-in scheduling tools; scripts and Windows scheduled tasks are unnecessary.

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexService, type CodexTurnInput } from '../src/core/codex'
 import { redact } from '../src/core/redact'
 import { makeApp, tempDir, waitFor } from './helpers'
+import type { ChatMessageView } from '../src/shared/types'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0)) await close(); vi.unstubAllEnvs() })
@@ -35,6 +36,30 @@ function turnInput(dir: string, patch: Partial<CodexTurnInput> = {}): CodexTurnI
 }
 
 describe('native Codex connection', () => {
+  it('reads disk capacity through Riot and matches streamed native failures to the correct action', async () => {
+    const { app, id, requests, provider } = nativeApp({ scenario: 'disk-space' })
+    app.updateSettings({ workspaceEditing: false })
+    const commands: ChatMessageView[] = []
+    let approvals = 0
+    app.onEvent(event => {
+      if (event.type === 'message' && event.message.toolName === 'codex_commandExecution') commands.push(event.message)
+      if (event.type === 'approval' && event.approval) approvals++
+    })
+    expect((await app.sendMessage(id, 'How much disk space is available?')).status).toBe('completed')
+    const start = requests().find(item => item.method === 'thread/start')
+    expect(start.params.dynamicTools.some((item: any) => item.name === 'riot_get_disk_space')).toBe(true)
+    expect(start.params.developerInstructions).toContain('For disk-space questions, use riot_get_disk_space')
+    const result = requests().find(item => item.dynamicResult).dynamicResult
+    expect(result.success).toBe(true)
+    expect(JSON.parse(result.contentItems[0].text).totalBytes).toBeGreaterThan(0)
+    expect(commands).toHaveLength(2)
+    expect(commands[0].toolError).toBeNull()
+    expect(commands[1].toolError).toContain('did not complete successfully')
+    expect(app.openConversation(id).messages.filter(message => message.toolError)).toHaveLength(1)
+    expect(approvals).toBe(0)
+    expect(provider.calls).toHaveLength(0)
+  })
+
   it('exposes built-in schedules and carries scheduled context without allowing recursive schedules', async () => {
     const { app, id, requests, provider } = nativeApp({ scenario: 'schedule', schedule: { kind: 'reminder', title: 'Fixture reminder', instructions: 'Review the fixture.', start_at: new Date(Date.now() + 86400000).toISOString(), repeat: 'once', timezone: 'UTC' } })
     expect((await app.sendMessage(id, 'Remind me to review the fixture tomorrow.')).status).toBe('completed')

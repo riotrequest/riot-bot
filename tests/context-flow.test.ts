@@ -442,6 +442,7 @@ describe('automatic context', () => {
   it('labels completed, failed, paused, and interrupted runs separately', () => {
     expect(completedStatus(2)).toBe('Completed · 2 actions · View details')
     expect(actionStatus(2, 'completed')).toBe('Completed · 2 actions · View details')
+    expect(actionStatus(4, 'completed', 3)).toBe('Finished · 4 actions · 3 failed · View details')
     expect(actionStatus(1, 'paused')).toBe('Paused · 1 action finished · View details')
     expect(actionStatus(2, 'failed')).toBe('Failed · 2 actions finished · View details')
     expect(actionStatus(2, 'stopped')).toBe('Interrupted · 2 actions finished · View details')
