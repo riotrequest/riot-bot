@@ -1,11 +1,10 @@
 import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import type { CredentialStatusSource, CredentialStore } from '../core/credentials'
-import type { ApiProviderId } from '../shared/types'
+import { credentialSecrets, type CredentialKey, type CredentialStatusSource, type CredentialStore } from '../core/credentials'
 
 export class ElectronCredentialStore implements CredentialStore {
-  private readonly session = new Map<ApiProviderId, string>()
+  private readonly session = new Map<CredentialKey, string>()
   private readonly file: string
   private encryptionAvailable: boolean
 
@@ -36,7 +35,7 @@ export class ElectronCredentialStore implements CredentialStore {
     }
   }
 
-  set(provider: ApiProviderId, secret: string): { persistent: boolean; message: string } {
+  set(provider: CredentialKey, secret: string): { persistent: boolean; message: string } {
     if (this.encryptionAvailable) {
       try {
         const data = this.read()
@@ -55,7 +54,7 @@ export class ElectronCredentialStore implements CredentialStore {
     }
   }
 
-  get(provider: ApiProviderId): string | null {
+  get(provider: CredentialKey): string | null {
     if (this.session.has(provider)) return this.session.get(provider) ?? null
     if (!this.encryptionAvailable) return null
     const encoded = this.read()[provider]
@@ -67,7 +66,7 @@ export class ElectronCredentialStore implements CredentialStore {
     }
   }
 
-  clear(provider: ApiProviderId): void {
+  clear(provider: CredentialKey): void {
     this.session.delete(provider)
     if (!this.encryptionAvailable) return
     const data = this.read()
@@ -76,9 +75,9 @@ export class ElectronCredentialStore implements CredentialStore {
   }
 
   secretValues(): string[] {
-    return (['openai', 'openrouter'] as ApiProviderId[])
+    return credentialSecrets((['openai', 'openrouter', 'gmail-client', 'gmail'] as CredentialKey[])
       .map((provider) => this.get(provider))
-      .filter((value): value is string => Boolean(value))
+      .filter((value): value is string => Boolean(value)))
   }
 
   private read(): Record<string, string> {

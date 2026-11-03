@@ -2,6 +2,12 @@
 
 Riot Bot is a personal Windows desktop assistant. Each bot has one ongoing conversation, its own memories, skills, workspace, and browser profile. The app does not call a model when it is idle, opened, or restarted.
 
+## Gmail — November 3, 2026
+
+Connect an existing **Gmail / Google Workspace** mailbox in **Settings → Email** using your own Google Desktop OAuth app setup file. Riot connects directly from your computer; it does not host your mailbox or require a Riot email account. [Set up Gmail](docs/gmail.md).
+
+Enable access separately for each bot: no access, reading and drafts, or reading and drafts with a review before every send. Bots can search mail, read messages and conversations, and save plain-text replies in Gmail. Chat and scheduled bot work use the same connection and permissions. Sending shows every recipient and the full message, and records Gmail's confirmation. An uncertain send pauses rather than retrying automatically. Attachments, mailbox cleanup, multiple connected accounts, and unattended sending are not included in this first version.
+
 ## Easier setup and everyday use — November 3, 2026
 
 Start in Chat with **Let’s set up**. **Settings** at the bottom of the left sidebar manages shared connections and the default model for new bots. **Bot settings** at the bottom of the right Workspace sidebar controls the selected bot’s model, profile, working folder, tools, and limits. Save the app default, then use **Bot settings → Model → Use app default** to apply it to an existing bot. New bots start with the app default automatically. A starter idea fills your draft without sending it. Trying to send before connecting opens setup and keeps your draft.

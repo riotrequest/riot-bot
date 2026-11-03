@@ -32,6 +32,8 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'toolsEnabled',
   'autoMemory',
   'autoSkillSuggestions',
+  'gmailAccount',
+  'gmailAccess',
   'pinnedInstructions',
   'maxFileReadBytes',
   'webFetchTimeoutMs',
@@ -54,6 +56,19 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   }
 
   handle('app:getSnapshot', (app) => app.getSnapshot())
+  handle('gmail:status', app => app.getGmailStatus())
+  handle('gmail:connect', app => app.connectGmail())
+  handle('gmail:cancelLogin', app => app.cancelGmailLogin())
+  handle('gmail:disconnect', app => app.disconnectGmail())
+  handle('gmail:importClient', async app => {
+    const window = getWindow()
+    if (!window) throw new Error('Open Riot Bot before choosing a Google setup file.')
+    const picked = await dialog.showOpenDialog(window, { title: 'Choose your Google Desktop app setup file', properties: ['openFile'], filters: [{ name: 'Google OAuth setup', extensions: ['json'] }] })
+    if (picked.canceled || !picked.filePaths[0]) return null
+    const stat = await fs.stat(picked.filePaths[0])
+    if (!stat.isFile() || stat.size > 20000) throw new Error('Choose a small Google OAuth Desktop app JSON file.')
+    return app.setGmailClient(await fs.readFile(picked.filePaths[0], 'utf8'))
+  })
   handle('jobs:queue', (app,args) => app.queueMessage(requireId(args[0]),requireText(args[1],'Write a message first.'),args[2] == null ? [] : requireAttachmentIds(args[2])))
   handle('jobs:list', (app,args) => app.listJobs(args[0] === 'app' ? 'app' : 'bot'))
   handle('schedules:list', app => app.listSchedules())

@@ -3,6 +3,11 @@ import type { AppEvent, PublicSettings, RiotBridge } from '../shared/types'
 
 const api: RiotBridge = {
   getSnapshot: () => ipcRenderer.invoke('app:getSnapshot'),
+  getGmailStatus: () => ipcRenderer.invoke('gmail:status'),
+  importGmailClient: () => ipcRenderer.invoke('gmail:importClient'),
+  connectGmail: () => ipcRenderer.invoke('gmail:connect'),
+  cancelGmailLogin: () => ipcRenderer.invoke('gmail:cancelLogin'),
+  disconnectGmail: () => ipcRenderer.invoke('gmail:disconnect'),
   getCodexStatus: () => ipcRenderer.invoke('codex:status'),
   connectCodex: () => ipcRenderer.invoke('codex:connect'),
   cancelCodexLogin: () => ipcRenderer.invoke('codex:cancelLogin'),

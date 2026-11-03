@@ -380,7 +380,7 @@ export class RiotService extends RiotApp {
   private executor(botId: string): RiotApp {
     let executor = this.executors.get(botId)
     if (executor) return executor
-    const options: RiotAppOptions = { ...this.options,executionBotId:botId,terminal:undefined,codex:undefined }
+    const options: RiotAppOptions = { ...this.options,executionBotId:botId,terminal:undefined,codex:undefined,gmail:this.gmail }
     executor = this.options.createExecutor?.(botId,options) ?? new RiotApp(options)
     executor.onEvent(event=>{
       // Closing one worker's transport does not sign the shared account out.
@@ -472,6 +472,13 @@ export class RiotService extends RiotApp {
     this.jobsChanged()
   }
 
+  protected override gmailConnectionChanging(): void {
+    super.gmailConnectionChanging()
+    if ([...this.activeJobs.keys()].some(id => this.db.getSettings(id).gmailAccess !== 'off')) throw new ConfigError('Stop jobs with Gmail access before changing this connection. Other bots can keep working.')
+    for (const job of this.db.queuedJobs()) if (this.db.getSettings(job.botId).gmailAccess !== 'off') this.db.updateJob(job.id, { status: 'paused', note: 'The Gmail connection is changing. Check the mailbox and choose Resume.' })
+    this.jobsChanged()
+  }
+
   private requireJob(id: string): JobRecord {
     const job = this.db.getJob(id)
     if (!job || !this.db.getBot(job.botId)) throw new ConfigError('That job is no longer available.')
@@ -488,7 +495,7 @@ export class RiotService extends RiotApp {
 }
 
 function executionBinding(settings: Settings): string {
-  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions])
+  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions,settings.gmailAccount,settings.gmailAccess])
 }
 
 function workspacesOverlap(first: string, second: string): boolean {

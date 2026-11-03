@@ -40,6 +40,8 @@ export interface PublicSettings {
   toolsEnabled: boolean
   autoMemory: boolean
   autoSkillSuggestions: boolean
+  gmailAccount: string
+  gmailAccess: 'off' | 'drafts' | 'send'
   pinnedInstructions: string
   maxFileReadBytes: number
   webFetchTimeoutMs: number
@@ -174,12 +176,31 @@ export interface Memory {
 
 export interface ApprovalView {
   id: string
-  kind: 'terminal' | 'browser' | 'codex'
+  kind: 'terminal' | 'browser' | 'codex' | 'email'
   title: string
   command: string
   cwd: string
   timeoutMs: number
   warning: string
+  email?: EmailPreview
+}
+
+export interface GmailStatus {
+  configured: boolean
+  connected: boolean
+  connecting: boolean
+  email: string | null
+  persistent: boolean
+  note: string
+}
+
+export interface EmailPreview {
+  from: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  subject: string
+  body: string
 }
 
 export interface ActivityTool {
@@ -360,6 +381,7 @@ export interface Snapshot {
   pendingApproval: ApprovalView | null
   draftAttachments: AttachmentView[]
   codex: CodexStatus
+  gmail: GmailStatus
   jobs?: JobView[]
   artifacts?: ArtifactView[]
   runningBotIds?: string[]
@@ -452,6 +474,7 @@ export interface BotCreateResult {
 }
 
 export type AppEvent =
+  | { type: 'gmail-status'; status: GmailStatus }
   | { type: 'schedules-changed' }
   | { type: 'reminder-fired'; schedule: ScheduleView }
   | { type: 'open-schedule'; botId: string }
@@ -472,6 +495,11 @@ export type AppEvent =
 
 export interface RiotBridge {
   getSnapshot(): Promise<Snapshot>
+  getGmailStatus(): Promise<GmailStatus>
+  importGmailClient(): Promise<GmailStatus | null>
+  connectGmail(): Promise<GmailStatus>
+  cancelGmailLogin(): Promise<GmailStatus>
+  disconnectGmail(): Promise<GmailStatus>
   getCodexStatus(): Promise<CodexStatus>
   connectCodex(): Promise<CodexStatus>
   cancelCodexLogin(): Promise<CodexStatus>

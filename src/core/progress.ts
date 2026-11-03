@@ -1,6 +1,12 @@
 /** Present-tense status from the tool that is actually running. No model call. */
 export function progressLabel(name: string): string {
   switch (name) {
+    case 'gmail_search': return 'Checking email…'
+    case 'gmail_read_email':
+    case 'gmail_read_thread': return 'Reading email…'
+    case 'gmail_save_draft': return 'Saving your email draft…'
+    case 'gmail_read_draft': return 'Reviewing your email draft…'
+    case 'gmail_send_draft': return 'Preparing your email for review…'
     case 'set_learning_preferences': return 'Updating memory and skill preferences…'
     case 'get_disk_space': return 'Checking available disk space…'
     case 'create_schedule': return 'Saving your schedule…'

@@ -135,6 +135,7 @@ app.whenReady().then(async () => {
     provider: new MockProvider(),
     credentials,
     catalogFetchImpl: providerFetch,
+    gmailFetchImpl: providerFetch,
     logger,
     openFolder: (folder) => {
       void shell.openPath(folder)

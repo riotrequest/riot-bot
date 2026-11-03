@@ -1,5 +1,5 @@
 import fs from 'fs'
-import { COST_DISCLAIMER, type ArtifactView, type AttachmentView, type Conversation, type JobView, type Memory, type RunState } from '../shared/types'
+import { COST_DISCLAIMER, type ArtifactView, type AttachmentView, type Conversation, type EmailPreview, type JobView, type Memory, type RunState } from '../shared/types'
 import type { PreparedAttachment } from './attachments'
 import type { MessageAttachment } from './model'
 import { DEFAULT_SEARCH_TEMPLATE, DUCKDUCKGO_SEARCH_TEMPLATE } from './browser-policy'
@@ -12,6 +12,29 @@ import { SCHEDULE_SCHEMA } from './schedules'
 import type { ScheduleView } from '../shared/types'
 
 type Row = Record<string, unknown>
+
+export interface GmailDraftRecord {
+  account: string
+  draftId: string
+  botId: string
+  runId: string | null
+  raw: string
+  threadId: string | null
+  preview: EmailPreview
+  fingerprint: string
+  status: 'draft' | 'sending' | 'sent' | 'uncertain'
+  sentMessageId: string | null
+  updatedAt: number
+}
+
+const GMAIL_SCHEMA = `CREATE TABLE IF NOT EXISTS gmail_drafts (
+  account TEXT NOT NULL, draft_id TEXT NOT NULL,
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+  raw_message TEXT NOT NULL, thread_id TEXT, preview_json TEXT NOT NULL,
+  fingerprint TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', sent_message_id TEXT,
+  updated_at INTEGER NOT NULL, PRIMARY KEY(account, draft_id)
+);`
 
 export interface JobRecord extends JobView {
   attachmentIds: string[]
@@ -553,7 +576,8 @@ export class Database {
       this.ensureCodexSessions()
       this.db.exec(RUNTIME_SCHEMA)
       this.db.exec(SCHEDULE_SCHEMA)
-      this.db.exec('PRAGMA user_version = 11')
+      this.db.exec(GMAIL_SCHEMA)
+      this.db.exec('PRAGMA user_version = 12')
       this.ensureModelCatalog()
       return
     }
@@ -612,6 +636,40 @@ export class Database {
       this.db.exec(SCHEDULE_SCHEMA)
       this.db.exec('PRAGMA user_version = 11')
     })
+    if (this.userVersion() < 12) this.transaction(() => {
+      this.db.exec(GMAIL_SCHEMA)
+      this.db.exec('PRAGMA user_version = 12')
+    })
+  }
+
+  recoverGmailSends(now: number): void {
+    this.db.prepare(`UPDATE gmail_drafts SET status = 'uncertain', updated_at = ? WHERE status = 'sending'`).run(now)
+  }
+
+  getGmailDraft(account: string, id: string, botId: string): GmailDraftRecord | null {
+    const found = row(this.db.prepare(`SELECT * FROM gmail_drafts WHERE account = ? AND draft_id = ? AND bot_id = ?`).get(account, id, botId))
+    return found ? mapGmailDraft(found) : null
+  }
+
+  findGmailDraft(account: string, botId: string, runId: string, fingerprint: string, threadId: string | null): GmailDraftRecord | null {
+    const found = row(this.db.prepare(`SELECT * FROM gmail_drafts WHERE account = ? AND bot_id = ? AND fingerprint = ? AND ((run_id = ? AND thread_id IS ?) OR status IN ('sending', 'uncertain')) ORDER BY CASE WHEN status IN ('sending', 'uncertain') THEN 0 ELSE 1 END, updated_at DESC LIMIT 1`).get(account, botId, fingerprint, runId, threadId))
+    return found ? mapGmailDraft(found) : null
+  }
+
+  saveGmailDraft(draft: GmailDraftRecord): void {
+    this.db.prepare(`INSERT INTO gmail_drafts (account, draft_id, bot_id, run_id, raw_message, thread_id, preview_json, fingerprint, status, sent_message_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(account, draft_id) DO UPDATE SET run_id=excluded.run_id, raw_message=excluded.raw_message, thread_id=excluded.thread_id, preview_json=excluded.preview_json, fingerprint=excluded.fingerprint, updated_at=excluded.updated_at
+      WHERE gmail_drafts.bot_id=excluded.bot_id AND gmail_drafts.status='draft'`).run(draft.account, draft.draftId, draft.botId, draft.runId, draft.raw, draft.threadId, JSON.stringify(draft.preview), draft.fingerprint, draft.status, draft.sentMessageId, draft.updatedAt)
+  }
+
+  claimGmailSend(account: string, id: string, botId: string, fingerprint: string, now: number): void {
+    const result = this.db.prepare(`UPDATE gmail_drafts SET status='sending', updated_at=? WHERE account=? AND draft_id=? AND bot_id=? AND fingerprint=? AND status='draft'`).run(now, account, id, botId, fingerprint)
+    if (Number(row(result)?.changes) !== 1) throw new Error('This email was already sent or its send result needs checking. It was not sent again.')
+  }
+
+  finishGmailSend(account: string, id: string, botId: string, status: GmailDraftRecord['status'], sentMessageId: string | null, now: number): void {
+    this.db.prepare(`UPDATE gmail_drafts SET status=?, sent_message_id=?, updated_at=? WHERE account=? AND draft_id=? AND bot_id=? AND status='sending'`).run(status, sentMessageId, now, account, id, botId)
   }
 
   listSchedules(botId?: string): ScheduleView[] {
@@ -1976,6 +2034,10 @@ export class Database {
 
 export function usageDisclaimer(): string {
   return COST_DISCLAIMER
+}
+
+function mapGmailDraft(record: Row): GmailDraftRecord {
+  return { account: text(record, 'account'), draftId: text(record, 'draft_id'), botId: text(record, 'bot_id'), runId: text(record, 'run_id') || null, raw: text(record, 'raw_message'), threadId: text(record, 'thread_id') || null, preview: JSON.parse(text(record, 'preview_json')), fingerprint: text(record, 'fingerprint'), status: text(record, 'status') as GmailDraftRecord['status'], sentMessageId: text(record, 'sent_message_id') || null, updatedAt: num(record, 'updated_at') }
 }
 
 function mapConversation(record: Row): Conversation {

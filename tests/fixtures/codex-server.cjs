@@ -76,6 +76,15 @@ async function turn(params) {
     text += ': ' + result.contentItems[0].text
   }
   if (params.outputSchema) text = JSON.stringify(config.review ?? { memory: null, skill: null })
+  if (config.scenario === 'gmail') {
+    const search = await ask('item/tool/call', { ...base, callId: 'gmail-search', tool: 'riot_gmail_search', arguments: { query: 'is:unread' } })
+    log({ gmailSearch: search })
+    const draft = await ask('item/tool/call', { ...base, callId: 'gmail-draft', tool: 'riot_gmail_save_draft', arguments: { to: 'customer@example.com', subject: 'Native Gmail fixture', body: 'The native Gmail test is complete.' } })
+    const id = JSON.parse(draft.contentItems[0].text).id
+    const sent = await ask('item/tool/call', { ...base, callId: 'gmail-send', tool: 'riot_gmail_send_draft', arguments: { id } })
+    log({ gmailSend: sent })
+    text += ': ' + sent.contentItems[0].text
+  }
   const item = { type: 'agentMessage', id: 'reply-' + turnCount, text, phase: 'final_answer' }
   event('item/started', { ...base, item: { ...item, text: '' } })
   event('item/agentMessage/delta', { ...base, itemId: item.id, delta: text.slice(0, 6) })
