@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { EmailPreview, GmailStatus, PublicSettings, RiotBridge } from '../../shared/types'
+import type { EmailPreview, GmailRuleDraftInput, GmailRulePreview, GmailRuleView, GmailSendActivity, GmailStatus, PublicSettings, RiotBridge } from '../../shared/types'
 import { messageOf } from './ui'
 
 export function GmailConnection({ api, status, onStatus, onError, showIntro = true }: { api: RiotBridge; status: GmailStatus | null; onStatus: (status: GmailStatus) => void; onError: (message: string) => void; showIntro?: boolean }) {
@@ -54,12 +54,109 @@ export function GmailAccess({ status, settings, botName, onChange, onError, onBu
       {settings.gmailAccount && !bound && <option value="unavailable" disabled>Access paused — mailbox not connected</option>}
       <option value="off">No email access</option>
       <option value="drafts" disabled={!status?.connected}>Read email & save drafts</option>
-      <option value="send" disabled={!status?.connected}>Read, draft & ask before sending</option>
+      <option value="send" disabled={!status?.connected}>Read, draft & send</option>
     </select></label>
-    <p className="help">Sending shows a review card with the recipients and message. This version supports plain-text email; attachments and mailbox cleanup can be handled in Gmail.</p>
+    <p className="help">Riot asks before every send unless you turn on a reply rule for this bot. A reply rule can send only the exact replies you approve. Attachments and mailbox cleanup stay in Gmail.</p>
     {!settings.toolsEnabled && <p className="help">Tools are currently off for this bot. Enable Allow tools in Bot settings → Files & tools to use email.</p>}
     {note && <p className="help" role="status">{note}</p>}
   </section>
+}
+
+export function GmailAutonomy({ api, botName, settings, initial, onError }: { api: RiotBridge; botName: string; settings: PublicSettings; initial?: { rules: GmailRuleView[]; activity: GmailSendActivity[] }; onError: (message: string) => void }) {
+  const [rules, setRules] = useState<GmailRuleView[]>(initial?.rules ?? [])
+  const [activity, setActivity] = useState<GmailSendActivity[]>(initial?.activity ?? [])
+  const [editing, setEditing] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = async (): Promise<void> => {
+    const next = await api.listGmailRules()
+    setRules(next.rules)
+    setActivity(next.activity)
+  }
+  useEffect(() => {
+    if (initial) return
+    let live = true
+    void api.listGmailRules().then(next => { if (live) { setRules(next.rules); setActivity(next.activity) } }).catch(() => undefined)
+    const stop = api.onEvent(event => { if (event.type === 'gmail-rules-changed') void load().catch(() => undefined) })
+    return () => { live = false; stop() }
+  }, [api, initial])
+  async function save(input: GmailRuleDraftInput): Promise<void> {
+    setBusy(true)
+    try { await api.saveGmailRule(input); setEditing(null); if (!initial) await load() } catch (error) { onError(messageOf(error)) } finally { setBusy(false) }
+  }
+  async function setEnabled(id: string, enabled: boolean): Promise<void> {
+    setBusy(true)
+    try { await api.setGmailRuleEnabled(id, enabled); if (!initial) await load() } catch (error) { onError(messageOf(error)) } finally { setBusy(false) }
+  }
+  const active = rules.filter(rule => rule.appliesNow).length
+  return <section className="settings-section gmail-autonomy" aria-label={`What ${botName} can do on its own`}>
+    <h3>What this bot can do on its own</h3>
+    <p className="help">These rules affect only {botName}. {active ? `${active} reply rule${active === 1 ? ' is' : 's are'} on for this mailbox.` : 'Nothing sends on its own until you turn a reply rule on.'} Other bots keep asking before every send.</p>
+    {rules.map(rule => editing === rule.id ? <RuleForm key={rule.id} rule={rule} mailbox={settings.gmailAccount} busy={busy} onCancel={() => setEditing(null)} onSave={save} /> : <RuleCard key={rule.id} rule={rule} busy={busy} onEdit={() => setEditing(rule.id)} onEnabled={setEnabled} />)}
+    {editing === 'new' ? <RuleForm mailbox={settings.gmailAccount} busy={busy} onCancel={() => setEditing(null)} onSave={save} /> : <button type="button" disabled={busy || !settings.gmailAccount} onClick={() => setEditing('new')}>Add a reply rule</button>}
+    {!settings.gmailAccount && <p className="help">Connect a mailbox before adding a reply rule.</p>}
+    {activity.length > 0 && <details className="subtle-details"><summary>Recent send decisions</summary>{activity.map(item => <p key={`${item.createdAt}-${item.draftId}`} className="help">{item.summary} — {item.outcome === 'sent' ? 'Sent' : item.outcome === 'uncertain' ? 'Unconfirmed' : item.outcome === 'declined' ? 'Not sent' : 'Not sent'}. {item.reason}{item.messageId ? ` Receipt ${item.messageId}.` : ''}</p>)}</details>}
+  </section>
+}
+
+function RuleCard({ rule, busy, onEdit, onEnabled }: { rule: GmailRuleView; busy: boolean; onEdit: () => void; onEnabled: (id: string, enabled: boolean) => Promise<void> }) {
+  const reply = rule.templates[0] ? `“${rule.templates[0].slice(0, 160)}${rule.templates[0].length > 160 ? '…' : ''}”` : 'No exact reply yet'
+  const status = rule.appliesNow ? 'On' : rule.enabled ? 'Paused' : 'Off'
+  return <article className="gmail-rule-card">
+    <div className="runtime-heading"><strong>{rule.title}</strong><span className={`app-access-status ${rule.appliesNow ? 'enabled' : 'paused'}`}>{status}</span></div>
+    <p className="help">Mailbox {rule.account}. Replies to {rule.recipients.join(', ') || 'no one yet'}{rule.threadIds.length ? ` in ${rule.threadIds.join(', ')}` : ' in an existing conversation'}.</p>
+    <p className="gmail-rule-template">{reply}{rule.templates.length > 1 ? ` and ${rule.templates.length - 1} more exact ${rule.templates.length === 2 ? 'reply' : 'replies'}` : ''}</p>
+    <p className="help">Up to {rule.dailySendLimit} sends a day{rule.sendsToday ? ` · ${rule.sendsToday} used today` : ''}. Refunds in the original message or the reply, other recipients, and anything that does not match still wait for you.</p>
+    {rule.blockedReason && <p className="help">{rule.blockedReason}</p>}
+    {(rule.excludedRecipients.length > 0 || rule.excludedPhrases.length > 0) && <p className="help">Always review: {[...rule.excludedRecipients, ...rule.excludedPhrases].join(', ')}.</p>}
+    <div className="row"><button type="button" disabled={busy} onClick={onEdit}>Edit</button><button type="button" disabled={busy} onClick={() => void onEnabled(rule.id, !rule.enabled)}>{rule.enabled ? 'Turn off' : 'Turn on'}</button></div>
+  </article>
+}
+
+function RuleForm({ rule, mailbox, busy, onCancel, onSave }: { rule?: GmailRuleView; mailbox: string; busy: boolean; onCancel: () => void; onSave: (input: GmailRuleDraftInput) => Promise<void> }) {
+  const [title, setTitle] = useState(rule?.title ?? '')
+  const [recipients, setRecipients] = useState(rule?.recipients.join(', ') ?? '')
+  const [templates, setTemplates] = useState(rule?.templates.length ? rule.templates : [''])
+  const [threads, setThreads] = useState(rule?.threadIds.join(', ') ?? '')
+  const [excludedRecipients, setExcludedRecipients] = useState(rule?.excludedRecipients.join(', ') ?? '')
+  const [excludedPhrases, setExcludedPhrases] = useState(rule?.excludedPhrases.join(' | ') ?? '')
+  const [limit, setLimit] = useState(String(rule?.dailySendLimit ?? 5))
+  const input = (enabled: boolean): GmailRuleDraftInput => ({ id: rule?.id, title: title.trim() || 'Reply rule', recipients: splitList(recipients), threadIds: splitList(threads), templates: templates.map(item => item.trim()).filter(Boolean), excludedRecipients: splitList(excludedRecipients), excludedPhrases: excludedPhrases.split('|').map(item => item.trim()).filter(Boolean), dailySendLimit: Number(limit), enabled })
+  return <form className="gmail-rule-form" onSubmit={event => { event.preventDefault(); void onSave(input(false)) }}>
+    <p className="help">Mailbox: {mailbox || 'Not connected'}. Only exact replies to the addresses below can send without asking. This bot cannot invent the rest.</p>
+    <label>Name<input value={title} disabled={busy} onChange={event => setTitle(event.target.value)} /></label>
+    <label>Send only to<input value={recipients} disabled={busy} placeholder="name@example.com" onChange={event => setRecipients(event.target.value)} /></label>
+    {templates.map((template, index) => <label key={index}>Exact reply {templates.length > 1 ? index + 1 : ''}<textarea value={template} disabled={busy} rows={4} onChange={event => setTemplates(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></label>)}
+    {templates.length < 5 && <button type="button" disabled={busy} onClick={() => setTemplates(current => [...current, ''])}>Add another exact reply</button>}
+    <label>Sends per day<input type="number" min={1} max={20} value={limit} disabled={busy} onChange={event => setLimit(event.target.value)} /></label>
+    <details className="subtle-details"><summary>Limit further</summary>
+      <label>Only these conversation IDs<input value={threads} disabled={busy} onChange={event => setThreads(event.target.value)} /></label>
+      <label>Always review these addresses<input value={excludedRecipients} disabled={busy} onChange={event => setExcludedRecipients(event.target.value)} /></label>
+      <label>Always review these phrases<input value={excludedPhrases} disabled={busy} placeholder="2–200 characters, separated by |" onChange={event => setExcludedPhrases(event.target.value)} /></label>
+    </details>
+    <p className="help">Save paused stores these edits and turns automatic sending off. Turn on is the only action that enables this rule.</p>
+    <div className="row"><button type="button" disabled={busy} onClick={onCancel}>Cancel</button><button type="submit" disabled={busy}>Save paused</button><button type="button" className="send" disabled={busy} onClick={() => void onSave(input(true))}>Turn on</button></div>
+  </form>
+}
+
+function splitList(value: string): string[] {
+  return value.split(/[,\s]+/).map(item => item.trim()).filter(Boolean)
+}
+
+export function GmailRuleApproval({ rule, onResolve }: { rule: GmailRulePreview; onResolve: (approved: boolean) => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close() }, [])
+  return <dialog ref={dialog} className="email-review-dialog" aria-labelledby="gmail-rule-title" onCancel={event => { event.preventDefault(); onResolve(false) }}>
+    <h2 id="gmail-rule-title">Turn on this reply rule?</h2>
+    <div className="email-review-content" tabIndex={0} aria-label="Reply rule preview">
+      <p><strong>{rule.title}</strong> for {rule.account}. This bot only.</p>
+      <p>Can send on its own: {rule.templates.length ? 'these exact replies' : 'nothing yet'} to {rule.recipients.join(', ') || 'no recipients yet'}{rule.threadIds.length ? `, only in ${rule.threadIds.join(', ')}` : ', in an existing conversation'}.</p>
+      {rule.templates.map(template => <pre key={template} className="email-review-body gmail-rule-template">{template}</pre>)}
+      {(rule.excludedRecipients.length > 0 || rule.excludedPhrases.length > 0) && <p>Always review: {[...rule.excludedRecipients, ...rule.excludedPhrases].join(', ')}.</p>}
+      <p>Limit: {rule.dailySendLimit} sends a day. After that, Riot asks again.</p>
+      <p className="help">{rule.limits}</p>
+    </div>
+    <div className="row approval-actions"><button type="button" onClick={() => onResolve(false)}>Not now</button><button type="button" className="send" onClick={() => onResolve(true)}>Turn on</button></div>
+  </dialog>
 }
 
 export function EmailApproval({ email, onResolve }: { email: EmailPreview; onResolve: (approved: boolean) => void }) {

@@ -37,7 +37,7 @@ import { AVATAR_CHOICES, AVATAR_COLORS, AVATAR_EMOJIS, BotAvatar } from './avata
 import { AttachmentList, ChatTranscript } from './chat'
 import { JobsPane, LibraryPane } from './jobs'
 import { SchedulesPane } from './schedules'
-import { EmailApproval, GmailConnection } from './email'
+import { EmailApproval, GmailConnection, GmailRuleApproval } from './email'
 import { AppsPane } from './apps'
 import { ChatWelcome, EmptyState, Icon, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
@@ -754,6 +754,7 @@ function SavedLogins({api,onError,onSite}:{api:RiotBridge;onError:(message:strin
 }
 
 export function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; onResolve: (approved: boolean,remember?:boolean) => void }) {
+  if (approval.kind === 'gmail-rule' && approval.gmailRule) return <GmailRuleApproval rule={approval.gmailRule} onResolve={onResolve} />
   if (approval.kind === 'email' && approval.email) return <EmailApproval email={approval.email} onResolve={onResolve} />
   const files = approval.kind === 'codex' && approval.title === 'Allow this Codex file?'
   const browser = approval.kind === 'browser'

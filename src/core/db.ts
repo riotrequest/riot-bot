@@ -9,7 +9,9 @@ import { snippetAround, toFtsOrQuery, toFtsQuery } from './search'
 import { DEFAULT_SETTINGS, localDay, sanitizeSettings, type Settings } from './settings'
 import { openDatabase, type SqlDatabase } from './sqlite'
 import { SCHEDULE_SCHEMA } from './schedules'
-import type { ScheduleView } from '../shared/types'
+import type { GmailAutonomyRule } from './gmail-autonomy'
+import type { GmailReplySource } from './gmail-message'
+import type { GmailSendActivity, ScheduleView } from '../shared/types'
 
 type Row = Record<string, unknown>
 
@@ -24,8 +26,48 @@ export interface GmailDraftRecord {
   fingerprint: string
   status: 'draft' | 'sending' | 'sent' | 'uncertain'
   sentMessageId: string | null
+  reply: GmailReplySource | null
   updatedAt: number
 }
+
+const GMAIL_AUTONOMY_SCHEMA = `CREATE TABLE IF NOT EXISTS gmail_autonomy_rules (
+  id TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  account TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  recipients_json TEXT NOT NULL,
+  thread_ids_json TEXT NOT NULL,
+  templates_json TEXT NOT NULL,
+  excluded_recipients_json TEXT NOT NULL,
+  excluded_phrases_json TEXT NOT NULL,
+  daily_send_limit INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS gmail_autonomy_bot ON gmail_autonomy_rules(bot_id, updated_at);
+CREATE TABLE IF NOT EXISTS gmail_autonomy_usage (
+  rule_id TEXT NOT NULL REFERENCES gmail_autonomy_rules(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  PRIMARY KEY (rule_id, day)
+);
+CREATE TABLE IF NOT EXISTS gmail_send_activity (
+  id TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  account TEXT NOT NULL,
+  draft_id TEXT NOT NULL,
+  rule_id TEXT,
+  revision INTEGER,
+  decision TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  message_id TEXT,
+  summary TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS gmail_send_activity_bot ON gmail_send_activity(bot_id, created_at);`
 
 const GMAIL_SCHEMA = `CREATE TABLE IF NOT EXISTS gmail_drafts (
   account TEXT NOT NULL, draft_id TEXT NOT NULL,
@@ -33,6 +75,7 @@ const GMAIL_SCHEMA = `CREATE TABLE IF NOT EXISTS gmail_drafts (
   run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
   raw_message TEXT NOT NULL, thread_id TEXT, preview_json TEXT NOT NULL,
   fingerprint TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', sent_message_id TEXT,
+  reply_json TEXT,
   updated_at INTEGER NOT NULL, PRIMARY KEY(account, draft_id)
 );`
 
@@ -577,7 +620,8 @@ export class Database {
       this.db.exec(RUNTIME_SCHEMA)
       this.db.exec(SCHEDULE_SCHEMA)
       this.db.exec(GMAIL_SCHEMA)
-      this.db.exec('PRAGMA user_version = 12')
+      this.db.exec(GMAIL_AUTONOMY_SCHEMA)
+      this.db.exec('PRAGMA user_version = 14')
       this.ensureModelCatalog()
       return
     }
@@ -640,6 +684,14 @@ export class Database {
       this.db.exec(GMAIL_SCHEMA)
       this.db.exec('PRAGMA user_version = 12')
     })
+    if (this.userVersion() < 13) this.transaction(() => {
+      this.db.exec(GMAIL_AUTONOMY_SCHEMA)
+      this.db.exec('PRAGMA user_version = 13')
+    })
+    if (this.userVersion() < 14) this.transaction(() => {
+      this.addColumn('gmail_drafts', 'reply_json', 'TEXT')
+      this.db.exec('PRAGMA user_version = 14')
+    })
   }
 
   recoverGmailSends(now: number): void {
@@ -657,10 +709,10 @@ export class Database {
   }
 
   saveGmailDraft(draft: GmailDraftRecord): void {
-    this.db.prepare(`INSERT INTO gmail_drafts (account, draft_id, bot_id, run_id, raw_message, thread_id, preview_json, fingerprint, status, sent_message_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(account, draft_id) DO UPDATE SET run_id=excluded.run_id, raw_message=excluded.raw_message, thread_id=excluded.thread_id, preview_json=excluded.preview_json, fingerprint=excluded.fingerprint, updated_at=excluded.updated_at
-      WHERE gmail_drafts.bot_id=excluded.bot_id AND gmail_drafts.status='draft'`).run(draft.account, draft.draftId, draft.botId, draft.runId, draft.raw, draft.threadId, JSON.stringify(draft.preview), draft.fingerprint, draft.status, draft.sentMessageId, draft.updatedAt)
+    this.db.prepare(`INSERT INTO gmail_drafts (account, draft_id, bot_id, run_id, raw_message, thread_id, preview_json, fingerprint, status, sent_message_id, reply_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(account, draft_id) DO UPDATE SET run_id=excluded.run_id, raw_message=excluded.raw_message, thread_id=excluded.thread_id, preview_json=excluded.preview_json, fingerprint=excluded.fingerprint, reply_json=excluded.reply_json, updated_at=excluded.updated_at
+      WHERE gmail_drafts.bot_id=excluded.bot_id AND gmail_drafts.status='draft'`).run(draft.account, draft.draftId, draft.botId, draft.runId, draft.raw, draft.threadId, JSON.stringify(draft.preview), draft.fingerprint, draft.status, draft.sentMessageId, draft.reply ? JSON.stringify(draft.reply) : null, draft.updatedAt)
   }
 
   claimGmailSend(account: string, id: string, botId: string, fingerprint: string, now: number): void {
@@ -670,6 +722,60 @@ export class Database {
 
   finishGmailSend(account: string, id: string, botId: string, status: GmailDraftRecord['status'], sentMessageId: string | null, now: number): void {
     this.db.prepare(`UPDATE gmail_drafts SET status=?, sent_message_id=?, updated_at=? WHERE account=? AND draft_id=? AND bot_id=? AND status='sending'`).run(status, sentMessageId, now, account, id, botId)
+  }
+
+  listGmailRules(botId: string): GmailAutonomyRule[] {
+    if (!botId || !this.tableExists('gmail_autonomy_rules')) return []
+    return rows(this.db.prepare(`SELECT * FROM gmail_autonomy_rules WHERE bot_id = ? ORDER BY updated_at DESC LIMIT 20`).all(botId)).map(mapGmailRule)
+  }
+
+  getGmailRule(id: string, botId: string): GmailAutonomyRule | null {
+    const found = row(this.db.prepare(`SELECT * FROM gmail_autonomy_rules WHERE id = ? AND bot_id = ?`).get(id, botId))
+    return found ? mapGmailRule(found) : null
+  }
+
+  saveGmailRule(rule: GmailAutonomyRule): void {
+    const result = this.db.prepare(`INSERT INTO gmail_autonomy_rules (id, bot_id, account, enabled, revision, title, recipients_json, thread_ids_json, templates_json, excluded_recipients_json, excluded_phrases_json, daily_send_limit, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET account=excluded.account, enabled=excluded.enabled, revision=excluded.revision, title=excluded.title, recipients_json=excluded.recipients_json, thread_ids_json=excluded.thread_ids_json, templates_json=excluded.templates_json, excluded_recipients_json=excluded.excluded_recipients_json, excluded_phrases_json=excluded.excluded_phrases_json, daily_send_limit=excluded.daily_send_limit, updated_at=excluded.updated_at
+      WHERE gmail_autonomy_rules.bot_id = excluded.bot_id`).run(rule.id, rule.botId, rule.account, rule.enabled ? 1 : 0, rule.revision, rule.title, JSON.stringify(rule.recipients), JSON.stringify(rule.threadIds), JSON.stringify(rule.templates), JSON.stringify(rule.excludedRecipients), JSON.stringify(rule.excludedPhrases), rule.dailySendLimit, rule.updatedAt)
+    if (Number(row(result)?.changes) !== 1) throw new Error('That reply rule is not on this bot.')
+  }
+
+  pauseGmailRules(botId: string, now: number): number {
+    const result = this.db.prepare(`UPDATE gmail_autonomy_rules SET enabled = 0, revision = revision + 1, updated_at = ? WHERE bot_id = ?`).run(now, botId)
+    return Number(row(result)?.changes ?? 0)
+  }
+
+  gmailRuleFingerprint(botId: string): string {
+    return this.listGmailRules(botId).filter(rule => rule.enabled).map(rule => `${rule.id}:${rule.revision}:${rule.account}`).sort().join('|')
+  }
+
+  gmailRuleSendCount(ruleId: string, day: string): number {
+    const found = row(this.db.prepare(`SELECT count FROM gmail_autonomy_usage WHERE rule_id = ? AND day = ?`).get(ruleId, day))
+    return found ? num(found, 'count') : 0
+  }
+
+  reserveGmailRuleSend(ruleId: string, day: string, limit: number): boolean {
+    return this.transaction(() => {
+      this.db.prepare(`INSERT INTO gmail_autonomy_usage (rule_id, day, count) VALUES (?, ?, 0) ON CONFLICT(rule_id, day) DO NOTHING`).run(ruleId, day)
+      const result = this.db.prepare(`UPDATE gmail_autonomy_usage SET count = count + 1 WHERE rule_id = ? AND day = ? AND count < ?`).run(ruleId, day, limit)
+      return Number(row(result)?.changes) === 1
+    })
+  }
+
+  releaseGmailRuleSend(ruleId: string, day: string): void {
+    this.db.prepare(`UPDATE gmail_autonomy_usage SET count = MAX(count - 1, 0) WHERE rule_id = ? AND day = ?`).run(ruleId, day)
+  }
+
+  recordGmailSend(entry: GmailSendActivity & { id: string; botId: string; fingerprint: string }): void {
+    this.db.prepare(`INSERT INTO gmail_send_activity (id, bot_id, account, draft_id, rule_id, revision, decision, reason, outcome, message_id, summary, fingerprint, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(entry.id, entry.botId, entry.account, entry.draftId, entry.ruleId, entry.revision, entry.decision, entry.reason.slice(0, 500), entry.outcome, entry.messageId, entry.summary.slice(0, 180), entry.fingerprint, entry.createdAt)
+  }
+
+  listGmailSendActivity(botId: string, limit = 8): GmailSendActivity[] {
+    if (!botId || !this.tableExists('gmail_send_activity')) return []
+    return rows(this.db.prepare(`SELECT * FROM gmail_send_activity WHERE bot_id = ? ORDER BY created_at DESC LIMIT ?`).all(botId, limit)).map(mapGmailActivity)
   }
 
   listSchedules(botId?: string): ScheduleView[] {
@@ -2037,7 +2143,26 @@ export function usageDisclaimer(): string {
 }
 
 function mapGmailDraft(record: Row): GmailDraftRecord {
-  return { account: text(record, 'account'), draftId: text(record, 'draft_id'), botId: text(record, 'bot_id'), runId: text(record, 'run_id') || null, raw: text(record, 'raw_message'), threadId: text(record, 'thread_id') || null, preview: JSON.parse(text(record, 'preview_json')), fingerprint: text(record, 'fingerprint'), status: text(record, 'status') as GmailDraftRecord['status'], sentMessageId: text(record, 'sent_message_id') || null, updatedAt: num(record, 'updated_at') }
+  return { account: text(record, 'account'), draftId: text(record, 'draft_id'), botId: text(record, 'bot_id'), runId: text(record, 'run_id') || null, raw: text(record, 'raw_message'), threadId: text(record, 'thread_id') || null, preview: JSON.parse(text(record, 'preview_json')), fingerprint: text(record, 'fingerprint'), status: text(record, 'status') as GmailDraftRecord['status'], sentMessageId: text(record, 'sent_message_id') || null, reply: mapReplySource(text(record, 'reply_json')), updatedAt: num(record, 'updated_at') }
+}
+
+function mapReplySource(value: string): GmailReplySource | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as Partial<GmailReplySource>
+    if (typeof parsed.messageId !== 'string' || typeof parsed.threadId !== 'string' || !Array.isArray(parsed.participants) || !parsed.participants.every(item => typeof item === 'string') || typeof parsed.subject !== 'string' || typeof parsed.body !== 'string' || typeof parsed.complete !== 'boolean') return null
+    return { messageId: parsed.messageId, threadId: parsed.threadId, participants: parsed.participants, subject: parsed.subject, body: parsed.body, complete: parsed.complete }
+  } catch { return null }
+}
+
+function mapGmailRule(record: Row): GmailAutonomyRule {
+  return { id: text(record, 'id'), botId: text(record, 'bot_id'), account: text(record, 'account'), enabled: bool(record, 'enabled'), revision: num(record, 'revision'), title: text(record, 'title'), recipients: parseStrings(text(record, 'recipients_json')), threadIds: parseStrings(text(record, 'thread_ids_json')), templates: parseStrings(text(record, 'templates_json')), excludedRecipients: parseStrings(text(record, 'excluded_recipients_json')), excludedPhrases: parseStrings(text(record, 'excluded_phrases_json')), dailySendLimit: num(record, 'daily_send_limit'), updatedAt: num(record, 'updated_at') }
+}
+
+function mapGmailActivity(record: Row): GmailSendActivity {
+  const decision = text(record, 'decision')
+  const outcome = text(record, 'outcome')
+  return { id: text(record, 'id'), account: text(record, 'account'), draftId: text(record, 'draft_id'), ruleId: text(record, 'rule_id') || null, revision: record.revision == null ? null : num(record, 'revision'), decision: decision === 'allow' || decision === 'deny' ? decision : 'ask', reason: text(record, 'reason'), outcome: outcome === 'sent' || outcome === 'uncertain' || outcome === 'declined' ? outcome : 'not-sent', messageId: text(record, 'message_id') || null, summary: text(record, 'summary'), createdAt: num(record, 'created_at') }
 }
 
 function mapConversation(record: Row): Conversation {

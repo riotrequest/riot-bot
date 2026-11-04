@@ -19,6 +19,9 @@ import type {
   ConversationDetail,
   CredentialSaveResult,
   CredentialStatus,
+  GmailRuleDraftInput,
+  GmailRuleView,
+  GmailSendActivity,
   GmailStatus,
   Memory,
   MessagePage,
@@ -51,7 +54,8 @@ import { editTextFile, listFiles, readTextFile, searchFiles, undoFileEdit, write
 import { Gateway } from './gateway'
 import { getDiskSpace } from './disk-space'
 import { GmailRejectedError, GmailService } from './gmail'
-import { emailFingerprint, gmailId, previewGmailMessage, type GmailDraftInput } from './gmail-message'
+import { emailFingerprint, gmailId, previewGmailMessage, replySource, type GmailDraftInput, type GmailMessage } from './gmail-message'
+import { GMAIL_RULE_APPLIED, REPLY_RULE_LIMITS, decideGmailSend, describeGmailRule, directGmailAutonomy, draftFromRule, enablementProblems, financialCommitment, gmailRulePreview, normalizeReplyBody, parseGmailRuleInput, sameGmailRule, type GmailAutonomyRule, type GmailReplyContext, type GmailRuleDraft, type GmailSendDecision } from './gmail-autonomy'
 import { newId } from './ids'
 import { directLearningPreferences, learningChangeRequested, learningNote, LEARNING_INPUT_TOKENS, LEARNING_OUTPUT_TOKENS, LEARNING_PROMPT, LEARNING_TIMEOUT_MS, parseLearningReview, sameLearningText, type LearningPreferences } from './learning'
 import { nextOccurrence, scheduleClock, scheduleText, validateSchedule } from './schedules'
@@ -68,7 +72,7 @@ import { looksLikeSecret, publicErrorMessage, redact, RedactingStream } from './
 import { explicitSkillIntent, parseSkillMarkdown, skillRejection, skillToMarkdown, type SkillDraft } from './skills'
 import { cleanBotName, fallbackBotName, parseSetupReply, SETUP_PROMPT } from './slug'
 import { allocateWorkspace, defaultWorkspaceRoot, removeEmptyFolder, useExistingWorkspace } from './workspace'
-import { DEFAULT_SETTINGS, estimateCostUsd, estimateTokens, fitTokens, knownPricing, sanitizeSettings, dollarBudgetEnabled, type Settings } from './settings'
+import { DEFAULT_SETTINGS, estimateCostUsd, estimateTokens, fitTokens, knownPricing, localDay, sanitizeSettings, dollarBudgetEnabled, type Settings } from './settings'
 import { OsTerminal, type TerminalRunner } from './terminal'
 import { assertPublicHost, defaultLookup, fetchPublicUrl, validatePublicUrl } from './web'
 import { LoginVault, loginFromMessage } from './logins'
@@ -348,6 +352,16 @@ export class RiotApp {
   protected clearBotLogins(botId:string):void{this.logins.clear(botId)}
   protected publicText(text:string):string{return redact(text,this.credentials.secretValues())}
   protected prepareUserMessage(text:string,botId:string):string{
+    const autonomy=directGmailAutonomy(text)
+    if(autonomy?.action==='stop'){
+      this.db.pauseGmailRules(botId,this.now())
+      this.emit({type:'gmail-rules-changed'})
+      return `${this.publicText(text)}\n\n${GMAIL_RULE_APPLIED} Automatic Gmail replies are off for this bot. Future sends wait for review.`
+    }
+    if(autonomy?.action==='propose'){
+      const note=this.applyDirectGmailRule(botId,autonomy.draft,autonomy.problems)
+      return `${this.publicText(text)}\n\n${GMAIL_RULE_APPLIED} ${note}`
+    }
     const login=loginFromMessage(text)
     if(!login)return this.publicText(text)
     const saved=this.logins.save(botId,login)
@@ -1252,7 +1266,7 @@ export class RiotApp {
     const task = this.db.createTask(conversationId, run.id, body.slice(0, 240), now)
     this.runBotId = conversation.botId
     const controller = this.activateRun(run.id, conversation.botId)
-    this.turnNote = ''
+    this.turnNote = body.includes(GMAIL_RULE_APPLIED) ? 'Gmail reply rules were already updated from this user message. Do not propose, enable, or expand a rule. Confirm the result briefly.' : ''
     this.scheduledContext = referenceContext.slice(0, 13000)
     try {
       this.addTranscript(conversationId, run.id, 'user', body, { attachmentIds })
@@ -1288,7 +1302,7 @@ export class RiotApp {
   private async runCodex(conversationId: string, runId: string, taskId: string, signal: AbortSignal): Promise<void> {
     const botId = this.scopeBot(), settings = this.currentSettings(), bot = this.db.getBot(botId)!
     if (!settings.workspacePath) throw new ConfigError('Choose this bot’s workspace folder in Settings before using Codex.')
-    const signature = JSON.stringify([settings.model, settings.workspacePath, settings.workspaceEditing, settings.toolsEnabled, settings.gmailAccount, settings.gmailAccess, 'riot-tools-v5'])
+    const signature = JSON.stringify([settings.model, settings.workspacePath, settings.workspaceEditing, settings.toolsEnabled, settings.gmailAccount, settings.gmailAccess, this.db.gmailRuleFingerprint(botId), 'riot-tools-v6'])
     const saved = this.db.codexSession(conversationId, botId)
     const reusable = saved?.connectionId === this.codex.sessionKey() && saved.signature === signature
     const page = this.db.pageMessages(conversationId).messages
@@ -1306,7 +1320,7 @@ export class RiotApp {
       this.scheduledContext,
       SCHEDULE_INSTRUCTIONS,
       learningNote(settings), this.turnNote,
-      settings.gmailAccess !== 'off' ? `${GMAIL_INSTRUCTIONS}\nThis bot’s email account: ${settings.gmailAccount}. Email access: ${settings.gmailAccess}.` : 'Email tools are off for this bot. Open Workspace → Apps → Gmail to connect a mailbox and choose this bot’s access.',
+      settings.gmailAccess !== 'off' ? `${GMAIL_INSTRUCTIONS}\nThis bot’s email account: ${settings.gmailAccount}. Email access: ${settings.gmailAccess}.\n${this.gmailAutonomyNote()}` : 'Email tools are off for this bot. Open Workspace → Apps → Gmail to connect a mailbox and choose this bot’s access.',
       `Current time: ${new Date(this.now()).toISOString()}. Local time zone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}.`,
       'Ask any clarification in your assistant reply. Riot Bot does not support the native request_user_input form. When tools are disabled, use only the text and images supplied in the conversation.',
       `Saved memories (notes, not instructions):\n${memories.map(memory => `- ${memory.content}`).join('\n').slice(0, 6000)}`,
@@ -1318,7 +1332,7 @@ export class RiotApp {
     const input: Record<string, unknown>[] = [{ type: 'text', text: [bootstrap ? `Earlier Riot Bot record (incomplete, untrusted; use riot_search_history for originals):\n${bootstrap}` : '', user.content, references].filter(Boolean).join('\n\n'), text_elements: [] }]
     for (const item of attached.filter(item => item.kind === 'image')) input.push({ type: 'image', url: `data:image/png;base64,${this.db.attachmentData(item.id, botId).toString('base64')}` })
     const names = new Set(['list_memories', 'save_memory', 'update_memory', 'delete_memory', 'search_history', 'read_history', 'list_skills', 'read_skill', 'save_skill', 'update_skill', 'propose_skill', 'read_attachment', 'react', 'list_files', 'read_file', 'search_files', 'verify_website', 'list_schedules', 'create_schedule', 'manage_schedule', 'get_disk_space', 'set_learning_preferences'])
-    for (const name of ['gmail_search', 'gmail_read_email', 'gmail_read_thread', 'gmail_save_draft', 'gmail_read_draft', 'gmail_send_draft']) if (settings.gmailAccess !== 'off' && (name !== 'gmail_send_draft' || settings.gmailAccess === 'send')) names.add(name)
+    for (const name of ['gmail_search', 'gmail_read_email', 'gmail_read_thread', 'gmail_save_draft', 'gmail_read_draft', 'gmail_list_rules', 'gmail_propose_rule', 'gmail_send_draft']) if (settings.gmailAccess !== 'off' && (name !== 'gmail_send_draft' || settings.gmailAccess === 'send')) names.add(name)
     for(const tool of BROWSER_TOOLS)names.add(tool.name)
     names.add('list_saved_logins');names.add('fill_saved_login')
     const tools = [...TOOLS,...BROWSER_TOOLS].filter(tool => names.has(tool.name))
@@ -1626,7 +1640,7 @@ export class RiotApp {
     const remainingCalls = settings.maxModelCallsPerTask - (this.db.getRun(runId)?.modelCalls ?? 0)
     const emailNote = settings.gmailAccess !== 'off' && settings.toolsEnabled
       ? tools?.some(tool => tool.name.startsWith('gmail_'))
-        ? `${GMAIL_INSTRUCTIONS}\nEmail account: ${settings.gmailAccount}. Email access: ${settings.gmailAccess}.`
+        ? `${GMAIL_INSTRUCTIONS}\nEmail account: ${settings.gmailAccount}. Email access: ${settings.gmailAccess}.\n${this.gmailAutonomyNote()}`
         : `Gmail is enabled for this bot: ${settings.gmailAccount} (${settings.gmailAccess}). Use describe_tools with group email when mailbox work is needed. Do not ask the user to set up this connection again.`
       : ''
     const budgetNote = remainingCalls <= 4 ? `This task has ${Math.max(0, remainingCalls)} model calls remaining, including the final reply. Finish the requested deliverable and reserve a call for a short handoff with file links. Stop optional polishing and repeated checks. State any unfinished or unverified work honestly; do not claim checks that did not run.${remainingCalls === 1 ? ' This is the last available response: give the handoff now instead of requesting more tools.' : ''}` : ''
@@ -1984,6 +1998,15 @@ export class RiotApp {
           const draft = await this.emailDraft(str(args.id), signal)
           return JSON.stringify({ id: draft.draftId, status: draft.status, ...draft.preview, sentMessageId: draft.sentMessageId })
         }
+        case 'gmail_list_rules': {
+          const owner = this.scopeBot()
+          const owned = this.db.getSettings(owner)
+          const day = localDay(this.now())
+          const views = this.db.listGmailRules(owner).map(rule => this.toGmailRuleView(rule, owned, day, this.gmail.status().email))
+          return views.map(describeGmailRule).join('\n\n') || 'No reply rules are saved for this bot. Sending waits for review. This tool cannot turn a rule on.'
+        }
+        case 'gmail_propose_rule':
+          return this.proposeGmailRule(conversationId, runId, taskId, args, signal, done)
         case 'gmail_send_draft':
           return this.sendEmailDraft(conversationId, runId, taskId, str(args.id), signal, done)
         case 'set_learning_preferences': {
@@ -2152,7 +2175,7 @@ export class RiotApp {
 
   private observePublicLinks(name:string,result:string):void{
     if(['fetch_url','web_search','read_page','open_url'].includes(name))for(const url of publicLinks(result))this.observedUrls.add(url)
-    else if(['read_file','search_files','read_attachment','read_history','search_history','list_memories','read_skill','gmail_search','gmail_read_email','gmail_read_thread','gmail_read_draft','run_terminal'].includes(name))this.privateSourceRead=true
+    else if(['read_file','search_files','read_attachment','read_history','search_history','list_memories','read_skill','gmail_search','gmail_read_email','gmail_read_thread','gmail_read_draft','gmail_list_rules','gmail_propose_rule','run_terminal'].includes(name))this.privateSourceRead=true
   }
 
   private async authorizeUrl(conversationId:string,runId:string,taskId:string,value:string,signal:AbortSignal,done:string[]):Promise<void>{
@@ -2265,7 +2288,7 @@ export class RiotApp {
 
   private emailAccount(sending = false): string {
     const settings = this.currentSettings()
-    if (!settings.toolsEnabled || settings.gmailAccess === 'off' || sending && settings.gmailAccess !== 'send') throw new ConfigError(sending ? 'Sending is off for this bot. Enable “Read, draft & ask before sending” in Workspace → Apps → Gmail.' : 'Email is off for this bot. Choose Gmail access in Workspace → Apps → Gmail.')
+    if (!settings.toolsEnabled || settings.gmailAccess === 'off' || sending && settings.gmailAccess !== 'send') throw new ConfigError(sending ? 'Sending is off for this bot. Choose “Read, draft & send” in Workspace → Apps → Gmail. Reply rules cannot send until that access is on.' : 'Email is off for this bot. Choose Gmail access in Workspace → Apps → Gmail.')
     this.gmail.assertAccount(settings.gmailAccount)
     return settings.gmailAccount
   }
@@ -2285,7 +2308,7 @@ export class RiotApp {
     this.assertRunning(runId, signal)
     this.emailAccount()
     const saved = await this.gmail.saveDraft(account, input, signal, prepared)
-    this.db.saveGmailDraft({ account, draftId: saved.id, botId, runId, raw: saved.raw, threadId: saved.threadId ?? null, preview: saved.preview, fingerprint: saved.fingerprint, status: 'draft', sentMessageId: null, updatedAt: this.now() })
+    this.db.saveGmailDraft({ account, draftId: saved.id, botId, runId, raw: saved.raw, threadId: saved.threadId ?? null, preview: saved.preview, fingerprint: saved.fingerprint, status: 'draft', sentMessageId: null, reply: saved.reply, updatedAt: this.now() })
     return JSON.stringify({ id: saved.id, status: 'draft', ...saved.preview, note: 'Saved in Gmail Drafts. This email has not been sent.' })
   }
 
@@ -2300,38 +2323,258 @@ export class RiotApp {
     return draft
   }
 
+  listGmailRules(): { rules: GmailRuleView[]; activity: GmailSendActivity[] } {
+    const botId = this.viewBotId()
+    const settings = this.db.getSettings(botId)
+    const day = localDay(this.now())
+    const connected = this.gmail.status().email
+    return { rules: this.db.listGmailRules(botId).map(rule => this.toGmailRuleView(rule, settings, day, connected)), activity: this.db.listGmailSendActivity(botId) }
+  }
+
+  saveGmailRule(input: GmailRuleDraftInput): GmailRuleView {
+    const botId = this.viewBotId()
+    const settings = this.db.getSettings(botId)
+    const parsed = parseGmailRuleInput({ ...input, account: settings.gmailAccount })
+    const problems = [...new Set([...parsed.problems, ...enablementProblems(parsed.draft)])]
+    if (problems.length) {
+      if (input.id && !input.enabled) {
+        const existing = this.db.getGmailRule(input.id, botId)
+        if (existing?.enabled) this.setGmailRuleEnabled(existing.id, false)
+      }
+      throw new ConfigError(problems[0])
+    }
+    if (input.enabled) this.assertRuleCanSend(botId, parsed.draft)
+    return this.storeGmailRule(botId, parsed.draft, input.enabled, input.id)
+  }
+
+  setGmailRuleEnabled(id: string, enabled: boolean): GmailRuleView {
+    const botId = this.viewBotId()
+    const rule = this.db.getGmailRule(id, botId)
+    if (!rule) throw new ConfigError('That reply rule is not on this bot.')
+    const draft = draftFromRule(rule)
+    if (enabled) {
+      const problems = enablementProblems(draft)
+      if (problems.length) throw new ConfigError(problems[0])
+      this.assertRuleCanSend(botId, draft)
+    }
+    const next = { ...rule, enabled, revision: rule.revision + 1, updatedAt: this.now() }
+    this.db.saveGmailRule(next)
+    this.emit({ type: 'gmail-rules-changed' })
+    return this.toGmailRuleView(next, this.db.getSettings(botId), localDay(this.now()), this.gmail.status().email)
+  }
+
+  private gmailAutonomyNote(): string {
+    const settings = this.currentSettings()
+    const rules = this.db.listGmailRules(this.scopeBot()).filter(rule => rule.enabled && rule.account === settings.gmailAccount)
+    if (!rules.length) return 'No reply rule is on. gmail_send_draft waits for review.'
+    return `Reply rules on for this bot only: ${rules.map(rule => `${rule.title} (${rule.recipients.join(', ') || 'no recipients'}, ${rule.dailySendLimit}/day)`).join('; ')}. Exact text is available from gmail_list_rules. Riot enforces these rules; you cannot widen them.`
+  }
+
+  private async gmailSendDecision(botId: string, account: string, draft: GmailDraftRecord, signal: AbortSignal): Promise<GmailSendDecision> {
+    const settings = this.db.getSettings(botId)
+    const day = localDay(this.now())
+    const rules = this.db.listGmailRules(botId).map(rule => ({ ...rule, sendsToday: this.db.gmailRuleSendCount(rule.id, day) }))
+    const reply = await this.verifiedReply(account, draft, signal)
+    return decideGmailSend({ botId, account, gmailAccess: settings.gmailAccess, toolsEnabled: settings.toolsEnabled, preview: draft.preview, threadId: draft.threadId, hasAttachments: /content-disposition:\s*attachment/i.test(draft.raw), reply }, rules)
+  }
+
+  /** Re-read the original message after token refresh. A mismatch or unreadable source cannot authorize a send. */
+  private async verifiedReply(account: string, draft: GmailDraftRecord, signal: AbortSignal): Promise<GmailReplyContext | null> {
+    if (!draft.threadId) return null
+    const saved = draft.reply
+    if (!saved?.complete || saved.threadId !== draft.threadId || saved.participants.length === 0) return { verified: false, participants: [], subject: '', body: '' }
+    try {
+      const message = await this.gmail.request(account, `/messages/${gmailId(saved.messageId)}?format=full`, signal) as GmailMessage
+      const live = replySource(account, message)
+      const same = live.complete
+        && live.messageId === saved.messageId
+        && live.threadId === saved.threadId
+        && live.subject === saved.subject
+        && normalizeReplyBody(live.body) === normalizeReplyBody(saved.body)
+        && [...live.participants].sort().join('\n') === [...saved.participants].sort().join('\n')
+      if (!same) return { verified: false, participants: [], subject: '', body: '' }
+      return { verified: true, participants: live.participants, subject: live.subject, body: live.body }
+    } catch (error) {
+      if (error instanceof StopError || error instanceof PauseError || error instanceof LimitError) throw error
+      return { verified: false, participants: [], subject: '', body: '' }
+    }
+  }
+
+  private recordGmailActivity(botId: string, account: string, draft: GmailDraftRecord, summary: string, decision: GmailSendDecision, outcome: GmailSendActivity['outcome'], messageId: string | null = null): void {
+    this.db.recordGmailSend({ id: newId(), botId, account, draftId: draft.draftId, ruleId: decision.ruleId, revision: decision.revision, decision: decision.action, reason: decision.reason, outcome, messageId, summary, fingerprint: draft.fingerprint, createdAt: this.now() })
+  }
+
+  private toGmailRuleView(rule: GmailAutonomyRule, settings: Settings, day: string, connected: string | null): GmailRuleView {
+    const sendsToday = this.db.gmailRuleSendCount(rule.id, day)
+    const blockedReason = !rule.enabled ? '' : settings.gmailAccess !== 'send' ? 'Sending is off for this bot, so this rule cannot send.' : rule.account !== settings.gmailAccount ? 'This rule is for a different mailbox, so it cannot send.' : connected !== rule.account ? 'That mailbox is not connected, so this rule cannot send.' : !settings.toolsEnabled ? 'Tools are off, so this rule cannot send.' : ''
+    return { id: rule.id, account: rule.account, enabled: rule.enabled, revision: rule.revision, title: rule.title, recipients: rule.recipients, threadIds: rule.threadIds, templates: rule.templates, excludedRecipients: rule.excludedRecipients, excludedPhrases: rule.excludedPhrases, dailySendLimit: rule.dailySendLimit, sendsToday, appliesNow: rule.enabled && !blockedReason, blockedReason, updatedAt: rule.updatedAt }
+  }
+
+  private keepsPartialRule(problems: string[], draft: GmailRuleDraft): boolean {
+    if (problems.some(problem => /will not drop/i.test(problem))) return false
+    if (draft.templates.some(financialCommitment)) return false
+    return draft.recipients.length > 0 || draft.templates.length > 0
+  }
+
+  private assertRuleCanSend(botId: string, draft: GmailRuleDraft): void {
+    const settings = this.db.getSettings(botId)
+    if (!settings.gmailAccount || draft.account !== settings.gmailAccount) throw new ConfigError('Connect this bot to that mailbox before turning a reply rule on.')
+    if (settings.gmailAccess !== 'send') throw new ConfigError('Choose “Read, draft & send” before turning a reply rule on. The rule was not turned on.')
+    this.gmail.assertAccount(draft.account)
+  }
+
+  private storeGmailRule(botId: string, draft: GmailRuleDraft, enabled: boolean, id?: string): GmailRuleView {
+    const existing = id ? this.db.getGmailRule(id, botId) : null
+    if (id && !existing) throw new ConfigError('That reply rule is not on this bot.')
+    if (!existing && this.db.listGmailRules(botId).length >= 20) throw new ConfigError('This bot already has 20 reply rules. Edit one instead of adding another.')
+    const rule: GmailAutonomyRule = { id: existing?.id ?? newId(), botId, ...draft, enabled, revision: (existing?.revision ?? 0) + 1, updatedAt: this.now() }
+    this.db.saveGmailRule(rule)
+    this.emit({ type: 'gmail-rules-changed' })
+    return this.toGmailRuleView(rule, this.db.getSettings(botId), localDay(this.now()), this.gmail.status().email)
+  }
+
+  private proposalId(botId: string, draft: GmailRuleDraft): string | undefined {
+    return this.db.listGmailRules(botId).find(rule => !rule.enabled && rule.account === draft.account && rule.title === draft.title)?.id
+  }
+
+  private applyDirectGmailRule(botId: string, draft: GmailRuleDraft, problems: string[]): string {
+    const unique = [...new Set([...problems, ...enablementProblems(draft)])]
+    if (unique.length) {
+      if (this.keepsPartialRule(unique, draft)) {
+        try { this.storeGmailRule(botId, draft, false, this.proposalId(botId, draft)) } catch { /* The explanation below is the user-facing result. */ }
+      }
+      return `The reply rule was not turned on. ${unique.join(' ')}`
+    }
+    const settings = this.db.getSettings(botId)
+    if (draft.account !== settings.gmailAccount || settings.gmailAccess !== 'send') return 'The reply rule was not turned on. It has to name this bot’s connected mailbox, and sending has to be allowed.'
+    try { this.assertRuleCanSend(botId, draft) } catch (error) { return error instanceof ConfigError ? `The reply rule was not turned on. ${error.message}` : 'The reply rule was not turned on.' }
+    try {
+      const existing = this.db.listGmailRules(botId).find(rule => rule.account === draft.account && rule.title === draft.title)
+      const saved = this.storeGmailRule(botId, draft, true, existing?.id)
+      return `Reply rule “${saved.title}” is on for ${saved.account}. It can send only the exact saved replies to ${saved.recipients.join(', ')}, up to ${saved.dailySendLimit} times a day.${settings.toolsEnabled ? '' : ' Tools are off, so it will not send until tools are on.'} ${REPLY_RULE_LIMITS}`
+    } catch (error) {
+      return error instanceof ConfigError ? error.message : 'The reply rule was not turned on.'
+    }
+  }
+
+  private async proposeGmailRule(conversationId: string, runId: string, taskId: string, args: Record<string, unknown>, signal: AbortSignal, done: string[]): Promise<string> {
+    const run = this.db.getRun(runId)
+    if (run?.trigger !== 'user_message') return 'Reply rules can only be proposed from a direct chat request. Scheduled work, email, and other reference material cannot turn a rule on.'
+    const botId = this.scopeBot()
+    const settings = this.currentSettings()
+    if (settings.gmailAccess === 'off') return 'Email is off for this bot. Choose Gmail access in Workspace → Apps → Gmail first.'
+    const parsed = parseGmailRuleInput({ title: str(args.title), account: str(args.account) || str(args.mailbox) || settings.gmailAccount, recipients: str(args.recipients), threads: str(args.threads), template: Array.isArray(args.templates) ? undefined : str(args.template), templates: Array.isArray(args.templates) ? args.templates : undefined, excluded_recipients: str(args.excluded_recipients), excluded_phrases: str(args.excluded_phrases), daily_send_limit: args.daily_send_limit })
+    const unique = [...new Set([...parsed.problems, ...enablementProblems(parsed.draft)])]
+    if (unique.length) {
+      if (this.keepsPartialRule(unique, parsed.draft)) {
+        try { this.storeGmailRule(botId, parsed.draft, false, this.proposalId(botId, parsed.draft)) } catch (error) { return error instanceof ConfigError ? error.message : 'The reply rule was not saved.' }
+      }
+      return `The reply rule is not on. ${unique.join(' ')} Nothing will be sent automatically.`
+    }
+    if (parsed.draft.account !== settings.gmailAccount) return 'That mailbox is not the one connected for this bot. The rule was not turned on.'
+    if (settings.gmailAccess !== 'send') {
+      try { this.storeGmailRule(botId, parsed.draft, false, this.proposalId(botId, parsed.draft)) } catch (error) { return error instanceof ConfigError ? error.message : 'The reply rule was not saved.' }
+      return 'Choose “Read, draft & send” before this reply rule can be turned on. It was saved off.'
+    }
+    try { this.assertRuleCanSend(botId, parsed.draft) } catch (error) { return error instanceof ConfigError ? `${error.message} The rule was not turned on.` : 'The reply rule was not turned on.' }
+    let saved: GmailRuleView
+    try { saved = this.storeGmailRule(botId, parsed.draft, false, this.proposalId(botId, parsed.draft)) } catch (error) { return error instanceof ConfigError ? error.message : 'The reply rule was not saved.' }
+    const remaining = settings.maxTaskDurationMs - (this.now() - run.startedAt)
+    if (remaining <= 0) throw new LimitError('This task ran out of time before the reply rule could be confirmed. It was not turned on.')
+    const preview = gmailRulePreview({ id: saved.id, revision: saved.revision, ...parsed.draft })
+    const command = `Gmail reply rule: ${JSON.stringify(preview)}`
+    const approval = this.db.createApproval({ runId, command, cwd: 'riot:gmail-rule', timeoutMs: remaining, now: this.now() })
+    this.setSteps(conversationId, runId, taskId, done, ['Waiting for you to review the reply rule…'])
+    this.emit({ type: 'approval', approval: { id: approval.id, kind: 'gmail-rule', title: 'Turn on this reply rule?', command, cwd: '', timeoutMs: remaining, warning: 'This lets this bot send those exact replies without asking again. It does not allow other emails.', gmailRule: preview } })
+    const choice = await this.waitForApproval(approval.id, signal, remaining)
+    this.emit({ type: 'approval', approval: null })
+    this.assertRunning(runId, signal)
+    if (choice === 'timeout') throw new LimitError('Reply rule review timed out. It was not turned on.')
+    if (choice === 'stopped') throw new StopError('Stopped. The reply rule was not turned on.')
+    if (choice !== 'approved' || this.db.getApproval(approval.id)?.command !== command) return 'The reply rule was not turned on. You can edit it in Workspace → Apps → Gmail.'
+    const current = this.db.getGmailRule(saved.id, botId)
+    if (current?.enabled && sameGmailRule(current, parsed.draft)) return `“${current.title}” is already on for ${current.account}.`
+    if (!current || current.revision !== saved.revision) return 'The reply rule changed before confirmation, so this preview was not turned on.'
+    try { this.assertRuleCanSend(botId, parsed.draft) } catch (error) { return error instanceof ConfigError ? error.message : 'The reply rule was not turned on.' }
+    const enabled = this.storeGmailRule(botId, parsed.draft, true, current.id)
+    return `Turned on “${enabled.title}” for ${enabled.account}. It can send only the exact replies you just reviewed, up to ${enabled.dailySendLimit} times a day. ${REPLY_RULE_LIMITS}`
+  }
+
   private async sendEmailDraft(conversationId: string, runId: string, taskId: string, id: string, signal: AbortSignal, done: string[]): Promise<string> {
     const account = this.emailAccount(true), botId = this.scopeBot()
     const draft = await this.emailDraft(id, signal)
     if (draft.status === 'sent') return JSON.stringify({ status: 'sent', id, messageId: draft.sentMessageId, note: 'Gmail already confirmed this send. It was not sent again.' })
     if (draft.status !== 'draft') throw new PauseError('The previous send result is unconfirmed. Check Gmail’s Sent folder before sending again. Riot did not retry it.')
+    const summary = `To ${draft.preview.to.join(', ') || 'nobody'} — ${draft.preview.subject}`.slice(0, 180)
+    const policy = await this.gmailSendDecision(botId, account, draft, signal)
     const remaining = this.currentSettings().maxTaskDurationMs - (this.now() - this.db.getRun(runId)!.startedAt)
-    if (remaining <= 0) throw new LimitError('This task ran out of time before the email could be reviewed. The draft is still in Gmail.')
-    const command = `Gmail send: ${JSON.stringify({ id, preview: draft.preview, fingerprint: draft.fingerprint })}`
-    const approval = this.db.createApproval({ runId, command, cwd: 'riot:gmail', timeoutMs: remaining, now: this.now() })
-    this.setSteps(conversationId, runId, taskId, done, ['Waiting for you to review the email…'])
-    this.emit({ type: 'approval', approval: { id: approval.id, kind: 'email', title: 'Send this email?', command, cwd: '', timeoutMs: remaining, warning: 'This sends the email from your connected Gmail account.', email: draft.preview } })
-    const decision = await this.waitForApproval(approval.id, signal, remaining)
-    this.emit({ type: 'approval', approval: null })
-    this.assertRunning(runId, signal)
-    if (decision === 'timeout') throw new LimitError('Email review timed out. The draft was not sent by Riot.')
-    if (decision !== 'approved' || this.db.getApproval(approval.id)?.command !== command) return 'Email was not sent. The draft is still in Gmail.'
+    if (remaining <= 0) throw new LimitError('This task ran out of time before the email could be sent. The draft is still in Gmail.')
+    if (policy.action === 'deny') {
+      this.recordGmailActivity(botId, account, draft, summary, policy, 'not-sent')
+      throw new PauseError(`${policy.reason} The draft was not sent.`)
+    }
+    let authority: { kind: 'review'; approvalId: string; command: string } | { kind: 'rule'; ruleId: string; revision: number }
+    if (policy.action === 'ask') {
+      const command = `Gmail send: ${JSON.stringify({ id, preview: draft.preview, fingerprint: draft.fingerprint })}`
+      const approval = this.db.createApproval({ runId, command, cwd: 'riot:gmail', timeoutMs: remaining, now: this.now() })
+      this.setSteps(conversationId, runId, taskId, done, ['Waiting for you to review the email…'])
+      this.emit({ type: 'approval', approval: { id: approval.id, kind: 'email', title: 'Send this email?', command, cwd: '', timeoutMs: remaining, warning: 'This sends the email from your connected Gmail account.', email: draft.preview } })
+      const choice = await this.waitForApproval(approval.id, signal, remaining)
+      this.emit({ type: 'approval', approval: null })
+      this.assertRunning(runId, signal)
+      if (choice === 'timeout') {
+        this.recordGmailActivity(botId, account, draft, summary, policy, 'not-sent')
+        throw new LimitError('Email review timed out. The draft was not sent by Riot.')
+      }
+      if (choice !== 'approved' || this.db.getApproval(approval.id)?.command !== command) {
+        this.recordGmailActivity(botId, account, draft, summary, policy, 'declined')
+        return 'Email was not sent. The draft is still in Gmail.'
+      }
+      authority = { kind: 'review', approvalId: approval.id, command }
+    } else {
+      if (!policy.ruleId || policy.revision == null) throw new PauseError('The reply rule could not be confirmed. The draft was not sent.')
+      authority = { kind: 'rule', ruleId: policy.ruleId, revision: policy.revision }
+      this.setSteps(conversationId, runId, taskId, done, ['Sending a saved reply…'])
+    }
     const checked = await this.emailDraft(id, signal)
-    if (checked.fingerprint !== draft.fingerprint || checked.status !== 'draft') throw new PauseError('This draft changed while waiting for review. It was not sent.')
+    if (checked.fingerprint !== draft.fingerprint || checked.status !== 'draft') throw new PauseError('This draft changed while it was being checked. It was not sent.')
     let claimed = false
+    let reservedRule: string | null = null
+    let confirmed: string | null = null
+    const day = localDay(this.now())
     try {
-      const sent = await this.gmail.request(account, '/drafts/send', signal, { method: 'POST', body: JSON.stringify({ id, message: { raw: draft.raw, ...(draft.threadId ? { threadId: draft.threadId } : {}) } }) }, () => {
+      const sent = await this.gmail.request(account, '/drafts/send', signal, { method: 'POST', body: JSON.stringify({ id, message: { raw: draft.raw, ...(draft.threadId ? { threadId: draft.threadId } : {}) } }) }, async () => {
         this.assertRunning(runId, signal)
         if (this.emailAccount(true) !== account) throw new ConfigError('The Gmail account changed. Review the email again.')
+        const current = this.db.getGmailDraft(account, id, botId)
+        if (!current || current.fingerprint !== draft.fingerprint || current.status !== 'draft') throw new PauseError('This draft changed before it was sent.')
+        if (authority.kind === 'rule') {
+          const again = await this.gmailSendDecision(botId, account, current, signal)
+          if (again.action !== 'allow' || again.ruleId !== authority.ruleId || again.revision !== authority.revision) throw new PauseError(again.revision !== authority.revision ? 'This reply rule changed before sending. The draft was not sent.' : `${again.reason} The draft was not sent.`)
+          if (!this.db.reserveGmailRuleSend(authority.ruleId, day, again.limit ?? 0)) throw new PauseError('This reply rule reached its daily send limit. The draft was not sent.')
+          reservedRule = authority.ruleId
+        } else {
+          const stored = this.db.getApproval(authority.approvalId)
+          if (!stored || stored.status !== 'approved' || stored.command !== authority.command) throw new PauseError('Email approval is no longer valid. The draft was not sent.')
+        }
         this.db.claimGmailSend(account, id, botId, draft.fingerprint, this.now())
         claimed = true
       })
       const messageId = gmailId(sent.id)
       this.db.finishGmailSend(account, id, botId, 'sent', messageId, this.now())
-      return JSON.stringify({ status: 'sent', id, messageId, account, to: draft.preview.to, subject: draft.preview.subject, note: 'Gmail confirmed the send. Do not send this draft again.' })
+      const note = authority.kind === 'rule' ? `Gmail confirmed this reply. It matched a reply rule you turned on, so Riot did not ask again. ${REPLY_RULE_LIMITS}` : 'Gmail confirmed the send. Do not send this draft again.'
+      confirmed = messageId
+      this.recordGmailActivity(botId, account, draft, summary, policy, 'sent', messageId)
+      return JSON.stringify({ status: 'sent', id, messageId, account, to: draft.preview.to, subject: draft.preview.subject, automatic: authority.kind === 'rule', note })
     } catch (error) {
-      if (claimed) this.db.finishGmailSend(account, id, botId, error instanceof GmailRejectedError ? 'draft' : 'uncertain', null, this.now())
-      if (claimed && !(error instanceof GmailRejectedError)) throw new PauseError('Gmail did not confirm whether this email was sent. Check Sent in Gmail before trying again. Riot will not automatically resend it.')
+      if (confirmed) return JSON.stringify({ status: 'sent', id, messageId: confirmed, account, to: draft.preview.to, subject: draft.preview.subject, automatic: authority.kind === 'rule', note: 'Gmail confirmed the send. Do not send this draft again.' })
+      if (reservedRule && (!claimed || error instanceof GmailRejectedError)) this.db.releaseGmailRuleSend(reservedRule, day)
+      if (claimed) {
+        const rejected = error instanceof GmailRejectedError
+        this.db.finishGmailSend(account, id, botId, rejected ? 'draft' : 'uncertain', null, this.now())
+        this.recordGmailActivity(botId, account, draft, summary, policy, rejected ? 'not-sent' : 'uncertain')
+        if (!rejected) throw new PauseError('Gmail did not confirm whether this email was sent. Check Sent in Gmail before trying again. Riot will not automatically resend it.')
+      } else this.recordGmailActivity(botId, account, draft, summary, policy, 'not-sent')
       throw error
     }
   }
@@ -2644,6 +2887,13 @@ export class RiotApp {
     if (!approval) return null
     const origin=this.siteApprovals.get(approval.id)
     if(origin)return {id:approval.id,kind:'site',title:'Allow this website?',command:approval.command,cwd:origin,timeoutMs:approval.timeoutMs,siteOrigin:origin.startsWith('https:')?origin:undefined,warning:'Allow this bot to share information, fill forms, and change content on this website. Remember access to avoid repeated prompts. Remove it in Bot settings → Files & tools.'}
+    if (approval.cwd === 'riot:gmail-rule' && approval.command.startsWith('Gmail reply rule: ')) {
+      try {
+        const gmailRule = JSON.parse(approval.command.slice('Gmail reply rule: '.length))
+        if (!gmailRule || typeof gmailRule !== 'object' || typeof gmailRule.title !== 'string' || typeof gmailRule.account !== 'string') return null
+        return { id: approval.id, kind: 'gmail-rule', title: 'Turn on this reply rule?', command: approval.command, cwd: '', timeoutMs: approval.timeoutMs, warning: 'This lets this bot send those exact replies without asking again. It does not allow other emails.', gmailRule }
+      } catch { return null }
+    }
     if (approval.cwd === 'riot:gmail' && approval.command.startsWith('Gmail send: ')) {
       try {
         const value = JSON.parse(approval.command.slice('Gmail send: '.length))
@@ -2791,6 +3041,9 @@ function parseArgs(call: ToolCall): Record<string, unknown> {
   const args = parsed as Record<string, unknown>
   const properties = definition.parameters.properties as Record<string, { type: string; enum?: unknown[] }>
   const required = definition.parameters.required as string[]
+  if (call.name === 'gmail_send_draft' || call.name === 'gmail_propose_rule') {
+    for (const key of Object.keys(args)) if (!Object.hasOwn(properties, key)) delete args[key]
+  }
   if (required.some((key) => !Object.hasOwn(args, key))) return invalid(`Missing required fields: ${required.filter(key => !Object.hasOwn(args, key)).join(', ')}.`)
   for (const [key, value] of Object.entries(args)) {
     const rule = Object.hasOwn(properties, key) ? properties[key] : undefined

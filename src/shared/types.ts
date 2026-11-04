@@ -181,13 +181,14 @@ export interface Memory {
 
 export interface ApprovalView {
   id: string
-  kind: 'terminal' | 'browser' | 'codex' | 'email' | 'site'
+  kind: 'terminal' | 'browser' | 'codex' | 'email' | 'site' | 'gmail-rule'
   title: string
   command: string
   cwd: string
   timeoutMs: number
   warning: string
   email?: EmailPreview
+  gmailRule?: GmailRulePreview
   siteOrigin?: string
 }
 
@@ -207,6 +208,64 @@ export interface EmailPreview {
   bcc: string[]
   subject: string
   body: string
+}
+
+export interface GmailRulePreview {
+  id: string
+  revision: number
+  title: string
+  account: string
+  recipients: string[]
+  threadIds: string[]
+  templates: string[]
+  excludedRecipients: string[]
+  excludedPhrases: string[]
+  dailySendLimit: number
+  limits: string
+}
+
+export interface GmailRuleView {
+  id: string
+  account: string
+  enabled: boolean
+  revision: number
+  title: string
+  recipients: string[]
+  threadIds: string[]
+  templates: string[]
+  excludedRecipients: string[]
+  excludedPhrases: string[]
+  dailySendLimit: number
+  sendsToday: number
+  appliesNow: boolean
+  blockedReason: string
+  updatedAt: number
+}
+
+export interface GmailSendActivity {
+  id: string
+  account: string
+  draftId: string
+  ruleId: string | null
+  revision: number | null
+  decision: 'allow' | 'ask' | 'deny'
+  reason: string
+  outcome: 'sent' | 'uncertain' | 'declined' | 'not-sent'
+  messageId: string | null
+  summary: string
+  createdAt: number
+}
+
+export interface GmailRuleDraftInput {
+  id?: string
+  title: string
+  recipients: string[]
+  threadIds: string[]
+  templates: string[]
+  excludedRecipients: string[]
+  excludedPhrases: string[]
+  dailySendLimit: number
+  enabled: boolean
 }
 
 export interface ActivityTool {
@@ -482,6 +541,7 @@ export interface BotCreateResult {
 
 export type AppEvent =
   | { type: 'gmail-status'; status: GmailStatus }
+  | { type: 'gmail-rules-changed' }
   | { type: 'schedules-changed' }
   | { type: 'reminder-fired'; schedule: ScheduleView }
   | { type: 'open-schedule'; botId: string }
@@ -507,6 +567,9 @@ export interface RiotBridge {
   connectGmail(): Promise<GmailStatus>
   cancelGmailLogin(): Promise<GmailStatus>
   disconnectGmail(): Promise<GmailStatus>
+  listGmailRules(): Promise<{ rules: GmailRuleView[]; activity: GmailSendActivity[] }>
+  saveGmailRule(input: GmailRuleDraftInput): Promise<GmailRuleView>
+  setGmailRuleEnabled(id: string, enabled: boolean): Promise<GmailRuleView>
   getCodexStatus(): Promise<CodexStatus>
   connectCodex(): Promise<CodexStatus>
   cancelCodexLogin(): Promise<CodexStatus>

@@ -109,7 +109,7 @@ export function selectToolGroups(text: string, browserOpen: boolean, extra: Iter
   if (enabled.has('terminal') || /\b(terminal|command|shell|powershell|npm|git)\b/.test(hay)) groups.push('terminal')
   if (enabled.has('browser') || browserOpen || /\b(browser|click|tab|website|web page|open the|open a|open this|logins?|log[ -]in(?:to)?|sign[ -]in(?:to)?|saved credentials)\b/.test(hay)) groups.push('browser')
   if (enabled.has('schedules') || /\b(remind|reminder|schedule|scheduled|routine|recurring|every|each|daily|weekly|weekdays|tomorrow|tonight)\b/.test(hay)) groups.push('schedules')
-  if (enabled.has('email') || /\b(email|emails|e-mail|gmail|inbox|mailbox|recipient|unread)\b/.test(hay)) groups.push('email')
+  if (enabled.has('email') || /\b(email|emails|e-mail|gmail|inbox|mailbox|recipient|unread)\b/.test(hay) || (/\brepl(?:y|ies)\b/.test(hay) && /\b(automatic(?:ally)?|yourself|on its own|without asking|rule)\b/.test(hay))) groups.push('email')
   return groups
 }
 

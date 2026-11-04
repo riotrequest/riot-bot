@@ -18,7 +18,8 @@ export interface GmailMessage {
   payload?: MailPayload
 }
 export interface GmailDraftInput { id?: string; to?: string; cc?: string; bcc?: string; subject?: string; body: string; replyMessageId?: string }
-export interface PreparedGmailDraft { preview: EmailPreview; raw: string; threadId?: string; fingerprint: string }
+export interface GmailReplySource { messageId: string; threadId: string; participants: string[]; subject: string; body: string; complete: boolean }
+export interface PreparedGmailDraft { preview: EmailPreview; raw: string; threadId?: string; fingerprint: string; reply: GmailReplySource | null }
 
 export function gmailId(value: string): string {
   if (!/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new ConfigError('Choose a valid Gmail message or draft ID from the email tools.')
@@ -147,5 +148,19 @@ export function prepareGmailDraft(account: string, input: GmailDraftInput, reply
     headers.push(`In-Reply-To: ${parent}`, `References: ${[...references, parent].join('\r\n ')}`)
   }
   const encodedBody = Buffer.from(preview.body.replace(/\n/g, '\r\n')).toString('base64').match(/.{1,76}/g)?.join('\r\n') ?? ''
-  return { preview, raw: Buffer.from(`${headers.join('\r\n')}\r\n\r\n${encodedBody}\r\n`).toString('base64url'), ...(reply ? { threadId: gmailId(reply.threadId) } : {}), fingerprint: emailFingerprint(preview) }
+  return { preview, raw: Buffer.from(`${headers.join('\r\n')}\r\n\r\n${encodedBody}\r\n`).toString('base64url'), ...(reply ? { threadId: gmailId(reply.threadId) } : {}), reply: reply ? replySource(from, reply) : null, fingerprint: emailFingerprint(preview) }
+}
+
+/** Counterparties and text bound to a reply. Attachments and clipped text are incomplete. */
+export function replySource(account: string, message: GmailMessage): GmailReplySource {
+  const mailbox = mailAddresses(account)[0]
+  const content = mailContent(message)
+  const participants = new Set<string>()
+  for (const name of ['From', 'Reply-To', 'To', 'Cc']) {
+    const found = mailHeader(message, name).match(/[A-Za-z0-9.!#$%&'*+\-/=?^_`{|}~]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}/g) ?? []
+    for (const address of found) {
+      try { for (const item of mailAddresses(address)) if (item !== mailbox) participants.add(item) } catch { /* An unreadable address is not a counterparty. */ }
+    }
+  }
+  return { messageId: gmailId(message.id), threadId: gmailId(message.threadId), participants: [...participants].sort(), subject: mailHeader(message, 'Subject'), body: content.text.replace(/\r\n?/g, '\n'), complete: !content.truncated && content.attachments.length === 0 }
 }
