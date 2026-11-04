@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { GmailStatus, PublicSettings, RiotBridge } from '../../shared/types'
-import { GmailAccess, GmailConnection } from './email'
+import { GmailAccess, GmailAutonomy, GmailConnection } from './email'
 import { Icon } from './ui'
 
 export function AppsPane({ api, botName, settings, gmail, onGmail, onChange, onError, onBusy }: {
@@ -20,7 +20,7 @@ export function AppsPane({ api, botName, settings, gmail, onGmail, onChange, onE
   const state = paused ? 'Access paused' : enabled ? `On for ${botName}` : `Off for ${botName}`
   const description = paused
     ? !bound ? 'This bot’s saved mailbox is not connected. Choose a connected account below to restore access.' : 'Email access is saved, but tools are off for this bot. Turn on Allow tools in Bot settings → Files & tools.'
-    : enabled ? settings.gmailAccess === 'send' ? `${botName} can read email, save drafts, and ask you before sending.` : `${botName} can read email and save drafts. Sending is off.`
+    : enabled ? settings.gmailAccess === 'send' ? `${botName} can read email and save drafts. It asks before every send unless a reply rule is on.` : `${botName} can read email and save drafts. Sending is off.`
     : gmail?.connected ? `${gmail.email} is connected to Riot. Choose what ${botName} can do with this mailbox.` : 'Connect your existing Gmail or Google Workspace mailbox to read email and prepare replies.'
 
   return <section className="panel apps-pane" aria-label={`Apps for ${botName}`}>
@@ -36,6 +36,7 @@ export function AppsPane({ api, botName, settings, gmail, onGmail, onChange, onE
       {expanded && <div id="gmail-app-details" className="app-card-details">
         {!gmail?.connected && <GmailConnection api={api} status={gmail} onStatus={onGmail} onError={onError} showIntro={false} />}
         {(gmail?.connected || settings.gmailAccount) && <GmailAccess status={gmail} settings={settings} botName={botName} onChange={onChange} onError={onError} onBusy={onBusy} />}
+        {(gmail?.connected || settings.gmailAccount) && <GmailAutonomy api={api} botName={botName} settings={settings} onError={onError} />}
         {gmail?.connected && <details className="app-account-details">
           <summary>Manage shared Gmail connection</summary>
           <p className="help">This account connection is shared across Riot. Disconnecting it signs Gmail out for every bot. To stop only {botName}, choose No email access above.</p>

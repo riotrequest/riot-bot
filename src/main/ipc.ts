@@ -6,7 +6,7 @@ import type { RiotService } from '../core/service'
 import { isId } from '../core/ids'
 import type { SkillDraft } from '../core/skills'
 import { publicErrorMessage } from '../core/redact'
-import type { AppPreferences, BotDraft, BotMenuAction, ProviderId, PublicSettings } from '../shared/types'
+import type { AppPreferences, BotDraft, BotMenuAction, GmailRuleDraftInput, ProviderId, PublicSettings } from '../shared/types'
 import type { ElectronCredentialStore } from './credentials'
 import type { ScheduleDraft } from '../shared/types'
 
@@ -62,6 +62,12 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('gmail:connect', app => app.connectGmail())
   handle('gmail:cancelLogin', app => app.cancelGmailLogin())
   handle('gmail:disconnect', app => app.disconnectGmail())
+  handle('gmail-rules:list', app => app.listGmailRules())
+  handle('gmail-rules:save', (app, args) => app.saveGmailRule(gmailRuleInput(args[0])))
+  handle('gmail-rules:enabled', (app, args) => {
+    if (typeof args[1] !== 'boolean') throw new Error('Choose whether this reply rule is on.')
+    return app.setGmailRuleEnabled(requireId(args[0]), args[1])
+  })
   handle('gmail:importClient', async app => {
     const window = getWindow()
     if (!window) throw new Error('Open Riot Bot before choosing a Google setup file.')
@@ -370,6 +376,29 @@ function preferencePatch(value: unknown): Partial<AppPreferences> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Those preferences were not valid.')
   const record = value as Record<string, unknown>
   return { showToolDetails: typeof record.showToolDetails === 'boolean' ? record.showToolDetails : undefined }
+}
+
+function gmailRuleInput(value: unknown): GmailRuleDraftInput {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('The reply rule was not valid.')
+  const record = value as Record<string, unknown>
+  if (record.enabled != null && typeof record.enabled !== 'boolean') throw new Error('Choose whether this reply rule is on.')
+  if (record.dailySendLimit != null && (typeof record.dailySendLimit !== 'number' || !Number.isInteger(record.dailySendLimit))) throw new Error('The daily send limit must be a whole number.')
+  return {
+    id: record.id == null ? undefined : requireId(record.id),
+    title: requireText(record.title, 'Name this reply rule.'),
+    recipients: stringList(record.recipients, 'Recipients'),
+    threadIds: stringList(record.threadIds, 'Conversations'),
+    templates: stringList(record.templates, 'Replies'),
+    excludedRecipients: stringList(record.excludedRecipients, 'Excluded recipients'),
+    excludedPhrases: stringList(record.excludedPhrases, 'Review phrases'),
+    dailySendLimit: typeof record.dailySendLimit === 'number' ? record.dailySendLimit : 5,
+    enabled: record.enabled === true
+  }
+}
+
+function stringList(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new Error(`${label} were not valid.`)
+  return value
 }
 
 function pickSettings(value: unknown): Partial<PublicSettings> {

@@ -46,7 +46,10 @@ export class RiotService extends RiotApp {
     if (options.dbPath === ':memory:') throw new ConfigError('The job service needs a persistent database file.')
     this.options = options
     this.libraryRoot = path.join(path.dirname(options.dbPath),'artifacts')
-    super.onEvent(event=>this.broadcast(event))
+    super.onEvent(event => {
+      this.broadcast(event)
+      if (event.type === 'gmail-rules-changed') this.recheckQueuedJobBindings()
+    })
   }
 
   override boot(): { interrupted: number } {
@@ -133,7 +136,7 @@ export class RiotService extends RiotApp {
         if (!settings.model.trim()) throw new ConfigError('Choose this bot’s model in Bot settings before running scheduled work.')
         if (this.db.pendingJobCount(record.botId) >= 20) throw new ConfigError('This bot’s queue is full. Review its Tasks, then resume this schedule.')
         const text = `Scheduled task: ${record.title}\n\n${record.instructions}`
-        const job = this.db.createJob({ botId: record.botId, conversationId: record.conversationId, text, attachmentIds: [], binding: executionBinding(settings), now })
+        const job = this.db.createJob({ botId: record.botId, conversationId: record.conversationId, text, attachmentIds: [], binding: this.jobBinding(settings), now })
         record.lastJobId = job.id; record.lastStatus = 'queued'; queued = true
       }
       this.db.saveSchedule(record)
@@ -198,7 +201,7 @@ export class RiotService extends RiotApp {
         const attachment = this.db.getAttachment(id,botId)
         if (!attachment || attachment.messageId || this.db.attachmentReserved(id)) throw new ConfigError('An attachment is missing or already belongs to another job.')
       }
-      return this.db.createJob({botId,conversationId,text:body,attachmentIds,binding:executionBinding(settings),now:this.timestamp()})
+      return this.db.createJob({botId,conversationId,text:body,attachmentIds,binding:this.jobBinding(settings),now:this.timestamp()})
     })
     this.jobsChanged()
     this.schedulePump()
@@ -246,7 +249,7 @@ export class RiotService extends RiotApp {
     if (job.status==='queued' || job.status==='running' || job.status==='completed') throw new ConfigError('That job is not waiting to resume.')
     this.db.updateJob(id,{
       status:'queued',note:'',endedAt:null,resume:job.runId!==null,
-      binding:executionBinding(this.db.getSettings(job.botId))
+      binding:this.jobBinding(this.db.getSettings(job.botId))
     })
     this.jobsChanged()
     this.schedulePump()
@@ -393,6 +396,7 @@ export class RiotService extends RiotApp {
         this.jobsChanged()
         this.broadcast({type:'approval',approval:this.executors.get(this.currentBotId())?.pendingApproval() ?? null})
       } else if (event.type!=='browser-progress' || botId===this.currentBotId()) this.broadcast(event)
+      if (event.type === 'gmail-rules-changed') this.recheckQueuedJobBindings()
     })
     // ponytail: retain one executor per used bot; add idle eviction if many native sessions become costly.
     this.executors.set(botId,executor)
@@ -414,7 +418,7 @@ export class RiotService extends RiotApp {
       if (this.activeJobs.size>=limit) break
       if (this.activeJobs.has(job.botId) || this.deletingBots.has(job.botId)) continue
       const settings = this.db.getSettings(job.botId)
-      if (executionBinding(settings)!==job.binding) {
+      if (this.jobBinding(settings)!==job.binding) {
         this.db.updateJob(job.id,{status:'paused',note:'This bot’s setup changed after the job was queued. Review it, then choose Resume.'})
         this.jobsChanged()
         continue
@@ -492,12 +496,23 @@ export class RiotService extends RiotApp {
   }
 
   private timestamp(): number { return this.options.now?.() ?? Date.now() }
+  private jobBinding(settings: Settings): string { return executionBinding(settings, this.db.gmailRuleFingerprint(settings.botId || '')) }
+  private recheckQueuedJobBindings(): void {
+    let changed = false
+    for (const job of this.db.queuedJobs()) {
+      const settings = this.db.getSettings(job.botId)
+      if (this.jobBinding(settings) === job.binding) continue
+      this.db.updateJob(job.id, { status: 'paused', note: 'This bot’s reply rules changed after the job was queued. Review it, then choose Resume.' })
+      changed = true
+    }
+    if (changed) { this.jobsChanged(); this.schedulePump() }
+  }
   private jobsChanged(): void { this.broadcast({type:'jobs-changed'}) }
   private broadcast(event: AppEvent): void { for (const listener of this.serviceListeners) listener(event) }
 }
 
-function executionBinding(settings: Settings): string {
-  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions,settings.gmailAccount,settings.gmailAccess,settings.allowSensitiveFiles])
+function executionBinding(settings: Settings, ruleFingerprint: string): string {
+  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions,settings.gmailAccount,settings.gmailAccess,settings.allowSensitiveFiles,ruleFingerprint])
 }
 
 function workspacesOverlap(first: string, second: string): boolean {

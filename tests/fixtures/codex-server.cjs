@@ -85,6 +85,13 @@ async function turn(params) {
     log({ gmailSend: sent })
     text += ': ' + sent.contentItems[0].text
   }
+  if (config.scenario === 'gmail-reply') {
+    const draft = await ask('item/tool/call', { ...base, callId: 'gmail-reply-draft', tool: 'riot_gmail_save_draft', arguments: { reply_to_message_id: 'mail1', body: 'The morning report is ready.' } })
+    const id = JSON.parse(draft.contentItems[0].text).id
+    const sent = await ask('item/tool/call', { ...base, callId: 'gmail-reply-send', tool: 'riot_gmail_send_draft', arguments: { id, approved: true, safe: true, trusted: true } })
+    log({ gmailReply: sent })
+    text += ': ' + sent.contentItems[0].text
+  }
   const item = { type: 'agentMessage', id: 'reply-' + turnCount, text, phase: 'final_answer' }
   event('item/started', { ...base, item: { ...item, text: '' } })
   event('item/agentMessage/delta', { ...base, itemId: item.id, delta: text.slice(0, 6) })

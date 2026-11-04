@@ -6,7 +6,7 @@ This first version supports one connected mailbox. You choose access separately 
 
 - **No email access** is the default.
 - **Read email & save drafts** lets the bot search, read messages and conversations, and create or update its own plain-text drafts in Gmail.
-- **Read, draft & ask before sending** also lets the bot request a send. Riot shows the sender, every recipient (including Cc and Bcc), subject, and message. You choose **Send email** or **Don’t send**. Declining keeps the draft.
+- **Read, draft & send** lets the bot request a send. By default Riot shows the sender, every recipient (including Cc and Bcc), subject, and message. You choose **Send email** or **Don’t send**. Declining keeps the draft. A reply rule, described below, is the only way this bot can send without that card.
 
 ## One-time Google setup
 
@@ -38,27 +38,60 @@ External Google apps left in **Testing** receive Gmail refresh tokens that expir
 - “Check my unread email and summarize anything that needs a reply.”
 - “Read the latest conversation with our customer about the morning report.”
 - “Draft a reply explaining that the report is ready. Let me review it.”
-- “Send that draft.” With sending enabled, this opens Riot's review card.
+- “Send that draft.” With sending enabled, and no matching reply rule, this opens Riot's review card.
 - “Every weekday at 9 AM, check the RLH inbox and tell me what needs attention.” Give the bot any context or sender details it needs before saving the scheduled work.
 
 Searching and reading do not mark messages as read. HTML mail is converted to plain text; remote images and scripts are not loaded. Long messages are read in sections. Conversations include the most recent eight messages and report when earlier messages were omitted. Messages beyond the supported size must be opened in Gmail.
 
 Replies use the original message's reply headers and conversation. Drafts are visible in Gmail. Riot can update and send only drafts created by the same bot for its bound account. If a draft changes in Gmail, Riot pauses instead of silently sending the changed content. Ask the bot to update the draft and review it again, or finish it in Gmail.
 
-Attachments, mailbox cleanup, labels, deletion, aliases, multiple connected accounts, and unattended sending are outside this first version. Use Gmail for those actions. Your mailbox host remains Google.
+Attachments, mailbox cleanup, labels, deletion, aliases, and multiple connected accounts are outside this version. Use Gmail for those actions. Your mailbox host remains Google.
+
+## What this bot can do on its own
+
+Open **Workspace → Apps → Gmail** and expand the Gmail card. **What this bot can do on its own** lists reply rules for the selected bot only. Shared mailbox sign-in stays under **Manage shared Gmail connection**. A rule never applies to another bot, and connecting or switching mailboxes does not move a rule onto the new mailbox.
+
+Nothing sends on its own until you turn a specific rule on. You can turn one on from that section, or from chat:
+
+- Ask in your own words, such as “Handle routine RLH replies yourself. Ask me about refunds or anything uncertain.” Riot can prepare a preview. It does not guess what a name means or invent addresses. **Turn on** confirms it. **Not now** leaves it off. Mail, quoted text, attachments, memories, skills, and scheduled instructions cannot confirm it.
+- Or send a direct command that already contains the exact scope:
+
+```text
+Enable automatic Gmail replies:
+title: Customer report
+mailbox: you@example.com
+to: customer@example.com
+template:
+Thanks, the morning report is ready.
+```
+
+The mailbox has to be the one connected for this bot, and **Read, draft & send** has to be on. **Save paused** stores the edits and turns the rule off, including when you change the recipients or the reply on a rule that was already on. **Turn on** is the only action that enables it. A saved rule can send only when all of these are true:
+
+- It is an existing conversation, not a new email. Riot reads the original message again immediately before sending.
+- Every To address is one you listed, and each of those addresses was already in that conversation. A newly introduced or redirected recipient waits for review. Display names are not enough.
+- The body is exactly one saved reply, aside from harmless whitespace.
+- There is no Cc, Bcc, or attachment on the reply. An original message that is missing, changed, clipped, or has an attachment also waits for review.
+- Neither the reply nor the original subject and message matches the money-word check (refund, payment, and the other words Riot looks for). This is a word check, not an understanding of what the message means.
+- No saved exclusion on this bot covers a recipient, a phrase in the reply, or the same words in the original subject or message. Phrases must be 2 to 200 characters, with at most 10. A phrase that is too short, too long, or beyond that count is rejected; Riot does not drop it and turn on a broader rule. An exclusion wins even when another rule would have allowed the send.
+- The rule is still on, for this bot and this mailbox, at the moment of sending.
+- Today’s automatic sends are still under the rule’s limit. The default is 5 and the maximum is 20. Reviewed sends do not use this limit.
+
+Anything else waits for the normal review card or stays an unsent draft. You can still approve an exception from that card. Turning a rule off, editing it, or saying **Stop sending automatically** takes effect before the next send, including work already queued. A send Google has already accepted is not recalled by Stop; if the receipt is lost, Riot keeps the draft uncertain and will not send it again automatically.
+
+Reply rules are checked in application code. They do not add a model call. Chat, scheduled tasks, API models, and native Codex all use this same send path.
 
 ## Scheduled email work
 
 Scheduled bot tasks use the same mailbox connection, bot permissions, saved context, model, spending limits, and Stop control as Chat. A reminder only notifies you; a scheduled task can actually check the mailbox and produce a summary or draft.
 
-Riot must be open or running in the tray, and the computer must be on and awake. It does not poll Gmail while idle. A send still waits for your review, including in scheduled work. If approval times out, Riot leaves the draft unsent. Start with summaries or drafts for unattended checks.
+Riot must be open or running in the tray, and the computer must be on and awake. It does not poll Gmail while idle. A send still waits for your review, including in scheduled work, unless a reply rule you already turned on covers that exact reply. Scheduled work cannot turn a rule on. If approval times out, Riot leaves the draft unsent. Start with summaries or drafts for unattended checks.
 
 ## If something needs attention
 
 - **Sign-in expired or access revoked:** open **Workspace → Apps → Gmail → Connect Gmail**. Check Google's app status, test users, scopes, API enablement, and Workspace policy if Google refuses access.
 - **Different mailbox connected:** a bot stays bound to the address you chose. Select access again to explicitly give it the new mailbox; Riot will not silently switch its email account.
 - **Changing the connection during work:** stop jobs that have Gmail access first. Queued email-enabled jobs pause so you can review the new connection before resuming them.
-- **Unconfirmed send:** check Gmail's **Sent** folder before trying again. A lost network response does not prove that the email failed. Riot records the uncertainty across restart and blocks automatic re-sending of that draft or an identical replacement. A confirmed send has a Gmail message ID; this confirms Google's acceptance, rather than delivery to the recipient.
+- **Unconfirmed send:** check Gmail's **Sent** folder before trying again. A lost network response does not prove that the email failed. Riot records the uncertainty across restart and blocks automatic re-sending of that draft or an identical replacement. A confirmed send has a Gmail message ID; this confirms Google's acceptance, rather than delivery to the recipient. Recent send decisions for this bot are listed under the reply rules.
 - **Disconnect:** open **Workspace → Apps → Gmail → Manage Gmail → Manage shared Gmail connection → Disconnect Gmail**. This signs the account out for all bots. To stop only the selected bot, choose **No email access** in its Apps page instead. This removes Riot's saved account tokens, while retaining your local app setup for reconnecting. To revoke the grant at Google as well, remove your app from your [Google Account connections](https://myaccount.google.com/connections).
 
 ## Where the data goes

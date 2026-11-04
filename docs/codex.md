@@ -22,6 +22,8 @@ With tools enabled, Codex retains native web search, shell, and file capabilitie
 
 Codex’s search source is not a verified Google organic position. Exact rank claims still require observed results from the named engine. A native search does not use Riot’s visible browser profile or its CAPTCHA handoff controls.
 
+Gmail tools use Riot’s own mailbox connection and send path. `riot_gmail_send_draft` cannot approve itself. It waits for the complete-message review unless a reply rule already turned on for this bot matches the exact reply, recipients who were already in that conversation, and an original message that still matches. Native Codex cannot widen that rule. See [Gmail](gmail.md#what-this-bot-can-do-on-its-own).
+
 Disk-space questions use `riot_get_disk_space`, a read-only capacity query in Riot’s runtime. The default checks the filesystem containing this bot’s working folder; a path can select another local drive or folder. Results identify that scope, include a measurement timestamp, and distinguish byte counts from decimal GB. Riot rejects network paths, mapped network drives and links into remote locations before the capacity query. A fixed noninteractive Windows helper classifies local drive roots; no model-provided command is executed and no command approval is needed. It avoids native sandbox language-mode restrictions without changing native permissions. Native sessions start a fresh scoped thread once when the tool-set version changes, with Riot’s usual history bootstrap and search available.
 
 ## Permissions and sessions

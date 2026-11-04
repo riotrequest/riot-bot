@@ -180,6 +180,9 @@ button .ui-icon { vertical-align: middle; }
 .approval-details .help { margin-top: 8px; }
 .approval-details pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; padding: 10px; border-radius: 8px; background: #141719; }
 .approval-actions { padding-top: 2px; }
+.gmail-rule-card, .gmail-rule-form { min-width: 0; display: flex; flex-direction: column; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #181c1d; }
+.gmail-rule-card .runtime-heading, .gmail-rule-card .row, .gmail-rule-form .row { flex-wrap: wrap; }
+.gmail-rule-template { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .email-review-dialog { width: min(660px, calc(100vw - 48px)); max-height: calc(100vh - 48px); margin: auto; padding: 24px; border: 1px solid #83604b; border-radius: 14px; color: inherit; background: #202426; }
 .email-review-dialog[open] { display: flex; flex-direction: column; gap: 12px; }
 .email-review-dialog::backdrop { background: #0009; }
@@ -451,5 +454,9 @@ button.linkish { border: 0; background: transparent; padding: 0; color: inherit;
   .chat-welcome h2 { font-size: 29px; }
   .welcome-description { margin: 12px 0 18px; }
   .starter-card { padding-top: 13px; padding-bottom: 13px; }
+}
+@media (max-width: 720px), (max-height: 730px) {
+  .email-review-dialog { padding: 16px; }
+  .gmail-rule-card, .gmail-rule-form { padding: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }

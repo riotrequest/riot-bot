@@ -140,13 +140,13 @@ export class GmailService {
     if (!current.connected || !account || current.email !== account.toLowerCase()) throw new ConfigError('This bot’s Gmail account is not connected. Choose the connected mailbox in Workspace → Apps → Gmail.')
   }
 
-  async request(account: string, path: string, signal: AbortSignal, init: RequestInit = {}, beforeSend?: () => void): Promise<any> {
+  async request(account: string, path: string, signal: AbortSignal, init: RequestInit = {}, beforeSend?: () => void | Promise<void>): Promise<any> {
     if (signal.aborted) throw new StopError('Email work stopped before the request was sent.')
     this.assertAccount(account)
     const token = await this.tokens()
     if (signal.aborted) throw new StopError('Email work stopped before the request was sent.')
     this.assertAccount(account)
-    beforeSend?.()
+    await beforeSend?.()
     try { return await this.fetchJson(`${API}${path}`, { ...init, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.accessToken}` }, signal }) }
     catch (error) {
       if (error instanceof GmailRejectedError && error.message.includes('Reconnect Gmail') && this.status().email === account) { this.options.credentials.clear('gmail'); this.publish('Google needs you to reconnect Gmail in Workspace → Apps → Gmail.') }
@@ -203,7 +203,7 @@ export class GmailService {
   }
 
   async prepareDraft(account: string, input: GmailDraftInput, signal: AbortSignal): Promise<PreparedGmailDraft> {
-    const reply = input.replyMessageId ? await this.request(account, `/messages/${gmailId(input.replyMessageId)}?format=metadata`, signal) as GmailMessage : undefined
+    const reply = input.replyMessageId ? await this.request(account, `/messages/${gmailId(input.replyMessageId)}?format=full`, signal) as GmailMessage : undefined
     return prepareGmailDraft(account, input, reply)
   }
 

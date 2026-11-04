@@ -15,6 +15,9 @@ export class FakeGmail {
   sendMode: 'ok' | 'uncertain' | 'forbidden' = 'ok'
   refreshMode: 'ok' | 'revoked' = 'ok'
   profileEmail = GMAIL_ACCOUNT
+  beforeRequest: ((route: string, method: string) => void | Promise<void>) | null = null
+  refreshHold: (() => void | Promise<void>) | null = null
+  sendHold: (() => void | Promise<void>) | null = null
   private next = 0
   fetch: typeof fetch = async (input, init = {}) => {
     const url = new URL(input instanceof Request ? input.url : input.toString())
@@ -23,10 +26,12 @@ export class FakeGmail {
     const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
     if (url.href === 'https://oauth2.googleapis.com/token') {
       if (body.grant_type === 'refresh_token' && this.refreshMode === 'revoked') return json({ error: 'invalid_grant', private: 'fixture-google-secret' }, 400)
+      if (this.refreshHold) await this.refreshHold()
       return json({ access_token: 'fixture-access-token', refresh_token: 'fixture-refresh-token', expires_in: 3600, scope: GMAIL_SCOPES.join(' ') })
     }
     if (url.origin !== 'https://gmail.googleapis.com') throw new Error('Unexpected network destination in Gmail fixture')
     const route = url.pathname.replace('/gmail/v1/users/me', '')
+    if (this.beforeRequest) await this.beforeRequest(route, init.method || 'GET')
     if (route === '/profile') return json({ emailAddress: this.profileEmail })
     if (route === '/messages') return json({ messages: [...this.messages.values()].map(message => ({ id: message.id, threadId: message.threadId })), nextPageToken: 'fixture-page' })
     if (route.startsWith('/messages/')) return this.messages.has(route.slice(10)) ? json(this.messages.get(route.slice(10))) : json({}, 404)
@@ -36,6 +41,7 @@ export class FakeGmail {
       if (!draft) return json({}, 404)
       if (this.sendMode === 'forbidden') return json({ error: { message: 'Private authorization details must not be exposed.' } }, 403)
       this.sendCount++
+      if (this.sendHold) await this.sendHold()
       this.drafts.delete(body.id)
       if (this.sendMode === 'uncertain') throw new Error('Lost response after fixture Gmail accepted send; fixture-access-token')
       return json({ id: `sent${this.sendCount}`, threadId: draft.message.threadId, labelIds: ['SENT'] })
