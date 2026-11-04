@@ -27,7 +27,7 @@ let quitting = false
 let quitReady = false
 const reminderNotifications = new Set<Notification>()
 
-const devUrl = process.env.ELECTRON_RENDERER_URL
+const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
 
 function showWindow(): void {
   if (!window || window.isDestroyed()) return
@@ -87,8 +87,7 @@ function registerAppProtocol(root: string): void {
 }
 
 function allowedNavigation(url: string): boolean {
-  if (devUrl) return url.startsWith(devUrl)
-  return url.startsWith('app://local/')
+  try{return devUrl ? new URL(url).origin===new URL(devUrl).origin : new URL(url).protocol==='app:'&&new URL(url).host==='local'}catch{return false}
 }
 
 async function createWindow(): Promise<void> {

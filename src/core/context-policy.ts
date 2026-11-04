@@ -107,7 +107,7 @@ export function selectToolGroups(text: string, browserOpen: boolean, extra: Iter
   const groups: ToolGroupName[] = []
   if (enabled.has('files') || /\b(file|folder|code|edit|workspace|readme|src|html|css|javascript|typescript|python|project|repo)\b/.test(hay) || /\b(build|create|redesign|develop|update|fix)\b.{0,80}\b(website|site|page|app)\b/.test(hay)) groups.push('files')
   if (enabled.has('terminal') || /\b(terminal|command|shell|powershell|npm|git)\b/.test(hay)) groups.push('terminal')
-  if (enabled.has('browser') || browserOpen || /\b(browser|click|tab|website|web page|open the|open a|open this)\b/.test(hay)) groups.push('browser')
+  if (enabled.has('browser') || browserOpen || /\b(browser|click|tab|website|web page|open the|open a|open this|logins?|log[ -]in(?:to)?|sign[ -]in(?:to)?|saved credentials)\b/.test(hay)) groups.push('browser')
   if (enabled.has('schedules') || /\b(remind|reminder|schedule|scheduled|routine|recurring|every|each|daily|weekly|weekdays|tomorrow|tonight)\b/.test(hay)) groups.push('schedules')
   if (enabled.has('email') || /\b(email|emails|e-mail|gmail|inbox|mailbox|recipient|unread)\b/.test(hay)) groups.push('email')
   return groups

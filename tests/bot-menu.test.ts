@@ -13,6 +13,7 @@ const native = vi.hoisted(() => ({
   popup: null as PopupOptions | null
 }))
 vi.mock('electron', () => ({
+  app:{isPackaged:false},
   ipcMain: { handle: (name: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>) => native.handlers.set(name, handler) },
   Menu: { buildFromTemplate: (template: MenuItemConstructorOptions[]) => { native.template = template; return { popup: (options: PopupOptions) => { native.popup = options } } } },
   clipboard: {}, dialog: {}, nativeImage: {}
@@ -23,8 +24,9 @@ const first = { id: '11111111-1111-4111-8111-111111111111', name: 'Riot', worksp
 const second = { id: '22222222-2222-4222-8222-222222222222', name: 'Scout & Co', workspacePath: 'C:\\projects\\scout' } as Bot
 let active = first, running: string[] = []
 const updateBot = vi.fn(patch => ({ ...active, ...patch }))
-const window = { webContents: { getZoomFactor: () => 1.25 }, isDestroyed: () => false, getContentBounds: () => ({ x: 1000, y: 200, width: 880, height: 640 }) } as unknown as BrowserWindow
-const event = { sender: window.webContents, senderFrame: { url: 'app://local/index.html' } } as IpcMainInvokeEvent
+const mainFrame={url:'app://local/index.html'}
+const window = { webContents: { mainFrame,getZoomFactor: () => 1.25 }, isDestroyed: () => false, getContentBounds: () => ({ x: 1000, y: 200, width: 880, height: 640 }) } as unknown as BrowserWindow
+const event = { sender: window.webContents, senderFrame: mainFrame } as IpcMainInvokeEvent
 const invoke = (channel: string, ...args: unknown[]) => native.handlers.get(channel)!(event, ...args)
 
 beforeEach(() => {
@@ -73,6 +75,7 @@ describe('bot context actions', () => {
 
   it('rejects menu requests from an unexpected renderer', async () => {
     await expect(native.handlers.get('bots:menu')!({ ...event, sender: {} } as IpcMainInvokeEvent, first.id, { x: 0, y: 0 })).rejects.toThrow('unexpected message')
+    await expect(native.handlers.get('bots:menu')!({...event,senderFrame:{url:'app://local/index.html'}} as IpcMainInvokeEvent,first.id,{x:0,y:0})).rejects.toThrow('unexpected message')
     expect(native.popup).toBeNull()
   })
 

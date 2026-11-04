@@ -41,6 +41,7 @@ export interface ObservedControl extends RawControl {
 }
 
 export interface LaunchedPage {
+  controlAt?(index:number):Promise<RawControl|null>
   url(): string
   title(): Promise<string>
   goto(url: string, timeoutMs: number): Promise<void>
@@ -77,6 +78,7 @@ export interface BrowserOpenerInput {
 export type BrowserOpener = (input: BrowserOpenerInput) => Promise<LaunchedBrowser>
 
 export type BrowserAction =
+  | {type:'login';id:string;usernameRef:string;passwordRef:string}
   | { type: 'tabs' }
   | { type: 'open'; url: string; newTab?: boolean }
   | { type: 'read' }
@@ -265,6 +267,8 @@ export class BrowserService {
     action: BrowserAction
     searchTemplate: string
     confirm: (preview: string, url: string) => Promise<boolean>
+    trustedSites?: string[]
+    login?: (origin:string,id:string)=>{username:string;password:string}
   }): Promise<string> {
     if (input.signal.aborted) throw new StopError('Stopped. The browser action was cancelled. The profile was kept.')
     try {
@@ -293,9 +297,26 @@ export class BrowserService {
         case 'snapshot':
           return await this.snapshot(session)
         case 'click':
-          return await this.click(session, input.action.ref, input.searchTemplate, input.signal, input.confirm)
+          return await this.click(session, input.action.ref, input.searchTemplate, input.signal, input.confirm,input.trustedSites??[])
         case 'fill':
-          return await this.fill(session, input.action.ref, input.action.value, input.signal)
+          return await this.fill(session, input.action.ref, input.action.value, input.signal,input.confirm,input.trustedSites??[])
+        case 'login': {
+          const page=await this.page(session,false),origin=checkNavigationUrl(page.url()).origin
+          if(!input.login)return 'Saved logins are not available.'
+          const user=await this.control(session,page,input.action.usernameRef),password=await this.control(session,page,input.action.passwordRef)
+          if(!user||!password)return STALE
+          if(user.inputType==='file'||user.inputType==='password'||password.inputType!=='password')return 'Use a username field and a password field from the latest snapshot.'
+          if(!(input.trustedSites??[]).includes(origin)&&!await input.confirm('Use a saved login on '+origin,page.url()))return 'This website was not approved.'
+          this.assertSignal(input.signal)
+          if(!await this.control(session,page,input.action.usernameRef)||!await this.control(session,page,input.action.passwordRef))return STALE
+          const login=input.login(origin,input.action.id)
+          await page.typeInto(user.index,login.username,BROWSER_ACTION_TIMEOUT_MS)
+          this.assertSignal(input.signal)
+          if(page.url()!==session.snapshotUrl||!await this.control(session,page,input.action.passwordRef))return STALE
+          await page.typeInto(password.index,login.password,BROWSER_ACTION_TIMEOUT_MS)
+          session.controls=[]
+          return 'Filled the saved login on '+origin+'. The password was entered locally into this website and was not returned to the model.'
+        }
         case 'scroll':
           return await this.scroll(session, input.action.direction)
         case 'back':
@@ -424,7 +445,8 @@ export class BrowserService {
     ref: string,
     template: string,
     signal: AbortSignal,
-    confirm: (preview: string, url: string) => Promise<boolean>
+    confirm: (preview: string, url: string) => Promise<boolean>,
+    trustedSites:string[]
   ): Promise<string> {
     this.assertSignal(signal)
     const page = await this.page(session, false)
@@ -433,7 +455,7 @@ export class BrowserService {
     if (control.inputType === 'password') return 'Password fields are not read or filled from chat. Take over the browser and type the password yourself.'
     if (control.inputType === 'file') return 'Nothing was uploaded. Choose the file yourself during Take over. Riot Bot does not pick a local file.'
     const pageUrl = page.url()
-    if (clickNeedsApproval(control, pageUrl, template)) {
+    if (clickNeedsApproval(control, pageUrl, template,trustedSites)) {
       const preview = `Click “${control.name || control.role}” (${control.role}) on ${pageUrl}. This can send a message, publish, buy, delete, or otherwise change something outside Riot Bot.`
       const allowed = await confirm(preview, pageUrl)
       this.assertSignal(signal)
@@ -448,7 +470,7 @@ export class BrowserService {
     return `${UNTRUSTED}\nClicked ${control.ref} (${control.name || control.role}) on ${page.url()}.`
   }
 
-  private async fill(session: Session, ref: string, value: string, signal: AbortSignal): Promise<string> {
+  private async fill(session: Session, ref: string, value: string, signal: AbortSignal,confirm:(preview:string,url:string)=>Promise<boolean>,trustedSites:string[]): Promise<string> {
     this.assertSignal(signal)
     const page = await this.page(session, false)
     const control = await this.control(session, page, ref)
@@ -456,6 +478,11 @@ export class BrowserService {
     if (control.inputType === 'password') return 'Password fields are not read or filled from chat. Take over the browser and type the password yourself.'
     if (control.inputType === 'file') return 'Nothing was uploaded. Choose the file yourself during Take over. Riot Bot does not pick a local file.'
     if (value.length > 2000) return 'That text is too long to type into the page.'
+    if(clickNeedsApproval(control,page.url(),'',trustedSites)){
+      if(!await confirm(`Fill “${control.name||control.role}” on ${page.url()} with:\n${value}\nTyping can immediately send this text to the website.`,page.url()))return 'That website was not approved, so no text was typed.'
+      this.assertSignal(signal)
+      if(!await this.control(session,page,ref))return STALE
+    }
     this.assertSignal(signal)
     await page.typeInto(control.index, value, BROWSER_ACTION_TIMEOUT_MS)
     return `Filled ${control.ref} (${control.name || control.role}). The typed text is not repeated here.`
@@ -558,7 +585,7 @@ export class BrowserService {
     const matches = session.controls.filter((control) => control.ref === ref)
     if (matches.length !== 1) return null
     const control = matches[0]
-    const fresh = (await page.observe(BROWSER_SNAPSHOT_LIMIT))[control.index]
+    const fresh = page.controlAt?await page.controlAt(control.index):(await page.observe(BROWSER_SNAPSHOT_LIMIT))[control.index]
     if (!fresh || fresh.role !== control.role || fresh.name !== control.name || fresh.inputType !== control.inputType || fresh.href !== control.href || session.takeover || session.launched.current() !== page || session.snapshotUrl !== page.url()) {
       session.controls = []
       return null

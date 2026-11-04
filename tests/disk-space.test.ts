@@ -1,10 +1,21 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { getDiskSpace } from '../src/core/disk-space'
+import { getDiskSpace,localDiskPath } from '../src/core/disk-space'
 import { FakeTerminal, makeApp, tempDir } from './helpers'
 
 describe('built-in disk-space check', () => {
+  it('rejects UNC, device paths, mapped drives and remote link targets before statfs',async()=>{
+    const statfs=vi.spyOn(fs,'statfs')
+    try{
+      for(const location of ['\\\\collector.invalid\\share\\','//collector.invalid/share','\\\\?\\UNC\\collector.invalid\\share','\\\\.\\UNC\\collector.invalid\\share'])await expect(getDiskSpace(location)).rejects.toThrow(/local|network|device/i)
+      await expect(localDiskPath('Z:\\folder','win32',async()=>['C:\\'])).rejects.toThrow(/remote/)
+      const link=vi.spyOn(fs,'lstat').mockResolvedValue({isSymbolicLink:()=>true} as never)
+      const readlink=vi.spyOn(fs,'readlink').mockResolvedValue('\\\\collector.invalid\\share')
+      try{await expect(localDiskPath('C:\\redirect\\folder','win32',async()=>['C:\\'])).rejects.toThrow(/local|network/)}finally{link.mockRestore();readlink.mockRestore()}
+      expect(statfs).not.toHaveBeenCalled()
+    }finally{statfs.mockRestore()}
+  })
   it('reads the actual filesystem capacity and labels the location and units', async () => {
     const location = tempDir(), stats = await fs.statfs(location)
     const result = await getDiskSpace(location)

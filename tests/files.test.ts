@@ -3,10 +3,22 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
-import { editTextFile, searchFiles, undoFileEdit, writeTextFile } from '../src/core/files'
+import { editTextFile, readTextFile,searchFiles, undoFileEdit, writeTextFile } from '../src/core/files'
 import { PathEscapeError, resolveWorkspacePath } from '../src/core/path-safety'
 
 describe('workspace paths', () => {
+  it('keeps credential files out of normal reads and searches while supporting a saved workspace grant',()=>{
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'riot-private-files-'))
+    fs.writeFileSync(path.join(root,'.env'),'PASSWORD=fixture-only-secret')
+    fs.writeFileSync(path.join(root,'notes.txt'),'ordinary text')
+    expect(()=>readTextFile(root,'.env',1000)).toThrow(/Allow project secrets/)
+    expect(searchFiles(root,'fixture-only-secret')).toMatch(/No matches/)
+    expect(readTextFile(root,'.env',1000,true)).toBe('PASSWORD=fixture-only-secret')
+    const changed=writeTextFile(root,'.env','PASSWORD=new-fixture',true,false,true)
+    expect('error' in changed).toBe(false)
+    if(!('error' in changed))expect(undoFileEdit(root,changed)).toEqual({ok:true})
+    expect(readTextFile(root,'.env',1000,true)).toBe('PASSWORD=fixture-only-secret')
+  })
   it('rejects traversal and junction escapes, and can undo an edit', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'riot-ws-'))
     const workspace = path.join(root, 'workspace')

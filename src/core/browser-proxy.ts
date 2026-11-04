@@ -14,24 +14,29 @@ export interface BrowserProxy {
  * allowLoopback is for tests. The app does not pass true, and there is no setting that turns it on.
  */
 export function startBrowserProxy(options?: {
+  denyAll?: boolean
   allowLoopback?: boolean
   lookupHost?: (hostname: string) => Promise<string[]>
 }): Promise<BrowserProxy> {
   const allowLoopback = options?.allowLoopback === true
   const lookupHost = options?.lookupHost ?? defaultLookup
+  const sockets=new Set<net.Socket>()
   const server = http.createServer((request, response) => {
     quiet(request.socket)
     quiet(response)
+    if (options?.denyAll) { response.writeHead(403); response.end('Network access is disabled.'); return }
     void proxyHttp(request, response, allowLoopback, lookupHost).catch(() => {
       if (!response.headersSent) response.writeHead(403)
       response.end('Blocked')
     })
   })
+  server.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket))})
   server.on('clientError', (_error, socket) => {
     socket.destroy()
   })
   server.on('connect', (request, socket, head) => {
     quiet(socket)
+    if (options?.denyAll) { socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
     void proxyConnect(request.url ?? '', socket, head, allowLoopback, lookupHost)
   })
   return new Promise((resolve, reject) => {
@@ -44,6 +49,8 @@ export function startBrowserProxy(options?: {
         close: () =>
           new Promise((done, fail) => {
             server.close((error) => (error ? fail(error) : done()))
+            // CONNECT tunnels and speculative browser sockets do not drain like ordinary HTTP requests.
+            for(const socket of sockets)socket.destroy()
           })
       })
     })
@@ -87,6 +94,7 @@ async function proxyHttp(
     return
   }
   const port = target.port ? Number(target.port) : 80
+  if(response.destroyed)return
   const headers = { ...request.headers, host: target.host }
   const outbound = http.request(
     {
@@ -106,6 +114,7 @@ async function proxyHttp(
     if (!response.headersSent) response.writeHead(502)
     response.end('The page could not be opened.')
   })
+  response.once('close',()=>outbound.destroy())
   request.pipe(outbound)
 }
 
@@ -123,6 +132,7 @@ async function proxyConnect(
   }
   try {
     const address = await resolveDestination(parsed.host, lookupHost, allowLoopback)
+    if(socket.destroyed)return
     const target = net.connect(parsed.port, address, () => {
       socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
       if (head.length > 0) target.write(head)

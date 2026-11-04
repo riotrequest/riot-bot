@@ -1,4 +1,4 @@
-import { clipboard, dialog, ipcMain, Menu, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { app as electronApp, clipboard, dialog, ipcMain, Menu, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '../core/attachments'
@@ -40,7 +40,9 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'webFetchMaxBytes',
   'terminalTimeoutMs',
   'terminalMaxOutputChars',
-  'searchUrlTemplate'
+  'searchUrlTemplate',
+  'trustedSites',
+  'allowSensitiveFiles'
 ]
 
 export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore): void {
@@ -220,6 +222,12 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('codex:disconnect', (app) => app.disconnectCodex())
   handle('credentials:set', (app, args) => app.setCredential(requireApiProvider(args[0]), requireSecret(args[1])))
   handle('credentials:clear', (app, args) => app.clearCredential(requireApiProvider(args[0])))
+  handle('logins:save',(app,args)=>{
+    const input=args[0] as Record<string,unknown>|null
+    if(!input||typeof input!=='object')throw new Error('Enter the website login.')
+    return app.saveLogin({url:requireText(input.url,'Enter an HTTPS website.'),username:requireText(input.username,'Enter the username.'),password:requireText(input.password,'Enter the password.')})
+  })
+  handle('logins:remove',(app,args)=>app.removeLogin(requireId(args[0])))
   handle('workspace:pick', async () => {
     const parent = getWindow()
     const options = { properties: ['openDirectory' as const], title: 'Choose a workspace folder' }
@@ -228,17 +236,18 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
     return result.filePaths[0]
   })
   handle('approvals:resolve', (app, args) => {
-    app.resolveApproval(requireId(args[0]), Boolean(args[1]))
+    if(typeof args[1]!=='boolean'||args[2]!=null&&typeof args[2]!=='boolean')throw new Error('Choose whether to allow this request.')
+    app.resolveApproval(requireId(args[0]), args[1], args[2]===true)
   })
   handle('edits:undo', (app, args) => app.undoEdit(requireId(args[0])))
 }
 
 function assertSender(event: IpcMainInvokeEvent, window: BrowserWindow | null): void {
-  if (!window || event.sender !== window.webContents) throw new Error('Rejected an unexpected message.')
+  if (!window || event.sender !== window.webContents || event.senderFrame!==window.webContents.mainFrame) throw new Error('Rejected an unexpected message.')
   const url = event.senderFrame?.url ?? ''
-  const devUrl = process.env.ELECTRON_RENDERER_URL
+  const devUrl = electronApp.isPackaged?undefined:process.env.ELECTRON_RENDERER_URL
   if (devUrl) {
-    if (!url.startsWith(devUrl)) throw new Error('Rejected an unexpected message.')
+    if (new URL(url).origin!==new URL(devUrl).origin) throw new Error('Rejected an unexpected message.')
     return
   }
   if (!url.startsWith('app://local/')) throw new Error('Rejected an unexpected message.')

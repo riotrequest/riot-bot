@@ -341,7 +341,7 @@ describe('automatic context', () => {
       expect(tool.toolCallId).toBe('fetch-1')
       return { content: 'Fetched the docs once.', toolCalls: [] }
     }
-    const run = await app.sendMessage(conversationId, 'Open the docs page')
+    const run = await app.sendMessage(conversationId, 'Open the docs page https://example.com/docs')
     expect(run.status).toBe('completed')
     expect(pageFetches).toBe(1)
     expect(toolLengths).toHaveLength(2)
@@ -366,7 +366,7 @@ describe('automatic context', () => {
       if (input.messages.some((message) => message.role === 'tool')) throw new ProviderError('unknown', 'The provider returned an unrelated error.')
       return { content: '', toolCalls: [{ id: 'fetch-2', name: 'fetch_url', arguments: JSON.stringify({ url: 'https://example.com/once' }) }] }
     }
-    const broken = await failed.app.sendMessage(failed.app.getSnapshot().current?.conversation.id ?? '', 'Open the docs page')
+    const broken = await failed.app.sendMessage(failed.app.getSnapshot().current?.conversation.id ?? '', 'Open the docs page https://example.com/once')
     expect(broken.status).toBe('failed')
     expect(otherFetches).toBe(1)
     expect(failed.provider.calls).toHaveLength(2)

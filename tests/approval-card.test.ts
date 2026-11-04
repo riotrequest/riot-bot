@@ -8,6 +8,14 @@ const base: ApprovalView = {id:'fixture',kind:'codex',title:'Allow this Codex fi
 const render = (approval: ApprovalView) => renderToStaticMarkup(createElement(ApprovalCard,{approval,onResolve:()=>undefined}))
 
 describe('compact approval cards',()=>{
+  it('offers remembered access only for a site approval and explains its scope',()=>{
+    const html=render({...base,kind:'site',siteOrigin:'https://account.example',title:'Allow this website?',warning:'This bot can share information, fill forms, and change content on this website.'})
+    expect(html).toContain('Remember &amp; allow')
+    expect(html).toContain('This task only')
+    expect(html).toContain('Website:')
+    expect(html).toContain('share information, fill forms, and change content')
+    expect(render(base)).not.toContain('Remember &amp; allow')
+  })
   it('keeps a large file request collapsed and puts the decision buttons outside the details',()=>{
     const html=render(base)
     expect(html).toContain('Allow file changes?')

@@ -1,6 +1,7 @@
 import type { PublicSettings } from '../shared/types'
 import { DEFAULT_SEARCH_TEMPLATE } from './browser-policy'
 import { validatePublicUrl } from './web'
+import { trustedSite } from './logins'
 
 export interface Settings extends PublicSettings {
   botId?: string
@@ -36,7 +37,9 @@ export const DEFAULT_SETTINGS: Settings = {
   webFetchMaxBytes: 500_000,
   terminalTimeoutMs: 30_000,
   terminalMaxOutputChars: 20_000,
-  searchUrlTemplate: DEFAULT_SEARCH_TEMPLATE
+  searchUrlTemplate: DEFAULT_SEARCH_TEMPLATE,
+  trustedSites: [],
+  allowSensitiveFiles: false
 }
 
 export interface ModelPrice {
@@ -112,7 +115,9 @@ export function sanitizeSettings(input: Partial<Settings>): Settings {
     terminalMaxOutputChars: Math.round(
       finiteNumber(input.terminalMaxOutputChars, DEFAULT_SETTINGS.terminalMaxOutputChars, 500, 200_000)
     ),
-    searchUrlTemplate: cleanSearchTemplate(input.searchUrlTemplate)
+    searchUrlTemplate: cleanSearchTemplate(input.searchUrlTemplate),
+    trustedSites: Array.isArray(input.trustedSites)?[...new Set(input.trustedSites.slice(0,100).flatMap(value=>{try{return typeof value==='string'?[trustedSite(value)]:[]}catch{return []}}))]:[],
+    allowSensitiveFiles: input.allowSensitiveFiles===true
   }
 }
 

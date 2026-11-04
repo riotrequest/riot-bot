@@ -60,7 +60,7 @@ describe('failures observed in real bot runs', () => {
   it('returns a 404 to the model as a failed tool result and continues the original task', async () => {
     const {app,provider,dir}=makeApp({lookupHost:async()=>['93.184.216.34'],fetchImpl:async input=>new Response(String(input).includes('missing')?'Not found':'<h1>Angelicpedia reference site</h1>',{status:String(input).includes('missing')?404:200,headers:{'content-type':'text/html'}})})
     try {
-      app.updateSettings({workspacePath:dir,workspaceEditing:true})
+      app.updateSettings({workspacePath:dir,workspaceEditing:true,trustedSites:['https://example.com']})
       let step=0
       provider.handler=input=>{
         expect(input.tools?.some(tool=>tool.name==='write_file')).toBe(true)

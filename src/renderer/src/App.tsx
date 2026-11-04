@@ -26,6 +26,7 @@ import type {
   ScheduleView,
   Snapshot,
   RiotBridge,
+  SavedLogin,
   Skill,
   SkillProposal,
   SkillVersion,
@@ -397,8 +398,8 @@ function Shell({ api }: { api: RiotBridge }) {
           <ApprovalCard
             key={approval.id}
             approval={approval}
-            onResolve={(approved) => {
-              void api.resolveApproval(approval.id, approved).catch((reason: unknown) => setError(messageOf(reason)))
+            onResolve={(approved,remember) => {
+              void api.resolveApproval(approval.id, approved,remember).catch((reason: unknown) => setError(messageOf(reason)))
             }}
           />
         )}
@@ -733,20 +734,40 @@ function ChatPane(props: {
   )
 }
 
-export function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; onResolve: (approved: boolean) => void }) {
+function SavedLogins({api,onError,onSite}:{api:RiotBridge;onError:(message:string)=>void;onSite:(origin:string)=>void}){
+  const [entries,setEntries]=useState<SavedLogin[]>([]),[url,setUrl]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[note,setNote]=useState('')
+  useEffect(()=>{let active=true;void api.getSnapshot().then(snapshot=>{if(active)setEntries(snapshot.savedLogins??[])}).catch(error=>{if(active)onError(messageOf(error))});return()=>{active=false}},[api,onError])
+  async function save():Promise<void>{
+    if(busy)return
+    setBusy(true);setNote('')
+    try{const saved=await api.saveLogin({url,username,password});setEntries(current=>[...current.filter(item=>item.id!==saved.login.id),saved.login]);onSite(saved.login.origin);setPassword('');setNote(saved.persistent?'Login saved with Windows encryption. Your bot can use it on this website.':'Saved for this session only. Protected storage could not be updated; the password will be forgotten when Riot closes.')}
+    catch(error){onError(messageOf(error))}finally{setBusy(false)}
+  }
+  async function remove(id:string):Promise<void>{if(busy)return;setBusy(true);try{await api.removeLogin(id);setEntries(current=>current.filter(item=>item.id!==id))}catch(error){onError(messageOf(error))}finally{setBusy(false)}}
+  return <section className="settings-section"><h3>Saved website logins</h3><p className="help">Save a login once and ask your bot to sign in. Passwords are encrypted on this computer and filled directly into the matching HTTPS website. Saving a login also allows this bot to work on that website without repeated prompts.</p>
+    {entries.map(entry=><div className="row" key={entry.id}><span><strong>{entry.origin}</strong><small> · {entry.username}</small></span><button type="button" disabled={busy} onClick={()=>void remove(entry.id)}>Remove login</button></div>)}
+    <label>Website<input type="url" placeholder="https://example.com" value={url} disabled={busy} onChange={event=>setUrl(event.target.value)}/></label>
+    <label>Username or email<input autoComplete="off" value={username} disabled={busy} onChange={event=>setUsername(event.target.value)}/></label>
+    <label>Password<input type="password" autoComplete="new-password" value={password} disabled={busy} onChange={event=>setPassword(event.target.value)}/></label>
+    <button type="button" disabled={busy||!url||!username||!password} onClick={()=>void save()}>{busy?'Saving…':'Save login'}</button>{note&&<p role="status" className="help">{note}</p>}
+  </section>
+}
+
+export function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; onResolve: (approved: boolean,remember?:boolean) => void }) {
   if (approval.kind === 'email' && approval.email) return <EmailApproval email={approval.email} onResolve={onResolve} />
   const files = approval.kind === 'codex' && approval.title === 'Allow this Codex file?'
   const browser = approval.kind === 'browser'
+  const site=approval.kind==='site'
   const firstLine = approval.command.trim().split(/[\r\n]/, 1)[0]
   const preview = firstLine.slice(0, 160) + (approval.command.trim().length > Math.min(firstLine.length,160) ? '…' : '')
   return (
     <section className="approval" aria-label="Approval request">
-      <strong>{files ? 'Allow file changes?' : browser ? 'Allow browser action?' : 'Allow command?'}</strong>
+      <strong>{site?'Allow this website?':files ? 'Allow file changes?' : browser ? 'Allow browser action?' : 'Allow command?'}</strong>
       <p className="approval-summary">{files ? 'Codex wants to update project files.' : <code>{preview}</code>}</p>
       <p className="approval-warning">{approval.warning}</p>
-      <p className="approval-folder" title={approval.cwd}>Folder: {approval.cwd}</p>
+      <p className="approval-folder" title={approval.cwd}>{site?'Website':'Folder'}: {approval.cwd}</p>
       <details className="approval-details">
-        <summary>{files ? 'View changes' : browser ? 'View action details' : 'View command'}</summary>
+        <summary>{site?'View request':files ? 'View changes' : browser ? 'View action details' : 'View command'}</summary>
         <p className="help">Time limit: {Math.round(approval.timeoutMs / 1000)} seconds</p>
         <pre tabIndex={0} aria-label="Request details"><code>{approval.command}</code></pre>
       </details>
@@ -754,8 +775,9 @@ export function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; 
         <button type="button" onClick={() => onResolve(false)}>
           Don’t allow
         </button>
-        <button type="button" className="send" onClick={() => onResolve(true)}>
-          {files ? 'Allow changes' : browser ? 'Allow action' : 'Allow command'}
+        {site&&approval.siteOrigin&&<button type="button" onClick={()=>onResolve(true)}>This task only</button>}
+        <button type="button" className="send" onClick={() => onResolve(true,site&&Boolean(approval.siteOrigin))}>
+          {site?approval.siteOrigin?'Remember & allow':'Allow this task':files ? 'Allow changes' : browser ? 'Allow action' : 'Allow command'}
         </button>
       </div>
     </section>
@@ -1059,9 +1081,10 @@ function SettingsPane(props: {
       {tab === 'workspace' && <>
         <div className="page-intro"><h2>A place to get things done.</h2><p>Choose where your bot works and what it can do.</p></div>
         <section className="settings-section"><h3>Your bot’s working folder</h3><p className="help">Files your bot creates are kept here. Saved versions also appear in Files.</p>
-          <label>Folder location<input value={draft.workspacePath} onChange={event => update({ workspacePath: event.target.value, workspaceEditing: false })} /></label>
-          <div className="row"><button type="button" onClick={() => void props.api.pickWorkspace().then(folder => { if (folder) update({ workspacePath: folder, workspaceEditing: false }) }).catch(reason => props.onError(messageOf(reason)))}>Choose folder…</button><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}>Open saved folder</button></div>
+          <label>Folder location<input value={draft.workspacePath} onChange={event => update({ workspacePath: event.target.value, workspaceEditing: false,allowSensitiveFiles:false })} /></label>
+          <div className="row"><button type="button" onClick={() => void props.api.pickWorkspace().then(folder => { if (folder) update({ workspacePath: folder, workspaceEditing: false,allowSensitiveFiles:false }) }).catch(reason => props.onError(messageOf(reason)))}>Choose folder…</button><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}>Open saved folder</button></div>
           <label className="check permission-option"><input type="checkbox" checked={draft.workspaceEditing} onChange={event => update({ workspaceEditing: event.target.checked })} /><span><strong>Allow creating and editing files</strong><small>Enable this only for a folder you want this bot to work in. Changing folders turns this off until you enable it again.</small></span></label>
+          <label className="check permission-option"><input type="checkbox" checked={draft.allowSensitiveFiles} onChange={event=>update({allowSensitiveFiles:event.target.checked})}/><span><strong>Allow project secrets</strong><small>Riot file tools can read and edit credential files such as .env in this working folder. Their contents may be sent to your AI connection. Leave this off for normal work; saved website logins have their own encrypted store.</small></span></label>
         </section>
         <section className="settings-section"><h3>Help beyond the conversation</h3>
           <label className="check permission-option"><input type="checkbox" checked={draft.toolsEnabled} onChange={event => update({ toolsEnabled: event.target.checked })} /><span><strong>Allow tools</strong><small>{draft.provider === 'codex' ? 'Use Codex’s shell and web search, plus Riot’s memory and file tools.' : 'Let your bot use available tools to search, work with files, and remember useful details.'}</small></span></label>
@@ -1069,6 +1092,10 @@ function SettingsPane(props: {
         </section>
       </>}
       {tab === 'workspace' && <section className="settings-section"><h3>Connected apps</h3><p className="help">Choose the apps {props.bot.name} can use and manage its access in Workspace → Apps.</p><div className="row"><button type="button" onClick={props.onApps}><Icon name="apps" />Open Apps</button></div></section>}
+      {tab==='workspace'&&<>
+        <section className="settings-section"><h3>Remembered website access</h3><p className="help">Public research links open normally. On websites you allow here, this bot can share information, fill forms, and change content without asking on every step. Each permission applies to one exact HTTPS website.</p>{draft.trustedSites.length?draft.trustedSites.map(origin=><div className="row" key={origin}><code>{origin}</code><button type="button" onClick={()=>update({trustedSites:draft.trustedSites.filter(item=>item!==origin)})}>Remove access</button></div>):<p className="help">No websites allowed yet. You can remember access when your bot needs a new site.</p>}</section>
+        <SavedLogins key={props.bot.id} api={props.api} onError={props.onError} onSite={origin=>setDraft(current=>({...current,trustedSites:[...new Set([...current.trustedSites,origin])]}))}/>
+      </>}
       {tab === 'learning' && <LearningSettings settings={draft} onChange={update} />}
       {tab === 'limits' && <>
         <div className="page-intro"><h2>Set a comfortable pace.</h2><p>Limit how long a task can run. You can stop your bot at any time.</p></div>
@@ -1677,7 +1704,7 @@ function BotMenu(props: {
       }} />)}</div>
     </details>
     <section className="settings-section"><h3>Your bot’s space</h3><p className="folder-path">{props.bot.workspacePath || 'No folder chosen yet.'}</p><div className="row"><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}><Icon name="files" /> Open working folder</button><button type="button" disabled={saving} onClick={props.onSettings}>Model, files & limits</button><button type="button" disabled={saving} onClick={props.onEarlier}>Earlier conversations</button></div></section>
-    <details className="settings-section advanced-details"><summary>Browser & website sign-ins</summary><p className="help">Your bot has a separate browser profile. Open its browser to sign in to a website yourself, then let your bot continue.</p>
+    <details className="settings-section advanced-details"><summary>Browser & website sign-ins</summary><p className="help">Your bot keeps a separate browser profile and signed-in sessions. Save website logins in Bot settings → Files & tools so it can sign in for you. You can also open its browser to complete a verification or sign in yourself.</p>
       <p className="help">{browser?.installed ? `${browser.browserName || 'A browser'} is available.` : 'Install a browser to get started.'} {browser?.downloadNote}</p>
       <div className="row">{!browser?.open ? <button type="button" disabled={browserBusy || !browser?.installed} onClick={() => void browserAction(() => props.api.openBrowser())}>Open browser</button> : <>
         <button type="button" disabled={browserBusy} onClick={() => void browserAction(() => props.api.closeBrowser())}>Close browser</button>
@@ -1685,7 +1712,7 @@ function BotMenu(props: {
       </>}{!browser?.installed && <button type="button" disabled={browserBusy || browser?.installing} onClick={() => void browserAction(() => props.api.installBrowser())}>{browser?.installing ? 'Installing…' : 'Install Chromium'}</button>}</div>
       {browser?.open && <p className="help">Open websites may keep making their own requests, even when your bot is idle.</p>}{props.note && <p className="help" role="status">{props.note}</p>}
     </details>
-    <details className="settings-section advanced-details danger-zone"><summary>Delete this bot</summary><p className="help">Permanently remove this bot’s conversations, memories, skills, saved file copies, and browser profile. Your working folder stays.</p><button className="danger" type="button" disabled={props.running || saving} onClick={props.onDelete}>Delete bot…</button>{props.running && <p className="help">Stop this bot’s work before deleting it.</p>}</details>
+    <details className="settings-section advanced-details danger-zone"><summary>Delete this bot</summary><p className="help">Permanently remove this bot’s conversations, memories, skills, saved logins, saved file copies, and browser profile. Your working folder stays.</p><button className="danger" type="button" disabled={props.running || saving} onClick={props.onDelete}>Delete bot…</button>{props.running && <p className="help">Stop this bot’s work before deleting it.</p>}</details>
   </section>
 }
 

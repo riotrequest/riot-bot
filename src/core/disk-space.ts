@@ -1,13 +1,47 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ConfigError } from './errors'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 
-/** Read capacity counters only. Does not read files, run commands, or change permissions. */
+let volumes: {at:number;roots:Promise<string[]>}|null=null
+async function localWindowsVolumes():Promise<string[]>{
+  if(volumes&&Date.now()-volumes.at<10_000)return volumes.roots
+  const roots=promisify(execFile)(path.join(process.env.SystemRoot??'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe'),[
+    '-NoProfile','-NonInteractive','-Command',
+    '[IO.DriveInfo]::GetDrives() | Where-Object { [int]$_.DriveType -in @(2,3,5,6) } | ForEach-Object { $_.Name } | ConvertTo-Json -Compress'
+  ],{windowsHide:true,timeout:5000,maxBuffer:10000}).then(({stdout})=>{const result=JSON.parse(stdout);return (Array.isArray(result)?result:[result]).map((root:string)=>root.toUpperCase())}).catch(()=>{volumes=null;throw new ConfigError('Windows could not identify local drives. No filesystem query was sent to that location.')})
+  volumes={at:Date.now(),roots}
+  return roots
+}
+
+/** Check drive type and link targets before any operation can follow a network path. */
+export async function localDiskPath(location:string,platform=process.platform,localRoots=localWindowsVolumes,depth=0):Promise<string>{
+  if(depth>16)throw new ConfigError('That location contains too many filesystem links.')
+  if(/^(?:\\\\|\/\/)|\0/.test(location))throw new ConfigError('Disk-space checks accept local drives and folders, not network shares or device paths.')
+  const paths=platform==='win32'?path.win32:path,target=paths.resolve(location)
+  const root=paths.parse(target).root
+  if(platform==='win32'&&(!/^[A-Za-z]:\\$/.test(root)||!(await localRoots()).includes(root.toUpperCase())))throw new ConfigError('That drive is remote or unavailable. Choose a local drive or folder for this check.')
+  let current=root
+  const parts=target.slice(root.length).split(paths.sep).filter(Boolean)
+  for(let index=0;index<parts.length;index++){
+    current=paths.join(current,parts[index])
+    const stat=await fs.lstat(current)
+    if(stat.isSymbolicLink()){
+      const link=await fs.readlink(current)
+      return localDiskPath(paths.resolve(paths.dirname(current),link,...parts.slice(index+1)),platform,localRoots,depth+1)
+    }
+  }
+  return target
+}
+
+/** Read local capacity counters. Windows drive classification uses a fixed, noninteractive OS helper, never model-provided commands. */
 export async function getDiskSpace(location: string) {
-  const target = path.resolve(location)
+  let target = path.resolve(location)
   let stats
-  try { stats = await fs.statfs(target) }
+  try { target=await localDiskPath(location);stats = await fs.statfs(target) }
   catch (error) {
+    if(error instanceof ConfigError)throw error
     const code = (error as NodeJS.ErrnoException).code || 'unavailable'
     throw new ConfigError(`Could not read disk space for ${target} (${code}). Check that this drive or folder exists and is available.`)
   }

@@ -1,12 +1,34 @@
 import fs from 'fs'
 import path from 'path'
 import http from 'http'
+import net from 'net'
+import dgram from 'dgram'
 import { describe, expect, it } from 'vitest'
 import { availableBrowserName } from '../src/core/browser-playwright'
 import { previewAsset, verifyWebsite } from '../src/core/website-check'
 import { tempDir } from './helpers'
 
 describe('workspace website verification',()=>{
+  it.skipIf(!availableBrowserName(process.env.PLAYWRIGHT_BROWSERS_PATH ?? ''))('blocks WebRTC, UDP and TCP as well as ordinary page requests',async()=>{
+    const root=tempDir(),udp=dgram.createSocket('udp4')
+    let packets=0,connections=0
+    udp.on('message',()=>packets++)
+    await new Promise<void>(resolve=>udp.bind(0,'127.0.0.1',resolve))
+    const tcp=net.createServer(socket=>{connections++;socket.destroy()})
+    await new Promise<void>(resolve=>tcp.listen(0,'127.0.0.1',resolve))
+    try{
+      const udpPort=udp.address().port,tcpPort=(tcp.address() as net.AddressInfo).port
+      fs.writeFileSync(path.join(root,'index.html'),`<html><body><h1>Network isolation</h1><script>
+        window.peers=[];for(const urls of ['stun:127.0.0.1:${udpPort}','turn:127.0.0.1:${udpPort}?transport=udp','turn:127.0.0.1:${tcpPort}?transport=tcp']){
+          const pc=new RTCPeerConnection({iceServers:[{urls,username:'fixture',credential:'fixture'}]});peers.push(pc);pc.createDataChannel('test');pc.createOffer().then(o=>pc.setLocalDescription(o));
+        }
+      </script></body></html>`)
+      const report=JSON.parse(await verifyWebsite({workspace:root,entry:'index.html',editing:true,signal:new AbortController().signal}))
+      expect(report.status).toBe('passed')
+      expect(packets).toBe(0)
+      expect(connections).toBe(0)
+    }finally{udp.close();await new Promise<void>(resolve=>tcp.close(()=>resolve()))}
+  },45_000)
   it('serves only bounded static files inside the workspace, excluding credentials and external addresses',()=>{
     const root=tempDir()
     fs.writeFileSync(path.join(root,'index.html'),'<h1>Example</h1>')

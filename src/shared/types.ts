@@ -49,7 +49,12 @@ export interface PublicSettings {
   terminalTimeoutMs: number
   terminalMaxOutputChars: number
   searchUrlTemplate: string
+  trustedSites: string[]
+  allowSensitiveFiles: boolean
 }
+
+export interface LoginDraft {url:string;username:string;password:string}
+export interface SavedLogin {id:string;origin:string;username:string}
 
 export interface Conversation {
   id: string
@@ -176,13 +181,14 @@ export interface Memory {
 
 export interface ApprovalView {
   id: string
-  kind: 'terminal' | 'browser' | 'codex' | 'email'
+  kind: 'terminal' | 'browser' | 'codex' | 'email' | 'site'
   title: string
   command: string
   cwd: string
   timeoutMs: number
   warning: string
   email?: EmailPreview
+  siteOrigin?: string
 }
 
 export interface GmailStatus {
@@ -386,6 +392,7 @@ export interface Snapshot {
   artifacts?: ArtifactView[]
   runningBotIds?: string[]
   schedules: ScheduleView[]
+  savedLogins?: SavedLogin[]
 }
 
 export type ScheduleRepeat = 'once' | 'daily' | 'weekdays' | 'weekly'
@@ -566,7 +573,9 @@ export interface RiotBridge {
   setCredential(provider: ApiProviderId, secret: string): Promise<CredentialSaveResult>
   clearCredential(provider: ApiProviderId): Promise<CredentialStatus>
   pickWorkspace(): Promise<string | null>
-  resolveApproval(id: string, approved: boolean): Promise<void>
+  resolveApproval(id: string, approved: boolean, remember?: boolean): Promise<void>
+  saveLogin(input: LoginDraft): Promise<{login:SavedLogin;persistent:boolean}>
+  removeLogin(id:string): Promise<void>
   undoEdit(id: string): Promise<{ ok: boolean; message: string }>
   copyText(text: string): Promise<void>
   onEvent(handler: (event: AppEvent) => void): () => void

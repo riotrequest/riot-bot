@@ -42,7 +42,6 @@ export const BROWSER_SNAPSHOT_LIMIT = 40
 export const BROWSER_LINK_LIMIT = 8
 export const BROWSER_RESULT_LIMIT = 8
 
-const CONSEQUENTIAL = /\b(send|submit|pay|buy|purchase|delete|remove|publish|post|order|confirm|upload|checkout|subscribe|transfer|log out|sign out)\b/i
 
 export function checkNavigationUrl(value: string): URL {
   let url: URL
@@ -146,19 +145,8 @@ export function looksLikeSearchBlock(title: string, text: string, resultCount: n
   return /captcha|unusual traffic|are you a robot|verify (?:that )?you are human|access denied|enable javascript|complete the (?:following )?challenge|proof.of.work/i.test(`${title}\n${text.slice(0, 1500)}`)
 }
 
-export function clickNeedsApproval(control: { role: string; name: string; inputType: string }, pageUrl: string, template: string): boolean {
-  if (control.inputType === 'file' || control.inputType === 'password') return false
-  const name = control.name || ''
-  let pageHost = ''
-  try {
-    pageHost = new URL(pageUrl).hostname
-  } catch {
-    pageHost = ''
-  }
-  const host = searchHost(template)
-  if (host && pageHost === host && /\b(search|find|submit)\b/i.test(name) && !/\b(delete|pay|buy|purchase|publish|post|order)\b/i.test(name)) return false
-  // A generic button can submit a form even when its label says "Continue".
-  return CONSEQUENTIAL.test(name) || (control.role !== 'link' && control.role !== 'textbox' && control.role !== 'searchbox')
+export function clickNeedsApproval(_control: { role: string; name: string; inputType: string }, pageUrl: string, _template: string, trustedSites:string[]=[]): boolean {
+  try{return !trustedSites.includes(new URL(pageUrl).origin)}catch{return true}
 }
 
 export function cleanHtml(value: string): string {

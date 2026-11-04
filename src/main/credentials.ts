@@ -36,30 +36,33 @@ export class ElectronCredentialStore implements CredentialStore {
   }
 
   set(provider: CredentialKey, secret: string): { persistent: boolean; message: string } {
+    let encrypted:string|null=null
     if (this.encryptionAvailable) {
+      try { encrypted=safeStorage.encryptString(secret).toString('base64') }
+      catch { this.encryptionAvailable=false }
+    }
+    if(encrypted!==null){
       try {
         const data = this.read()
-        data[provider] = safeStorage.encryptString(secret).toString('base64')
-        fs.writeFileSync(this.file, JSON.stringify(data), 'utf8')
+        data[provider] = encrypted
+        this.write(data)
         this.session.delete(provider)
         return { persistent: true, message: 'Saved with Windows credential protection. It is not shown again.' }
-      } catch {
-        this.encryptionAvailable = false
-      }
+      } catch { /* File failures do not disable otherwise working OS encryption. */ }
     }
     this.session.set(provider, secret)
     return {
       persistent: false,
-      message: 'Saved for this session only. Windows credential protection is unavailable, so the key will be forgotten when you quit.'
+      message: 'Saved for this session only. Riot could not update protected storage, so this value will be forgotten when you quit.'
     }
   }
 
   get(provider: CredentialKey): string | null {
     if (this.session.has(provider)) return this.session.get(provider) ?? null
     if (!this.encryptionAvailable) return null
-    const encoded = this.read()[provider]
-    if (!encoded) return null
     try {
+      const encoded = this.read()[provider]
+      if (!encoded) return null
       return safeStorage.decryptString(Buffer.from(encoded, 'base64'))
     } catch {
       return null
@@ -67,15 +70,18 @@ export class ElectronCredentialStore implements CredentialStore {
   }
 
   clear(provider: CredentialKey): void {
-    this.session.delete(provider)
-    if (!this.encryptionAvailable) return
     const data = this.read()
-    delete data[provider]
-    fs.writeFileSync(this.file, JSON.stringify(data), 'utf8')
+    if (Object.hasOwn(data,provider)) {
+      delete data[provider]
+      this.write(data)
+    }
+    this.session.delete(provider)
   }
 
   secretValues(): string[] {
-    return credentialSecrets((['openai', 'openrouter', 'gmail-client', 'gmail'] as CredentialKey[])
+    let saved: string[] = []
+    try { saved = Object.keys(this.read()) } catch { /* Unreadable entries are unavailable, never overwritten. */ }
+    return credentialSecrets(([...new Set([...saved,...this.session.keys()])] as CredentialKey[])
       .map((provider) => this.get(provider))
       .filter((value): value is string => Boolean(value)))
   }
@@ -83,10 +89,22 @@ export class ElectronCredentialStore implements CredentialStore {
   private read(): Record<string, string> {
     try {
       const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8')) as unknown
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.values(parsed).some(value=>typeof value!=='string')) throw new Error('Invalid credential store')
       return parsed as Record<string, string>
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code==='ENOENT') return {}
+      throw new Error('The saved credential file could not be read. No saved entries were changed.')
+    }
+  }
+
+  private write(data: Record<string,string>): void {
+    const temporary = this.file + '.tmp'
+    try {
+      fs.writeFileSync(temporary,JSON.stringify(data),{encoding:'utf8',mode:0o600})
+      fs.renameSync(temporary,this.file)
     } catch {
-      return {}
+      try { fs.unlinkSync(temporary) } catch { /* Keep the original credential file. */ }
+      throw new Error('The saved credential file could not be updated. Retry after checking access to Riot’s app-data folder.')
     }
   }
 }

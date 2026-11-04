@@ -10,6 +10,16 @@ export class PathEscapeError extends Error {
 
 const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
 
+export function sensitivePath(requested:string):boolean{
+  return requested.split(/[\\/]/).some(part=>/^(?:\.env(?:\..*)?|\.ssh|\.aws|\.codex|credentials?(?:\.(?:json|ini|ya?ml|toml|txt))?|client_secret[^/\\]*\.json|auth\.json|id_(?:rsa|ed25519)(?:\..*)?|cookies|login data|local state)$/i.test(part)||/\.(?:pem|key|p12|pfx)$/i.test(part))
+}
+
+export function requireFileAccess(workspace:string,requested:string,allowSensitive=false):string{
+  const full=resolveWorkspacePath(workspace,requested)
+  if(!allowSensitive&&(sensitivePath(requested)||sensitivePath(path.relative(fs.realpathSync(workspace),full))))throw new Error('This file can contain credentials. Enable “Allow project secrets” once in Bot settings → Files & tools if you want its contents shared with this bot’s AI connection. Saved website logins stay in Riot’s encrypted login store.')
+  return full
+}
+
 export function resolveWorkspacePath(workspace: string, requested: string): string {
   if (!workspace) throw new PathEscapeError('Choose a workspace folder in Settings first.')
   if (requested.includes('\0')) throw new PathEscapeError('That path is not valid.')

@@ -1,12 +1,14 @@
 import type { ApiProviderId } from '../shared/types'
 
-export type CredentialKey = ApiProviderId | 'gmail-client' | 'gmail'
+export type CredentialKey = ApiProviderId | 'gmail-client' | 'gmail' | `logins:${string}`
 
 export function credentialSecrets(values: string[]): string[] {
+  const fields = new Set(['clientSecret','accessToken','refreshToken','password'])
+  const collect = (value: unknown): string[] => !value || typeof value!=='object' ? [] : Object.entries(value).flatMap(([key,item])=>fields.has(key)&&typeof item==='string' ? [item] : collect(item))
   return values.flatMap(value => {
     try {
       const data = JSON.parse(value)
-      return [value, ...['clientSecret', 'accessToken', 'refreshToken'].map(key => data?.[key]).filter((item): item is string => typeof item === 'string' && Boolean(item))]
+      return [value, ...collect(data)]
     } catch { return [value] }
   })
 }

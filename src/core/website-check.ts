@@ -2,7 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { chromium, type Browser } from 'playwright-core'
-import { chromiumLooksInstalled, installedBrowserChannel } from './browser-playwright'
+import { bundledChromiumExecutable, chromiumLaunchOptions, installedBrowserChannel } from './browser-playwright'
+import { startBrowserProxy, type BrowserProxy } from './browser-proxy'
 import { resolveWorkspacePath } from './path-safety'
 import { StopError } from './errors'
 
@@ -36,15 +37,17 @@ export async function verifyWebsite(options: {workspace:string;entry:string;edit
   const output = `riot-checks/${randomUUID()}`
   const destination = resolveWorkspacePath(options.workspace,output)
   let browser: Browser | null = null
+  let proxy: BrowserProxy | null = null
   const controller = new AbortController()
   const stop = ():void=>{ controller.abort();void browser?.close().catch(()=>undefined) }
   options.signal.addEventListener('abort',stop,{once:true})
   const timer = setTimeout(stop,45_000)
   try {
     if (options.signal.aborted) throw new StopError('Website check stopped.')
-    const bundled = chromiumLooksInstalled(process.env.PLAYWRIGHT_BROWSERS_PATH ?? '')
-    const channel = bundled ? undefined : installedBrowserChannel() ?? undefined
-    try { browser = await chromium.launch({headless:true,chromiumSandbox:true,channel,timeout:20_000,args:['--disable-features=WebRTC']}) }
+    const executable = bundledChromiumExecutable(process.env.PLAYWRIGHT_BROWSERS_PATH ?? '')
+    const channel = executable ? undefined : installedBrowserChannel() ?? undefined
+    proxy = await startBrowserProxy({denyAll:true})
+    try { browser = await chromium.launch({...chromiumLaunchOptions(proxy.url),headless:true,...(executable?{executablePath:executable}:{channel}),timeout:20_000}) }
     catch { return 'Website verification did not run: Chromium, Chrome or Edge could not start. Install Chromium from the bot menu or review the browser installation. No browser checks passed.' }
     if (controller.signal.aborted) throw new StopError('Website check stopped.')
     fs.mkdirSync(destination,{recursive:true})
@@ -85,5 +88,5 @@ export async function verifyWebsite(options: {workspace:string;entry:string;edit
     if (options.signal.aborted) throw new StopError('Website check stopped.')
     if (controller.signal.aborted) return 'Website verification timed out. It did not pass. Any partial screenshots are in the workspace.'
     throw error
-  } finally { clearTimeout(timer);options.signal.removeEventListener('abort',stop);await browser?.close().catch(()=>undefined) }
+  } finally { clearTimeout(timer);options.signal.removeEventListener('abort',stop);await browser?.close().catch(()=>undefined);await proxy?.close() }
 }

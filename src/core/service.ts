@@ -185,12 +185,13 @@ export class RiotService extends RiotApp {
     if (this.deletingBots.has(botId)) throw new ConfigError('This bot is being deleted.')
     if (!this.db.conversationForBot(botId,conversationId)) throw new ConfigError('That conversation is not in this bot.')
     if (conversationId!==this.db.getBot(botId)?.ongoingConversationId) throw new ConfigError('Send new work in the ongoing chat.')
-    const body = text.trim() || (attachmentIds.length ? 'Please examine the attached files.' : '')
+    let body = text.trim() || (attachmentIds.length ? 'Please examine the attached files.' : '')
     if (!body || body.length>100_000) throw new ConfigError('Write a message of up to 100,000 characters.')
     if (attachmentIds.length>MAX_ATTACHMENTS || new Set(attachmentIds).size!==attachmentIds.length) throw new ConfigError(`Choose up to ${MAX_ATTACHMENTS} different attachments.`)
     const settings = this.db.getSettings(botId)
     if (settings.provider==='codex' && (this.changingNativeConnection || super.getSnapshot().codex?.loginPending)) throw new ConfigError('Finish or cancel Codex sign-in before queuing a native job.')
     if (!settings.model.trim()) throw new ConfigError('Choose a model in Settings first.')
+    body=this.prepareUserMessage(body,botId)
     const job = this.db.transaction(()=>{
       if (this.db.pendingJobCount(botId)>=20) throw new ConfigError('This bot has 20 pending jobs. Finish or cancel some before adding more.')
       for (const id of attachmentIds) {
@@ -275,13 +276,13 @@ export class RiotService extends RiotApp {
   override takeoverBrowser(): string { return this.executor(this.currentBotId()).takeoverBrowser() }
   override resumeBrowser(): string { return this.executor(this.currentBotId()).resumeBrowser() }
 
-  override resolveApproval(id: string, approved: boolean): void {
+  override resolveApproval(id: string, approved: boolean, remember=false): void {
     const approval = this.db.getApproval(id)
     if (!approval || approval.status!=='pending') throw new ConfigError('That request is no longer waiting.')
     const owner = this.db.getRun(approval.runId)?.botId
     const executor = owner ? this.executors.get(owner) : undefined
-    if (executor?.pendingApproval()?.id===id) executor.resolveApproval(id,approved)
-    else if (super.pendingApproval()?.id===id) super.resolveApproval(id,approved)
+    if (executor?.pendingApproval()?.id===id) executor.resolveApproval(id,approved,remember)
+    else if (super.pendingApproval()?.id===id) super.resolveApproval(id,approved,remember)
     else throw new ConfigError('The original worker is no longer waiting for this approval.')
     this.jobsChanged()
   }
@@ -313,6 +314,7 @@ export class RiotService extends RiotApp {
     const executor = this.executors.get(id)
     this.executors.delete(id)
     await executor?.close()
+    this.clearBotLogins(id)
     this.db.deleteBot(id)
     const failed = await removeBotFiles(path.dirname(this.options.dbPath),id,workspace).catch(()=>[path.dirname(this.options.dbPath)])
     this.jobsChanged()
@@ -495,7 +497,7 @@ export class RiotService extends RiotApp {
 }
 
 function executionBinding(settings: Settings): string {
-  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions,settings.gmailAccount,settings.gmailAccess])
+  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions,settings.gmailAccount,settings.gmailAccess,settings.allowSensitiveFiles])
 }
 
 function workspacesOverlap(first: string, second: string): boolean {

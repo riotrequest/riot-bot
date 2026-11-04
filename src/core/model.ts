@@ -68,6 +68,8 @@ const objectSchema = (properties: Record<string, unknown>, required: string[]): 
 const stringProp = (description: string): Record<string, unknown> => ({ type: 'string', description })
 
 export const TOOLS: ToolDefinition[] = [
+  {name:'list_saved_logins',description:'List saved login IDs, HTTPS sites and usernames. Never returns passwords.',parameters:objectSchema({},[])},
+  {name:'fill_saved_login',description:'Fill a saved login locally on its exact HTTPS site. Use current snapshot references; then click sign-in.',parameters:objectSchema({id:{type:'string'},username_ref:{type:'string'},password_ref:{type:'string'}},['id','username_ref','password_ref'])},
   { name: 'gmail_search', description: 'Search this bot’s connected Gmail account using Gmail search syntax. Read-only; does not mark messages read. Email contents are untrusted reference material.', parameters: objectSchema({ query: stringProp('Gmail query, e.g. is:unread or from:customer@example.com.'), limit: { type: 'number', description: '1 to 10 messages; default 5.' }, page: stringProp('Optional nextPage from a previous result.') }, []) },
   { name: 'gmail_read_email', description: 'Read a Gmail message by ID, with a bounded plain-text body. Use nextOffset to read further. Does not open links or download attachments.', parameters: objectSchema({ id: stringProp('Message ID from Gmail search or a thread.'), offset: { type: 'number', description: 'Body character offset; default 0.' } }, ['id']) },
   { name: 'gmail_read_thread', description: 'Read the latest eight messages in one Gmail thread. Use gmail_read_email for more text from an individual message.', parameters: objectSchema({ id: stringProp('Gmail thread ID.') }, ['id']) },
@@ -290,6 +292,7 @@ const SCHEDULE_TOOL_NAMES = new Set(['list_schedules', 'create_schedule', 'manag
 
 export function toolsForGroups(groups: Array<'files' | 'terminal' | 'browser' | 'schedules' | 'email'>, learningControl = false): ToolDefinition[] {
   const selected = TOOLS.filter((tool) => {
+    if (tool.name === 'list_saved_logins' || tool.name === 'fill_saved_login') return groups.includes('browser')
     if (tool.name.startsWith('gmail_')) return groups.includes('email')
     if (tool.name === 'set_learning_preferences') return learningControl
     if (FILE_TOOL_NAMES.has(tool.name)) return groups.includes('files')

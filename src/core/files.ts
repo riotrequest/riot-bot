@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { inside, PathEscapeError, resolveWorkspacePath } from './path-safety'
+import { inside, PathEscapeError, requireFileAccess, resolveWorkspacePath,sensitivePath } from './path-safety'
 
 const MAX_WRITE_BYTES = 1_000_000
 
@@ -34,7 +34,7 @@ export function listFiles(workspace: string, requested = '.'): string {
   return lines.join('\n')
 }
 
-export function searchFiles(workspace: string, query: string, requested = '.'): string {
+export function searchFiles(workspace: string, query: string, requested = '.',allowSensitive=false): string {
   const needle = query.trim().toLowerCase()
   if (needle.length < 2) return 'Use at least 2 characters to search files.'
   const root = fs.realpathSync(workspace)
@@ -51,6 +51,7 @@ export function searchFiles(workspace: string, query: string, requested = '.'): 
       return
     }
     if (!inside(root, real)) return
+    if(!allowSensitive&&sensitivePath(path.relative(root,real)))return
     const stat = fs.statSync(real)
     if (stat.isFile()) {
       scanned += 1
@@ -87,8 +88,8 @@ export function searchFiles(workspace: string, query: string, requested = '.'): 
   return matches.join('\n')
 }
 
-export function readTextFile(workspace: string, requested: string, maxBytes: number): string {
-  const full = resolveWorkspacePath(workspace, requested)
+export function readTextFile(workspace: string, requested: string, maxBytes: number,allowSensitive=false): string {
+  const full = requireFileAccess(workspace, requested,allowSensitive)
   const stat = fs.statSync(full)
   if (!stat.isFile()) throw new Error('That path is not a file.')
   if (stat.size > maxBytes) throw new Error(`The file is ${stat.size} bytes, above the ${maxBytes} byte read limit.`)
@@ -97,12 +98,12 @@ export function readTextFile(workspace: string, requested: string, maxBytes: num
   return buffer.toString('utf8')
 }
 
-export function writeTextFile(workspace: string, requested: string, content: string, editing: boolean, append = false): FileChange | { error: string } {
+export function writeTextFile(workspace: string, requested: string, content: string, editing: boolean, append = false,allowSensitive=false): FileChange | { error: string } {
   if (!editing) {
     return { error: 'File editing is off. Turn it on in Settings before Riot Bot creates or changes files.' }
   }
   if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) return { error: 'That file is above the 1 MB write limit.' }
-  const full = resolveWorkspacePath(workspace, requested)
+  const full = requireFileAccess(workspace, requested,allowSensitive)
   const exists = fs.existsSync(full)
   if (append && !exists) return { error: 'Create the file before appending another chunk.' }
   let before: string | null = null
@@ -138,13 +139,14 @@ export function editTextFile(
   requested: string,
   oldText: string,
   newText: string,
-  editing: boolean
+  editing: boolean,
+  allowSensitive=false
 ): FileChange | { error: string } {
   if (!editing) return { error: 'File editing is off. Turn it on in Settings before Riot Bot creates or changes files.' }
   if (!oldText) return { error: 'The edit needs the exact text to replace.' }
   let current: string
   try {
-    current = readTextFile(workspace, requested, MAX_WRITE_BYTES)
+    current = readTextFile(workspace, requested, MAX_WRITE_BYTES,allowSensitive)
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'The file could not be read.' }
   }
@@ -152,7 +154,7 @@ export function editTextFile(
   if (hits === 0) return { error: 'That text was not found in the file.' }
   if (hits > 1) return { error: 'That text appears more than once. Include more surrounding lines so the edit matches one place.' }
   const next = current.replace(oldText, newText)
-  return writeTextFile(workspace, requested, next, true)
+  return writeTextFile(workspace, requested, next, true,false,allowSensitive)
 }
 
 export function undoFileEdit(workspace: string, edit: { path: string; beforeText: string | null; afterText: string; createdFile: boolean }): { ok: true } | { ok: false; message: string } {

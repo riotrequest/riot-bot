@@ -14,7 +14,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
-    "dist:win": "electron-vite build && electron-builder --win"
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:win:release": "electron-vite build && electron-builder --win --config electron-builder.release.yml"
   },
   "dependencies": {
     "playwright-core": "^1.64.1",

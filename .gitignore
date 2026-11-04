@@ -10,6 +10,15 @@ dist/
 .env
 .env.*
 !.env.example
+credentials.bin.json
+credentials*.json
+client_secret*.json
+*.pem
+*.key
+*.p12
+*.pfx
+browser-profiles/
+playwright-browsers/
 *.sqlite.bak
 *.sqlite.*.bak
 .DS_Store

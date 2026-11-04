@@ -20,10 +20,11 @@ import { makeApp, tempDir } from './helpers'
 const publicLookup = async (): Promise<string[]> => ['93.184.216.34']
 
 describe('browser policy', () => {
-  it('requires confirmation for an ambiguous form button while allowing search and links', () => {
+  it('requires website authority regardless of page roles or labels, then remembers that exact origin', () => {
     expect(clickNeedsApproval({ role: 'button', name: 'Continue', inputType: 'submit' }, 'https://example.com/form', DEFAULT_SEARCH_TEMPLATE)).toBe(true)
-    expect(clickNeedsApproval({ role: 'link', name: 'Docs', inputType: '' }, 'https://example.com', DEFAULT_SEARCH_TEMPLATE)).toBe(false)
-    expect(clickNeedsApproval({ role: 'button', name: 'Search', inputType: 'submit' }, 'https://search.brave.com/search', DEFAULT_SEARCH_TEMPLATE)).toBe(false)
+    expect(clickNeedsApproval({ role: 'link', name: 'Docs', inputType: '' }, 'https://example.com', DEFAULT_SEARCH_TEMPLATE)).toBe(true)
+    expect(clickNeedsApproval({ role: 'button', name: 'Search', inputType: 'submit' }, 'https://search.brave.com/search', DEFAULT_SEARCH_TEMPLATE)).toBe(true)
+    expect(clickNeedsApproval({role:'link',name:'Enviar',inputType:''},'https://example.com',DEFAULT_SEARCH_TEMPLATE,['https://example.com'])).toBe(false)
   })
 
   it('extracts observed search results and blocks private destinations', () => {
@@ -189,7 +190,7 @@ describe('browser sessions', () => {
       if (input.messages.at(-1)?.role === 'tool') return { content: 'Opened.', toolCalls: [] }
       return { content: '', toolCalls: [{ id: 'open-1', name: 'open_url', arguments: JSON.stringify({ url: 'https://example.com/story' }) }] }
     }
-    const limited = await app.sendMessage(app.getSnapshot().current?.conversation.id ?? '', 'Open the article')
+    const limited = await app.sendMessage(app.getSnapshot().current?.conversation.id ?? '', 'Open the article https://example.com/story')
     expect(limited.status).toBe('paused')
     expect(limited.note).toMatch(/model calls/)
     expect(provider.calls).toHaveLength(1)
@@ -236,6 +237,7 @@ describe('browser sessions', () => {
     const pages: FakePage[] = []
     const { app, provider } = makeApp({ lookupHost: publicLookup, browserOpener: fakeOpener([], pages) })
     await app.openBrowser()
+    await pages[0].goto('https://example.com/')
     const conversationId = app.getSnapshot().current?.conversation.id ?? ''
     provider.handler = (input) => {
       if (input.messages.at(-1)?.role === 'tool') return { content: 'Seen.', toolCalls: [] }
@@ -248,7 +250,7 @@ describe('browser sessions', () => {
     }
     const pendingClick = app.sendMessage(conversationId, 'Place the order')
     const { waitFor } = await import('./helpers')
-    await waitFor(() => app.pendingApproval()?.kind === 'browser')
+    await waitFor(() => app.pendingApproval()?.kind === 'site')
     expect(app.pendingApproval()?.command).toMatch(/Place order/)
     app.resolveApproval(app.pendingApproval()?.id ?? '', false)
     const denied = await pendingClick
@@ -263,7 +265,7 @@ describe('browser sessions', () => {
     })
     pages[0]?.hold(gate)
     provider.handler = () => ({ content: '', toolCalls: [{ id: 'open-2', name: 'open_url', arguments: JSON.stringify({ url: 'https://example.com/next' }) }] })
-    const pending = app.sendMessage(conversationId, 'Open the next page')
+    const pending = app.sendMessage(conversationId, 'Open the next page https://example.com/next')
     await waitFor(() => pages[0]?.waiting === true)
     app.stop()
     release()

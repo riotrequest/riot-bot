@@ -5,7 +5,7 @@ import { AppError, ConfigError, LimitError, PauseError, ProviderError, StopError
 import { newId } from './ids'
 import type { Logger } from './logger'
 import type { ChatMessage, ModelProvider, ModelResponse, ToolDefinition } from './model'
-import { redact } from './redact'
+import { redact, RedactingStream } from './redact'
 import { dollarBudgetEnabled, estimateCostUsd, estimateMessagesTokens, estimateTokens, fitTokens, knownPricing, localDay, type Settings } from './settings'
 
 export interface GatewayInput {
@@ -59,11 +59,13 @@ export class Gateway {
       if (input.signal.aborted) throw new StopError('Stopped before the next model request was sent.')
       let begun: Begun | null = null
       let receivedDelta = false
+      const secrets=this.deps.secrets(),safe=(text:string)=>redact(text,secrets)
+      const deltas=new RedactingStream(secrets,text=>input.onDelta?.(text))
       try {
         begun = this.begin(input, settings, attempt)
         const response = await this.deps.provider().complete({
           model: settings.model,
-          messages: input.messages,
+          messages: input.messages.map(message=>({...message,content:safe(message.content),...(message.toolCalls?{toolCalls:message.toolCalls.map(call=>({...call,arguments:safe(call.arguments)}))}:{})})),
           tools: input.purpose === 'bot_setup' ? undefined : settings.toolsEnabled ? input.tools : undefined,
           stream,
           maxOutputTokens: begun.maxOutput,
@@ -71,9 +73,12 @@ export class Gateway {
           signal: input.signal,
           onDelta: (text) => {
             if (text) receivedDelta = true
-            input.onDelta?.(text)
+            deltas.push(text)
           }
         })
+        deltas.finish()
+        response.content=safe(response.content)
+        response.toolCalls=response.toolCalls.map(call=>({...call,arguments:safe(call.arguments)}))
         if (input.signal.aborted) throw new ProviderError('cancelled', 'Stopped.')
         this.succeed(begun, response, input.context ?? null)
         this.deps.logger.info('model finished', {
@@ -85,6 +90,7 @@ export class Gateway {
         })
         return response
       } catch (error) {
+        deltas.finish()
         if (!begun || error instanceof AppError) throw error
         const providerError =
           input.signal.aborted

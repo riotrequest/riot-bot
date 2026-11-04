@@ -2,6 +2,12 @@
 
 Riot Bot is a personal Windows desktop assistant. Each bot has one ongoing conversation, its own memories, skills, workspace, and browser profile. The app does not call a model when it is idle, opened, or restarted.
 
+## Saved logins and security — November 3, 2026
+
+Save website logins once in **Bot settings → Files & tools → Saved website logins**, or use the labelled chat format in [saved logins and permissions](docs/security.md). Passwords use Windows-protected storage and are filled locally on the matching HTTPS site. Browser sessions and per-bot site access persist. A new site can be allowed for one task or remembered, so normal work on an approved site does not ask for every click. Remembered access includes sharing information and changing content on that site; remove it in the same settings panel.
+
+This follow-up fixes browser WebRTC bypasses, page-controlled approval bypasses, known-credential exposure in successful text results/streams, network paths in disk-space checks and credential deletion after encryption failure. Common project secret files need an explicit per-workspace grant. Electron packaging now has a fuse/integrity policy and a separate signing-required release command; CI checks code, dependencies and secrets. See the [security review and remaining limits](docs/security-review.md) and [contributor/AI guidance](AGENTS.md). Native Codex still has broader filesystem reads under its tested legacy Windows policy. This work does not publish a release.
+
 ## Gmail — November 3, 2026
 
 Connect an existing **Gmail / Google Workspace** mailbox in **Workspace → Apps → Gmail** using your own Google Desktop OAuth app setup file. Riot connects directly from your computer; it does not host your mailbox or require a Riot email account. [Set up Gmail](docs/gmail.md).
@@ -18,7 +24,7 @@ The right Workspace sidebar includes **Apps**, where you connect Gmail and choos
 
 ## Disk-space checks — November 3, 2026
 
-API and native Codex bots can now use **get_disk_space** (`riot_get_disk_space` in Codex) to read capacity directly from Riot’s runtime. It reports available/total bytes and decimal GB for the filesystem containing a specified drive or folder, defaulting to the bot’s working folder. It reads capacity counters only and requires tools to be enabled; workspace editing is unnecessary. It runs no terminal command and changes no system permissions. Unavailable values are reported as errors, with a full disk distinguished from missing counters.
+API and native Codex bots can use **get_disk_space** (`riot_get_disk_space` in Codex) to read capacity from Riot’s runtime. It reports bytes and decimal GB for a local drive or folder, defaulting to the bot’s working folder. It requires tools but not editing. Network shares, mapped drives and remote link targets are refused. A fixed noninteractive Windows helper classifies local drives; no model-provided command is executed and no terminal approval is needed. Unavailable values are errors, with a full disk distinguished from missing counters.
 
 This avoids restricted native PowerShell/WMI queries for routine disk-space questions. Native instructions prefer this tool and discourage cycling through command variants after permission failures. Completed turns containing failed actions now show **Finished · … · … failed**, with streamed tool errors and timing matched to their recorded result.
 
@@ -76,7 +82,7 @@ Data lives in `%APPDATA%\riot-bot\`:
 - `avatars\` — uploaded bot images, stored as PNG thumbnails named by bot id
 - `browser-profiles\<bot id>\` — that bot’s Chromium cookies and site storage
 - `playwright-browsers\` — the Chromium download, after you choose Install Chromium
-- `credentials.bin.json` — API keys encrypted with Windows
+- `credentials.bin.json` — Windows-encrypted API keys, Gmail credentials and per-bot website logins
 - `codex\` — Riot-owned Codex authentication, native sessions, and configuration; managed by the official CLI
 - `artifacts\<bot id>\` — immutable saved file versions in that bot’s Library
 - `riot-bot.log` — redacted operational log
@@ -180,11 +186,11 @@ An explicit Google search uses Google even when the default is Brave. The tool a
 
 Search remains free and uses no extra search-service key. A CAPTCHA pauses the task without another model call or alternate-URL retries. Its notice has **Take over browser** and **Resume browser** controls. Complete verification, choose Resume browser, and send the request again. A new request to inspect a solved search challenge can also reread that pending search. Riot Bot reuses the existing results instead of starting the search over; a retry with an unspecified engine keeps the pending search's engine. Resume alone does not start a model call. A result-reader failure is reported separately and leaves browser control available; it does not ask you to sign in. A window closed during an action pauses the run, and the next request reopens the bot's saved profile. No free search engine can guarantee unattended access on every network; Brave can also present a challenge.
 
-**Take over** gives you browser control for verification, sign-in, or other page interaction. Manual takeover on ordinary pages stays paused until **Resume**. The chat does not ask for a password, and password fields are not read or filled. Research and ordinary navigation do not ask for approval on every click. Sending a message, paying, publishing, deleting remote content, uploading a file, and similar actions show the control and the page and wait for confirmation. A search does not. A familiar button label is not treated as proof that the click is harmless.
+**Take over** gives you browser control for verification, sign-in, or other page interaction. Manual takeover on ordinary pages stays paused until **Resume**. Saved-login tools fill passwords locally on the exact saved HTTPS site; general fill tools cannot fill password fields. New interactive sites need site access, which you can remember to allow later clicks and fills without repeated prompts. This includes actions that send, pay, publish or delete on that site. Button labels never grant authority. File selection remains manual. Public research follows exact user/source links; generated destinations and search after private-source reads need their site's access. See [the permission scopes and limits](docs/security.md).
 
 Limits for one task: 12 browser actions, 5 tabs, 20 seconds for navigation, and 8 seconds for other browser actions. Hitting a limit stops with the result so far. Those steps share the task’s model-call budget. Search is always available. The other browser tools are added when the browser is already open or the request is about opening or using a page. File and terminal tools are added when the request is about files or commands. A request can also ask for one of those groups and receive it on the next step. A closed browser does not add browser definitions to an unrelated message.
 
-The browser is not isolated from your local network. Typed addresses must be `http` or `https`, and a local proxy checks the connections it handles, including redirects, and refuses a host that resolves to a private or local address. Checking only the address in `page.goto`, or resolving a name once, would not cover every connection the browser can make. WebRTC is turned off as a best effort. Do not treat this as a guarantee that a page cannot reach your LAN. There is no trusted-host setting in this version.
+Typed addresses must be public `http` or `https`. A local proxy validates destinations and pins connections to public addresses, including for redirects. Chromium policy prevents non-proxied WebRTC traffic; real Chrome and Edge STUN/TURN tests check this boundary. The static checker additionally uses a deny-all proxy. These are tested transport restrictions, not a formal guarantee for every future browser version or protocol. Remembered site access does not bypass the private-address restrictions.
 
 ## Limits
 
@@ -226,11 +232,13 @@ Web fetches resolve the host, refuse the request if any address is local or priv
 npm run dist:win
 ```
 
-This writes an unsigned installer:
+Without a configured signing identity, this writes a local unsigned development installer:
 
 `release\Riot-Bot-Setup-0.1.0.exe`
 
-`playwright-core` is unpacked from the app archive so the packaged app can run the Chromium installer. An unpacked Windows build was checked on November 1, 2026: `release\win-unpacked\resources\app.asar.unpacked\node_modules\playwright-core\cli.js` is present. Chromium itself is downloaded into `%APPDATA%\riot-bot\playwright-browsers` when you choose Install Chromium, including after a restart. The NSIS installer was not rebuilt for this version. It is not code-signed and uses the default Electron icon. Windows SmartScreen and antivirus software can warn about it.
+For an eventual public release, use `npm run dist:win:release`; its separate config requires a real publisher signature. No certificate is configured by this work. The existing NSIS installer in `release/` was not replaced and predates these fixes. The November 3 hardening check rebuilt an isolated unpacked Windows app, checked its actual fuses and exercised packaged startup. See [the security report](docs/security-review.md) for artifact verification and remaining release work.
+
+`playwright-core` remains unpacked for optional Chromium setup, so those files are outside the main ASAR's integrity check. The installer runs in an Electron utility process with its download helper in a worker thread, preserving installation with RunAsNode disabled. Chromium downloads into `%APPDATA%\riot-bot\playwright-browsers` only when requested. The app still uses the default Electron icon.
 
 ## Tests
 
@@ -238,7 +246,7 @@ This writes an unsigned installer:
 npm run check
 ```
 
-The November 1–2, 2026 review and follow-ups expanded the suite from 69 to 169 tests. `npm run check` passes TypeScript checks, all 169 tests, and the production build. The latest regressions cover reasoning-only responses, invalid tool JSON, recoverable page failures, persistent bounded reads, matching a specific file, unfinished summaries, remaining-step warnings, and saved-default migration. Node 22 prints `ExperimentalWarning: SQLite is an experimental feature` while the tests run. Model calls in the automated suite use mocks. Four offline DOM tests use an installed browser and skip explicitly if none is available; they passed on this machine. Passing the checks does not mean every provider model accepts tools, streaming, images, or the same context size.
+The November 3 follow-up passes `npm run check`: TypeScript, **44 test files / 281 tests**, and a production build. Regressions cover saved-logins/site authority, successful-result and streaming redaction, WebRTC transports, real DOM authorization and stale references, credential removal, local-only disk checks, project-secret grants and the isolated installer worker, alongside the existing job/Gmail/native/provider checks. Node can print an experimental SQLite warning. Model calls use mocks; offline browser cases use disposable profiles and skip explicitly if no supported browser is installed. Bundled Chromium and installed Chrome/Edge passed on this machine. Passing these checks does not establish that every provider model accepts all capabilities.
 
 Additional desktop checks used isolated app data and exercised 80-message pages, scroll preservation, saved failed outcomes, actual PNG/JPEG decoding and resizing, screenshot paste, the file-picker handler, bot separation, pending-upload persistence across restart, message previews, and app-wide Activity after task completion. The history test visits 2,081 messages with identical timestamps without skips or duplicates. No renderer errors were recorded.
 

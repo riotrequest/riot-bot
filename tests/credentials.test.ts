@@ -3,11 +3,16 @@ import { MemoryCredentialStore } from '../src/core/credentials'
 import { ProviderError } from '../src/core/errors'
 import { MemoryLogger, RedactingLogger } from '../src/core/logger'
 import { redact } from '../src/core/redact'
+import { memoryRejection } from '../src/core/memory'
 import { makeApp } from './helpers'
 
 const KEY = 'purple-lantern-key-99'
 
 describe('credentials', () => {
+  it('refuses to save a known short password in ordinary memory',()=>{
+    expect(memoryRejection('My account PIN is 1234',['1234'])).not.toBeNull()
+    expect(memoryRejection('The project uses ticket ABC1234',['1234'])).toBeNull()
+  })
   it('keeps secrets out of renderer payloads, activity, and logs', async () => {
     const sink = new MemoryLogger()
     const logger = new RedactingLogger(sink, () => [KEY])
