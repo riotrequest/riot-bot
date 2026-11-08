@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { inside, PathEscapeError, requireFileAccess, resolveWorkspacePath,sensitivePath } from './path-safety'
+import { inside, openWorkspaceFile, PathEscapeError, requireFileAccess, resolveWorkspacePath,sensitivePath, withWorkspaceFile } from './path-safety'
 
 const MAX_WRITE_BYTES = 1_000_000
 
@@ -55,14 +55,14 @@ export function searchFiles(workspace: string, query: string, requested = '.',al
     const stat = fs.statSync(real)
     if (stat.isFile()) {
       scanned += 1
-      if (stat.size > 1_000_000) return
-      let content: string
+      if (stat.size > 1_000_000 || stat.nlink > 1) return
+      let content: string | null
       try {
-        content = fs.readFileSync(real, 'utf8')
+        content = withWorkspaceFile(real, 'r', (fd, opened) => opened.isFile() && opened.size <= 1_000_000 ? fs.readFileSync(fd, 'utf8') : null)
       } catch {
         return
       }
-      if (content.includes('\0')) return
+      if (content === null || content.includes('\0')) return
       const lines = content.split(/\r?\n/)
       const line = lines.findIndex(item => item.toLowerCase().includes(needle))
       if (line >= 0) matches.push(`${path.relative(root, real)}:${line + 1}: ${lines[line].trim().slice(0, 250)}`)
@@ -90,12 +90,21 @@ export function searchFiles(workspace: string, query: string, requested = '.',al
 
 export function readTextFile(workspace: string, requested: string, maxBytes: number,allowSensitive=false): string {
   const full = requireFileAccess(workspace, requested,allowSensitive)
-  const stat = fs.statSync(full)
-  if (!stat.isFile()) throw new Error('That path is not a file.')
-  if (stat.size > maxBytes) throw new Error(`The file is ${stat.size} bytes, above the ${maxBytes} byte read limit.`)
-  const buffer = fs.readFileSync(full)
-  if (buffer.subarray(0, 8000).includes(0)) throw new Error('That file looks binary, so it was not read as text.')
-  return buffer.toString('utf8')
+  return withWorkspaceFile(full, 'r', (fd, stat) => {
+    if (!stat.isFile()) throw new Error('That path is not a file.')
+    if (stat.size > maxBytes) throw new Error(`The file is ${stat.size} bytes, above the ${maxBytes} byte read limit.`)
+    const buffer = fs.readFileSync(fd)
+    if (buffer.subarray(0, 8000).includes(0)) throw new Error('That file looks binary, so it was not read as text.')
+    return buffer.toString('utf8')
+  })
+}
+
+/** Replaces a file's contents through the handle that passed the checks, not by reopening the path. */
+function replaceContents(fd: number, content: string): void {
+  const bytes = Buffer.from(content, 'utf8')
+  fs.ftruncateSync(fd, 0)
+  let written = 0
+  while (written < bytes.length) written += fs.writeSync(fd, bytes, written, bytes.length - written, written)
 }
 
 export function writeTextFile(workspace: string, requested: string, content: string, editing: boolean, append = false,allowSensitive=false): FileChange | { error: string } {
@@ -107,30 +116,39 @@ export function writeTextFile(workspace: string, requested: string, content: str
   const exists = fs.existsSync(full)
   if (append && !exists) return { error: 'Create the file before appending another chunk.' }
   let before: string | null = null
-  if (exists) {
-    const stat = fs.lstatSync(full)
-    if (stat.isSymbolicLink()) {
-      const real = fs.realpathSync(full)
-      const root = fs.realpathSync(workspace)
-      if (!inside(root, real)) {
-        return { error: 'That path leaves the workspace through a shortcut, symlink, or junction.' }
+  let fd: number | null = null
+  try {
+    if (exists) {
+      const stat = fs.lstatSync(full)
+      if (stat.isSymbolicLink()) {
+        const real = fs.realpathSync(full)
+        const root = fs.realpathSync(workspace)
+        if (!inside(root, real)) {
+          return { error: 'That path leaves the workspace through a shortcut, symlink, or junction.' }
+        }
       }
+      if (!fs.statSync(full).isFile()) return { error: 'That path is not a file.' }
+      const opened = openWorkspaceFile(full, 'r+')
+      fd = opened.fd
+      if (!opened.stat.isFile()) return { error: 'That path is not a file.' }
+      if (opened.stat.size > MAX_WRITE_BYTES) return { error: 'The existing file is too large to replace safely.' }
+      const bytes = fs.readFileSync(fd)
+      before = bytes.toString('utf8')
+      if (bytes.includes(0) || !Buffer.from(before, 'utf8').equals(bytes)) {
+        return { error: 'The existing file is binary or is not UTF-8 text, so it was not replaced.' }
+      }
+    } else {
+      fs.mkdirSync(path.dirname(full), { recursive: true })
+      resolveWorkspacePath(workspace, requested)
     }
-    const fileStat = fs.statSync(full)
-    if (!fileStat.isFile()) return { error: 'That path is not a file.' }
-    if (fileStat.size > MAX_WRITE_BYTES) return { error: 'The existing file is too large to replace safely.' }
-    const bytes = fs.readFileSync(full)
-    before = bytes.toString('utf8')
-    if (bytes.includes(0) || !Buffer.from(before, 'utf8').equals(bytes)) {
-      return { error: 'The existing file is binary or is not UTF-8 text, so it was not replaced.' }
-    }
-  } else {
-    fs.mkdirSync(path.dirname(full), { recursive: true })
-    resolveWorkspacePath(workspace, requested)
+    if (append) content = (before ?? '') + content
+    if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) return { error: 'The complete file would exceed the 1 MB write limit.' }
+    // A new file is created exclusively, so nothing (including a hard link) can be planted at the path first.
+    if (fd === null) fd = fs.openSync(full, 'wx')
+    replaceContents(fd, content)
+  } finally {
+    if (fd !== null) fs.closeSync(fd)
   }
-  if (append) content = (before ?? '') + content
-  if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) return { error: 'The complete file would exceed the 1 MB write limit.' }
-  fs.writeFileSync(full, content, 'utf8')
   return { path: full, beforeText: before, afterText: content, createdFile: !exists, diff: previewDiff(full, before ?? '', content) }
 }
 
@@ -165,12 +183,27 @@ export function undoFileEdit(workspace: string, edit: { path: string; beforeText
     return { ok: false, message: error instanceof Error ? error.message : 'The edited path is no longer in the workspace.' }
   }
   if (!fs.existsSync(full)) return { ok: false, message: 'The file is no longer there, so it was not undone.' }
-  const current = fs.readFileSync(full)
-  if (!current.equals(Buffer.from(edit.afterText, 'utf8'))) {
-    return { ok: false, message: 'The file changed after this edit, so Riot Bot did not undo it.' }
+  let opened: { fd: number; stat: fs.Stats }
+  try {
+    opened = openWorkspaceFile(full, edit.createdFile ? 'r' : 'r+')
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'The file could not be opened, so it was not undone.' }
   }
-  if (edit.createdFile) fs.unlinkSync(full)
-  else fs.writeFileSync(full, edit.beforeText ?? '', 'utf8')
+  let open = true
+  try {
+    if (!opened.stat.isFile()) return { ok: false, message: 'That path is no longer a file, so it was not undone.' }
+    const current = fs.readFileSync(opened.fd)
+    if (!current.equals(Buffer.from(edit.afterText, 'utf8'))) {
+      return { ok: false, message: 'The file changed after this edit, so Riot Bot did not undo it.' }
+    }
+    if (edit.createdFile) {
+      fs.closeSync(opened.fd)
+      open = false
+      fs.unlinkSync(full)
+    } else replaceContents(opened.fd, edit.beforeText ?? '')
+  } finally {
+    if (open) fs.closeSync(opened.fd)
+  }
   return { ok: true }
 }
 
