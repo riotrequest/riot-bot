@@ -10,6 +10,42 @@ export class PathEscapeError extends Error {
 
 const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
 
+export const HARD_LINK_MESSAGE = 'That file has more than one name (a hard link), and another name may be outside the workspace, so Riot Bot did not open or change it. Replace it with an ordinary copy to use it here.'
+
+/**
+ * A hard link has no "real" location: every name of the file is equal, and Node cannot list the
+ * other names. A regular file with another name may live outside the workspace or carry a
+ * credential file's name, so realpath and name checks cannot confine it. File tools refuse it.
+ */
+export function refuseHardLink(stat: fs.Stats): void {
+  if (stat.isFile() && stat.nlink > 1) throw new PathEscapeError(HARD_LINK_MESSAGE)
+}
+
+/**
+ * Opens an already resolved workspace path and repeats the hard-link check on the opened handle,
+ * so a link swapped in after the path checks is still refused. Read and write through `fd`.
+ */
+export function openWorkspaceFile(full: string, flags: 'r' | 'r+'): { fd: number; stat: fs.Stats } {
+  const fd = fs.openSync(full, flags)
+  try {
+    const stat = fs.fstatSync(fd)
+    refuseHardLink(stat)
+    return { fd, stat }
+  } catch (error) {
+    fs.closeSync(fd)
+    throw error
+  }
+}
+
+export function withWorkspaceFile<T>(full: string, flags: 'r' | 'r+', use: (fd: number, stat: fs.Stats) => T): T {
+  const { fd, stat } = openWorkspaceFile(full, flags)
+  try {
+    return use(fd, stat)
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 export function sensitivePath(requested:string):boolean{
   return requested.split(/[\\/]/).some(part=>/^(?:\.env(?:\..*)?|\.ssh|\.aws|\.codex|credentials?(?:\.(?:json|ini|ya?ml|toml|txt))?|client_secret[^/\\]*\.json|auth\.json|id_(?:rsa|ed25519)(?:\..*)?|cookies|login data|local state)$/i.test(part)||/\.(?:pem|key|p12|pfx)$/i.test(part))
 }
@@ -73,6 +109,7 @@ export function resolveWorkspacePath(workspace: string, requested: string): stri
     if (!inside(root, real)) {
       throw new PathEscapeError('That path leaves the workspace through a shortcut, symlink, or junction.')
     }
+    refuseHardLink(fs.statSync(real))
     return real
   } catch (error) {
     if (error instanceof PathEscapeError) throw error
