@@ -3,7 +3,7 @@
 **A local-first AI assistant for Windows. Run several bots, each with its own memory, workspace and browser, and let the app itself, not a prompt, decide what they are allowed to do.**
 
 > [!NOTE]
-> Riot Bot is an early preview (version 0.1.0). It runs on Windows, is built from source, and has no signed installer yet. Read the [known limitations](#known-limitations) before giving a bot access to anything important.
+> Riot Bot is an early preview (version 0.1.0). Today it is a Windows desktop app, built from source, with no signed installer yet. Other platforms and an always-on server are on the [roadmap](#roadmap). Read the [known limitations](#known-limitations) before giving a bot access to anything important.
 
 <!-- TODO(owner): replace this placeholder with a short GIF or screenshot. Suggested file: docs/images/hero.gif, referenced from here as an image. -->
 > **Screenshot placeholder (hero GIF):** the main window, showing the bot list on the left, a bot working through a request in Chat, and the Workspace sidebar (Tasks, Files, Memories, Schedule, Apps) on the right.
@@ -183,7 +183,7 @@ For an eventual public release, use `npm run dist:win:release`; its separate con
 
 ## Known limitations
 
-- Riot Bot runs only on Windows.
+- Riot Bot currently runs only on Windows, as a desktop app on your own computer. macOS, Linux and an always-on server are planned, not shipped; see the [roadmap](#roadmap).
 - Recall is summary plus search, not a full replay of every past message. If the saved messages do not establish an answer, the assistant is instructed to say so.
 - A deleted memory or disabled skill leaves later requests, but older messages that mention it remain in the transcript.
 - Dollar figures can differ from the provider bill. A missing price blocks dollar-budget mode; it does not invent a price.
@@ -204,6 +204,15 @@ For an eventual public release, use `npm run dist:win:release`; its separate con
 - The installer is unsigned and does not yet include this version.
 
 The [security review](docs/security-review.md) records the remaining architectural risks in more detail.
+
+## Roadmap
+
+Riot Bot is a Windows desktop app today. The long-term goal is a UI and a backend that people can run on an always-on server, on more than just Windows. These items are **planned and not shipped**. Nothing in this section works yet:
+
+- **Self-hostable, always-on backend with a web UI** *(planned, not shipped)*: run Riot on a machine that stays on, so schedules and bot work no longer depend on a desktop session, and use it from a browser.
+- **macOS and Linux support** *(planned, not shipped)*: run Riot on platforms other than Windows.
+
+Features that depend on Windows today, such as the Windows-protected credential store, will need a platform-appropriate replacement that keeps the same guarantees before these items can ship.
 
 ## Documentation
 
