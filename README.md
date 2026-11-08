@@ -19,7 +19,7 @@ What makes it different:
 - **Local-first.** Chats, memories, skills, schedules and saved files live in a SQLite database and folders on your PC. Riot has no account, server, sync or telemetry. What leaves your computer goes to services you choose to use, such as your model provider, the sites a bot visits, Google for Gmail, and the research service for web search.
 - **Multiple bots, kept apart.** Each bot has its own memory, skills, working folder, browser profile, schedules, saved logins and permissions. Two bots can work at the same time, and a running task stays with the bot that started it. (Native Codex bots can read more of the filesystem; see [known limitations](#known-limitations).)
 - **Permissions enforced in application code.** File, terminal, browser, Gmail and spending rules are checked in Electron's main process. Web pages, emails, tool output and the model's own replies cannot approve an action, raise a budget or grant another bot's access.
-- **Saved logins in the Windows credential store.** Website passwords are encrypted with Windows protection and kept out of chat, memory and the model's context. Riot fills them locally, only for the bot that owns the login and only on the exact saved HTTPS site.
+- **Saved logins in the Windows credential store.** Website and server passwords are encrypted with Windows protection and kept out of chat, memory and the model's context. Riot fills them locally, only for the bot that owns the login and only on the exact saved HTTPS site or server.
 - **Gmail with reviewed sending.** Connect your own mailbox through your own Google app. Every send shows each recipient and the full message for you to approve, unless you turn on a narrow per-bot reply rule for an exact saved reply.
 - **Schedules.** Reminders pop up without an AI call. Scheduled bot tasks run with that bot's usual tools, approvals and budget.
 - **Browser automation.** A visible Chromium, Chrome or Edge window with a separate profile for each bot. You grant site access once or for a single task, revoke it at any time, and can take over the window for sign-in or verification.
@@ -86,7 +86,7 @@ Details: [tasks, saved files and local verification](docs/jobs-and-library.md).
 
 ### Browser automation
 
-Each bot gets a visible browser window with its own profile, separate from your personal Chrome or Edge profile. Sign-ins and cookies persist across restarts. Bots read pages through compact snapshots and act on the elements they observed. They have no tool for running arbitrary page scripts. Automatic downloads are cancelled, and you choose any file to upload yourself.
+Each bot gets a visible browser window with its own profile, separate from your personal Chrome or Edge profile. Sign-ins and cookies persist across restarts. Bots read the whole page through snapshots, including frames and shadow DOM, with each element’s state and value, and models that accept images can also take a labelled screenshot. They can click, type, choose dropdown options, press keys, hover, drag, wait for a page to change and switch tabs, but have no tool for running arbitrary page scripts. Uploads come from the bot’s workspace and ask you every time. Files a bot downloads are saved into its workspace `Downloads` folder. The number of browser steps per task is a setting for each bot.
 
 The first time a bot needs to interact with a site, a card offers **Remember & allow**, **This task only**, or **Deny**. Remembered access lets that bot click and fill forms on that site without asking each time, including actions that send, pay, publish or delete there. You can revoke it in **Bot settings**. **Take over** hands you the window for sign-in, MFA or a CAPTCHA. For the connections it handles, a local proxy refuses private and local-network destinations, including after redirects.
 
@@ -98,6 +98,8 @@ Details: [user guide: browser](docs/user-guide.md#browser) and [saved logins and
 ### Saved website logins
 
 Save a login once in **Bot settings → Files & tools → Saved website logins**, or with a labelled chat command. The password goes into the Windows-protected credential store, apart from chat history and memory. The model only sees an ID and metadata. Riot checks the bot, the exact HTTPS origin and the current page elements, then fills the password locally. Removing a login deletes its stored entry.
+
+Paste a PuTTY, plink or sshpass command with its password into the chat and Riot saves it as a server login in the same protected store, removing the password from your message before it is stored or sent anywhere. The bot can then run commands on that server, each one after your approval, through PuTTY’s plink.
 
 Details: [saved logins and permissions](docs/security.md).
 

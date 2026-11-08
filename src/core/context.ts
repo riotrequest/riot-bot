@@ -42,6 +42,8 @@ export function buildContext(input: {
   budgetKind?: 'manual' | 'automatic' | 'fallback'
   outputReserve?: number
   capacitySource?: ContextView['capacitySource']
+  /** A screenshot for the model, sent as the newest message and counted like any image. */
+  visual?: { content: string; images: string[] }
 }): BuiltContext {
   const reserve = input.toolTokenReserve ?? 0
   const allowance = Math.max(0, input.responseAllowance ?? 0)
@@ -105,6 +107,7 @@ export function buildContext(input: {
     for (const group of messageGroups) {
       for (const message of group) body.push(toChatMessage(message, input.toolPreviewChars))
     }
+    if (input.visual) body.push({ role: 'user', content: input.visual.content, images: input.visual.images })
     return body
   }
 

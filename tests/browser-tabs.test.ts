@@ -18,7 +18,7 @@ describe('Playwright tab lifecycle', () => {
     const exists = vi.spyOn(fs, 'existsSync').mockImplementation((file) => String(file).endsWith(suffix))
     try {
       const browser = await openPlaywrightBrowser({ profileDir: profile, proxyUrl: 'http://127.0.0.1:9', browsersPath: tempDir() })
-      expect(launch).toHaveBeenCalledWith(path.join(profile, channel), expect.objectContaining({ channel, headless: false, chromiumSandbox: true, acceptDownloads: false }))
+      expect(launch).toHaveBeenCalledWith(path.join(profile, channel), expect.objectContaining({ channel, headless: false, chromiumSandbox: true, acceptDownloads: true }))
       expect(browser.name).toBe(channel === 'chrome' ? 'Google Chrome' : 'Microsoft Edge')
       await browser.close()
     } finally { exists.mockRestore() }

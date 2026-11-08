@@ -6,6 +6,15 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 8, 2026 — Fuller browser control and saved server logins
+
+- **Page snapshots:** a snapshot now covers the whole page instead of the first 40 elements, lists on-screen elements first, reaches into frames and open shadow DOM, shows element states and current values, and accepts a search word. Secret fields show only whether they are filled. An element in a frame from another site needs that site’s access.
+- **New browser actions:** choose a dropdown option, press a key, hover, drag, wait for text or an address, and switch tabs. Fill can press Enter to submit. Confirmation dialogs are reported and dismissed unless the bot accepts one for an action you asked for.
+- **Screenshots:** models that accept images can take a screenshot of the page with element references drawn on it. A model that refuses images falls back to snapshots. Native Codex bots do not get screenshots.
+- **Uploads and downloads:** a bot can upload a workspace file after you approve that upload, on every website. A download started by the bot’s click or key press is saved into the workspace `Downloads` folder without overwriting anything; other downloads are cancelled.
+- **Browser step limit:** the old fixed limit of 12 browser actions per task is now a per-bot setting, 50 by default, from 5 to 200.
+- **Server logins:** paste a PuTTY, plink or sshpass command with its password and Riot saves the login encrypted for that bot and removes the password from the message before it is stored or sent. The new **run on server** tool runs one approved command at a time through PuTTY’s plink, which alone receives the password. See [saved logins and permissions](docs/security.md#save-a-server-login).
+
 ### November 8, 2026 — Hard-linked files refused
 
 - **File tools:** reading, searching, editing, Undo, the website checker and Library capture now refuse a file with more than one name (a hard link). Before this, a hard link inside a workspace could expose or overwrite a file outside it, including a `.env` under an innocent name. **Allow project secrets** does not lift the refusal. See [saved logins and permissions](docs/security.md#project-files-and-powerful-actions).

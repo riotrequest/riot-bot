@@ -31,16 +31,53 @@ export function searchEngineFor(url: string): SearchEngine | null {
   return null
 }
 
-export const MAX_BROWSER_ACTIONS = 12
-export const MAX_BROWSER_TABS = 5
+/** Default browser actions per task. Each bot can change it under Bot settings → Limits. */
+export const DEFAULT_BROWSER_ACTIONS = 50
+export const MIN_BROWSER_ACTIONS = 5
+export const MAX_BROWSER_ACTIONS = 200
+export const MAX_BROWSER_TABS = 8
 export const BROWSER_NAV_TIMEOUT_MS = 20_000
 export const BROWSER_ACTION_TIMEOUT_MS = 8_000
 export const BROWSER_TEXT_LIMIT = 4_000
 /** Local page text kept for read_tool_result. The model request gets a shorter preview. */
 export const BROWSER_STORED_TEXT_LIMIT = 20_000
-export const BROWSER_SNAPSHOT_LIMIT = 40
-export const BROWSER_LINK_LIMIT = 8
+/** Elements a snapshot examines across the page and its frames. */
+export const BROWSER_SCAN_LIMIT = 400
+/** Elements a snapshot lists. On-screen elements come first; a query reaches the rest. */
+export const BROWSER_SNAPSHOT_LIMIT = 80
+export const BROWSER_FRAME_LIMIT = 12
+export const BROWSER_LINK_LIMIT = 20
 export const BROWSER_RESULT_LIMIT = 8
+export const BROWSER_WAIT_LIMIT_MS = 20_000
+export const BROWSER_DOWNLOAD_TIMEOUT_MS = 60_000
+
+const NAVIGATION_KEYS = ['Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']
+const ACTIVATING_KEYS = ['Enter', 'Space', 'Backspace', 'Delete']
+const KEY_NAMES = new Map([...NAVIGATION_KEYS, ...ACTIVATING_KEYS].map((key) => [key.toLowerCase(), key]))
+for (const [alias, key] of [['esc', 'Escape'], ['return', 'Enter'], ['up', 'ArrowUp'], ['down', 'ArrowDown'], ['left', 'ArrowLeft'], ['right', 'ArrowRight'], ['spacebar', 'Space'], ['del', 'Delete']] as const) KEY_NAMES.set(alias, key)
+const MODIFIERS = new Map([['control', 'Control'], ['ctrl', 'Control'], ['shift', 'Shift'], ['alt', 'Alt'], ['meta', 'Meta']])
+
+/**
+ * Normalizes a key the model asked to press into Playwright's spelling, or returns null.
+ * `activates` is false only for unmodified navigation keys, which move focus or scroll
+ * without sending or changing anything on the site.
+ */
+export function browserKey(value: string): { key: string; activates: boolean } | null {
+  const parts = value.trim().split('+').map((part) => part.trim()).filter(Boolean)
+  if (parts.length === 0 || parts.length > 3) return null
+  const last = parts.pop()!
+  const modifiers: string[] = []
+  for (const part of parts) {
+    const modifier = MODIFIERS.get(part.toLowerCase())
+    if (!modifier || modifiers.includes(modifier)) return null
+    modifiers.push(modifier)
+  }
+  const named = KEY_NAMES.get(last.toLowerCase())
+  const key = named ?? ([...last].length === 1 ? last : null)
+  if (!key) return null
+  const navigation = NAVIGATION_KEYS.includes(key) && (modifiers.length === 0 || (key === 'Tab' && modifiers.join() === 'Shift'))
+  return { key: [...modifiers, key].join('+'), activates: !navigation }
+}
 
 
 export function checkNavigationUrl(value: string): URL {

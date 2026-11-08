@@ -152,6 +152,102 @@ export function writeTextFile(workspace: string, requested: string, content: str
   return { path: full, beforeText: before, afterText: content, createdFile: !exists, diff: previewDiff(full, before ?? '', content) }
 }
 
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
+const DOWNLOAD_FOLDER = 'Downloads'
+/** Windows acts on these just by showing a folder that holds them, for example by fetching a remote icon. */
+const REFUSED_DOWNLOADS = /\.(?:lnk|url|scf|library-ms|searchconnector-ms|website|appref-ms)$/i
+const MIME_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+  '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.json': 'application/json', '.html': 'text/html', '.xml': 'application/xml', '.zip': 'application/zip',
+  '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.mp4': 'video/mp4', '.mov': 'video/quicktime'
+}
+
+export interface UploadSource {
+  /** Workspace-relative path, with forward slashes. */
+  path: string
+  name: string
+  mimeType: string
+  buffer: Buffer
+}
+
+/** Reads a workspace file for a browser upload, with the same path and secret-file checks as read_file. */
+export function readUploadFile(workspace: string, requested: string, allowSensitive = false): UploadSource {
+  const full = requireFileAccess(workspace, requested, allowSensitive)
+  const buffer = withWorkspaceFile(full, 'r', (fd, stat) => {
+    if (!stat.isFile()) throw new Error('That path is not a file.')
+    if (stat.size > MAX_UPLOAD_BYTES) throw new Error(`The file is ${formatBytes(stat.size)}, above the 25 MB upload limit.`)
+    return fs.readFileSync(fd)
+  })
+  return { path: workspaceRelative(workspace, full), name: path.basename(full), mimeType: MIME_TYPES[path.extname(full).toLowerCase()] ?? 'application/octet-stream', buffer }
+}
+
+/**
+ * Copies a finished browser download into the workspace's Downloads folder under a safe name that is
+ * not taken yet. The source is the browser's own temporary file, never a path from the model.
+ */
+export function saveDownloadedFile(input: { workspace: string; source: string; suggestedName: string; url: string; editing: boolean; allowSensitive?: boolean }): { path: string; size: number } | { error: string } {
+  if (!input.workspace) return { error: 'This bot has no workspace folder to save downloads into.' }
+  if (!input.editing) return { error: 'File editing is off. Turn it on in Settings so Riot Bot can save downloads into the workspace.' }
+  const name = safeFileName(input.suggestedName)
+  if (REFUSED_DOWNLOADS.test(name)) return { error: `${name} is a Windows shortcut file. Riot Bot does not save those, because Windows can act on them just by showing the folder.` }
+  const size = fs.statSync(input.source).size
+  if (size > MAX_DOWNLOAD_BYTES) return { error: `The download is ${formatBytes(size)}, above the 100 MB limit, so it was not saved.` }
+  const extension = path.extname(name)
+  const stem = name.slice(0, name.length - extension.length)
+  for (let copy = 1; copy <= 50; copy += 1) {
+    const requested = path.join(DOWNLOAD_FOLDER, copy === 1 ? name : `${stem} (${copy})${extension}`)
+    const full = requireFileAccess(input.workspace, requested, input.allowSensitive)
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    resolveWorkspacePath(input.workspace, requested)
+    try {
+      // Exclusive copy: an existing file, link or planted path is never overwritten.
+      fs.copyFileSync(input.source, full, fs.constants.COPYFILE_EXCL)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
+      throw error
+    }
+    markFromInternet(full, input.url)
+    return { path: workspaceRelative(input.workspace, full), size }
+  }
+  return { error: `Downloads already has 50 files named like ${name}.` }
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** A Windows-safe file name: no separators, reserved characters, device names or trailing dots. */
+function safeFileName(value: string): string {
+  let name = value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/^[\s.]+|[\s.]+$/g, '')
+  if (/^(?:con|prn|aux|nul|com\d|lpt\d)(?:\.|$)/i.test(name)) name = `_${name}`
+  if (name.length > 120) {
+    const extension = path.extname(name).slice(0, 16)
+    name = name.slice(0, 120 - extension.length) + extension
+  }
+  return name || 'download'
+}
+
+/** Adds the mark of the web Chrome would add, so Windows warns before running a downloaded program. */
+function markFromInternet(full: string, url: string): void {
+  if (process.platform !== 'win32') return
+  const host = /^https?:\/\/[^\s]+$/i.test(url) ? `HostUrl=${url}\r\n` : ''
+  try {
+    fs.writeFileSync(`${full}:Zone.Identifier`, `[ZoneTransfer]\r\nZoneId=3\r\n${host}`)
+  } catch {
+    // Some file systems have no alternate streams. The file is still saved.
+  }
+}
+
+function workspaceRelative(workspace: string, full: string): string {
+  return path.relative(fs.realpathSync(workspace), full).split(path.sep).join('/')
+}
+
 export function editTextFile(
   workspace: string,
   requested: string,

@@ -71,7 +71,9 @@ describe('input budget', () => {
       recent,
       tokenBudget: 8000,
       responseAllowance: 2048,
-      toolTokenReserve: estimateTokens(JSON.stringify(toolsForGroups(['files', 'terminal', 'browser'])))
+      // The default manual budget holds the instructions with the file and terminal tools. With the browser
+      // tools as well it is too small, and the request pauses with the message checked in the test above.
+      toolTokenReserve: estimateTokens(JSON.stringify(toolsForGroups(['files', 'terminal'])))
     })
     expect(built.overBudget).toBe(false)
     expect(built.omittedMessageIds.length).toBeGreaterThan(0)
