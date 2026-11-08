@@ -1,6 +1,6 @@
 # Tasks, saved files and local verification
 
-Riot’s Electron main process owns execution independently of the chat renderer. The desktop window closes to the tray. There is no extra daemon to install. Model work starts only from a user request or a saved scheduled task; bot selection, window opening, status refresh and sign-in do not start it. Due reminders can show on boot; overdue bot tasks wait for **Run now**. See [scheduling](scheduling.md).
+Riot’s Electron main process owns execution independently of the chat renderer. The desktop window closes to the tray. There is no extra daemon to install. Model work starts only from a user request or a saved scheduled task; bot selection, window opening, status refresh and sign-in do not start it. Due reminders are kept on boot and pop up once Riot is minimized or not the focused window; overdue bot tasks wait for **Run now**. See [scheduling](scheduling.md).
 
 ## Execution
 

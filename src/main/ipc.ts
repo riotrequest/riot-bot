@@ -6,7 +6,7 @@ import type { RiotService } from '../core/service'
 import { isId } from '../core/ids'
 import type { SkillDraft } from '../core/skills'
 import { publicErrorMessage } from '../core/redact'
-import type { AppPreferences, BotDraft, BotMenuAction, GmailRuleDraftInput, ProviderId, PublicSettings } from '../shared/types'
+import type { AppNotice, AppPreferences, BotDraft, BotMenuAction, GmailRuleDraftInput, ProviderId, PublicSettings } from '../shared/types'
 import type { ElectronCredentialStore } from './credentials'
 import type { ScheduleDraft } from '../shared/types'
 
@@ -45,7 +45,7 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'allowSensitiveFiles'
 ]
 
-export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore): void {
+export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore, notices: { list: () => AppNotice[]; dismiss: (id: string) => AppNotice[] } = { list: () => [], dismiss: () => [] }): void {
   const handle = (channel: string, fn: (app: RiotService, args: unknown[]) => unknown): void => {
     ipcMain.handle(channel, async (event, ...args) => {
       assertSender(event, getWindow())
@@ -58,6 +58,8 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   }
 
   handle('app:getSnapshot', (app) => app.getSnapshot())
+  handle('notices:list', () => notices.list())
+  handle('notices:dismiss', (_app, args) => notices.dismiss(typeof args[0] === 'string' ? args[0] : ''))
   handle('gmail:status', app => app.getGmailStatus())
   handle('gmail:connect', app => app.connectGmail())
   handle('gmail:cancelLogin', app => app.cancelGmailLogin())
@@ -220,7 +222,7 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('settings:update', (app, args) => app.updateSettings(pickSettings(args[0])))
   handle('settings:updateApp', (app, args) => {
     const patch = pickSettings(args[0])
-    return app.updateAppSettings({ ...(patch.provider !== undefined ? { provider: requireProvider(patch.provider) } : {}), ...(patch.model !== undefined ? { model: patch.model } : {}), ...(patch.maxEstimatedSpendPerDayUsd !== undefined ? { maxEstimatedSpendPerDayUsd: patch.maxEstimatedSpendPerDayUsd } : {}) })
+    return app.updateAppSettings({ ...(patch.provider !== undefined ? { provider: requireProvider(patch.provider) } : {}), ...(patch.model !== undefined ? { model: patch.model } : {}), ...(patch.maxEstimatedSpendPerDayUsd !== undefined ? { maxEstimatedSpendPerDayUsd: patch.maxEstimatedSpendPerDayUsd } : {}), ...researchSettingsPatch(args[0]) })
   })
   handle('codex:status', (app) => app.getCodexStatus())
   handle('codex:connect', (app) => app.connectCodex())
@@ -228,6 +230,9 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('codex:disconnect', (app) => app.disconnectCodex())
   handle('credentials:set', (app, args) => app.setCredential(requireApiProvider(args[0]), requireSecret(args[1])))
   handle('credentials:clear', (app, args) => app.clearCredential(requireApiProvider(args[0])))
+  handle('research:setKey', (app, args) => app.setResearchKey(requireResearchProvider(args[0]), requireSecret(args[1])))
+  handle('research:clearKey', (app, args) => app.clearResearchKey(requireResearchProvider(args[0])))
+  handle('research:checkKey', (app, args) => app.checkResearchKey(requireResearchProvider(args[0])))
   handle('logins:save',(app,args)=>{
     const input=args[0] as Record<string,unknown>|null
     if(!input||typeof input!=='object')throw new Error('Enter the website login.')
@@ -399,6 +404,28 @@ function gmailRuleInput(value: unknown): GmailRuleDraftInput {
 function stringList(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new Error(`${label} were not valid.`)
   return value
+}
+
+function requireResearchProvider(value: unknown): 'tavily' | 'firecrawl' {
+  if (value === 'tavily' || value === 'firecrawl') return value
+  throw new Error('Choose Tavily or Firecrawl.')
+}
+
+function researchSettingsPatch(value: unknown): { webResearch?: 'automatic' | 'browser' | 'connection'; researchDailyCap?: number; researchTavily?: boolean; researchFirecrawl?: boolean } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const record = value as Record<string, unknown>
+  const patch: { webResearch?: 'automatic' | 'browser' | 'connection'; researchDailyCap?: number; researchTavily?: boolean; researchFirecrawl?: boolean } = {}
+  if ('webResearch' in record) {
+    if (record.webResearch !== 'automatic' && record.webResearch !== 'browser' && record.webResearch !== 'connection') throw new Error('Choose a web search mode.')
+    patch.webResearch = record.webResearch
+  }
+  if ('researchDailyCap' in record) {
+    if (typeof record.researchDailyCap !== 'number' || !Number.isInteger(record.researchDailyCap) || record.researchDailyCap < 1 || record.researchDailyCap > 200) throw new Error('Use a daily request cap from 1 to 200.')
+    patch.researchDailyCap = record.researchDailyCap
+  }
+  if ('researchTavily' in record) patch.researchTavily = record.researchTavily === true
+  if ('researchFirecrawl' in record) patch.researchFirecrawl = record.researchFirecrawl === true
+  return patch
 }
 
 function pickSettings(value: unknown): Partial<PublicSettings> {

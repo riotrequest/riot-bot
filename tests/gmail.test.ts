@@ -140,9 +140,34 @@ describe('Gmail tools and reliable sending', () => {
     expect(() => prepareGmailDraft(GMAIL_ACCOUNT, { ...draft, to: 'customer@example.com\r\nBcc: other@example.com' })).toThrow()
     expect(() => prepareGmailDraft(GMAIL_ACCOUNT, { ...draft, subject: 'Hello\r\nBad: value' })).toThrow()
     expect(() => prepareGmailDraft(GMAIL_ACCOUNT, { ...draft, subject: 'Different topic' }, ORIGINAL_MAIL)).toThrow(/original subject/)
+    const withFrom = (from: string) => ({ ...ORIGINAL_MAIL, payload: { ...ORIGINAL_MAIL.payload, headers: ORIGINAL_MAIL.payload!.headers!.map(header => header.name === 'From' ? { ...header, value: from } : header) } })
+    expect(prepareGmailDraft(GMAIL_ACCOUNT, { body: 'Thanks' }, withFrom('=?ISO-8859-1?Q?M=FCller=2C_J=F6rg?= <joerg@example.de>')).preview.to).toEqual(['joerg@example.de'])
+    expect(prepareGmailDraft(GMAIL_ACCOUNT, { body: 'Thanks' }, withFrom('=?UTF-8?B?TcO8bGxlciwgSsO2cmc=?= <joerg@example.de>')).preview.to).toEqual(['joerg@example.de'])
+    expect(prepareGmailDraft(GMAIL_ACCOUNT, { body: 'Thanks' }, withFrom('"Doe, John" <john@example.com>')).preview.to).toEqual(['john@example.com'])
+    expect(() => prepareGmailDraft(GMAIL_ACCOUNT, { body: 'Thanks' }, withFrom('=?UTF-8?Q?boss=40example=2Ecom?='))).toThrow(/recipient/)
     const html = { ...ORIGINAL_MAIL, payload: { mimeType: 'text/html', body: { data: Buffer.from('<p>Hello &amp; welcome</p><script>bad()</script>').toString('base64url') } } }
     expect(mailContent(html).text).toContain('Hello & welcome')
     expect(mailContent(html).text).not.toContain('bad()')
+    expect(mailContent(html).representations.join('\n')).toContain('Hello & welcome')
+    expect(mailContent(html).complete).toBe(true)
+    const plain = 'Hello, please acknowledge this message.'
+    const alternative = { id: 'mail1', threadId: 'thread1', payload: { mimeType: 'multipart/alternative', parts: [
+      { mimeType: 'text/plain', body: { data: Buffer.from(plain).toString('base64url') } },
+      { mimeType: 'text/html', body: { data: Buffer.from('<p>Please refund my order.</p>').toString('base64url') } }
+    ] } }
+    const versions = mailContent(alternative)
+    expect(versions.complete).toBe(true)
+    expect(versions.text).toContain(plain)
+    expect(versions.text).not.toContain('refund')
+    expect(versions.representations.some(item => item.includes('refund'))).toBe(true)
+    const chunk = 'a'.repeat(60_000)
+    const oversized = mailContent({ id: 'mail1', threadId: 'thread1', payload: { mimeType: 'multipart/alternative', parts: [
+      { mimeType: 'text/plain', body: { data: Buffer.from(chunk).toString('base64url') } },
+      { mimeType: 'text/html', body: { data: Buffer.from(`<p>${chunk}</p>`).toString('base64url') } }
+    ] } })
+    expect(oversized.complete).toBe(false)
+    expect(oversized.truncated).toBe(true)
+    expect(oversized.representations.reduce((sum, item) => sum + item.length, 0)).toBeLessThanOrEqual(100_000)
   })
 
   it('keeps drafts unsent until review, then confirms one send and suppresses repeats', async () => {

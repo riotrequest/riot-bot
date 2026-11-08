@@ -1,8 +1,10 @@
-import { app, BrowserWindow, clipboard, Menu, nativeImage, net, Notification, protocol, session, shell, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, net, protocol, screen, session, shell, Tray, type IpcMainEvent } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
+import { dismissNotice, mainWindowIsFocused, noticePopupBounds, noticesMaySurface, pushNotice, reconcileAttention, reminderNotice, seedAttention, type MainWindowPresence } from '../core/notices'
 import { RiotService } from '../core/service'
+import type { AppNotice } from '../shared/types'
 import { ConfigError } from '../core/errors'
 import type { Logger } from '../core/logger'
 import { createOpenAICompatibleProvider, MockProvider } from '../core/provider'
@@ -25,7 +27,11 @@ let riot: RiotService | null = null
 let tray: Tray | null = null
 let quitting = false
 let quitReady = false
-const reminderNotifications = new Set<Notification>()
+let windowShown = false
+let popup: BrowserWindow | null = null
+let popupReady = false
+let popupContentHeight = 150
+let notices: AppNotice[] = []
 
 const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
 
@@ -34,6 +40,103 @@ function showWindow(): void {
   if (window.isMinimized()) window.restore()
   window.show()
   window.focus()
+}
+
+function listNotices(): AppNotice[] {
+  return notices.map((item) => ({ ...item }))
+}
+
+function mainPresence(): MainWindowPresence | null {
+  if (!window || window.isDestroyed()) return null
+  return { destroyed: false, visible: window.isVisible(), minimized: window.isMinimized(), focused: window.isFocused() }
+}
+
+function shouldFloat(): boolean {
+  return noticesMaySurface({ windowShown, quitting, focused: mainWindowIsFocused(mainPresence()), count: notices.length })
+}
+
+function placePopup(height = popupContentHeight): void {
+  if (!popup || popup.isDestroyed()) return
+  if (Number.isFinite(height)) popupContentHeight = height
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
+  const bounds = noticePopupBounds(area, popupContentHeight)
+  popup.setBounds(bounds)
+  if (popup.isVisible()) popup.setBounds(bounds)
+}
+
+function revealPopup(): void {
+  if (!popup || popup.isDestroyed() || !popupReady || !shouldFloat()) return
+  placePopup()
+  if (!popup.isVisible()) popup.showInactive()
+  placePopup()
+}
+
+function syncPopup(): void {
+  if (!shouldFloat()) {
+    if (popup && !popup.isDestroyed() && popup.isVisible()) popup.hide()
+    return
+  }
+  void ensurePopup().then(() => revealPopup()).catch(() => { /* a later notice or job event asks again */ })
+}
+
+function publishNotices(): void {
+  const current = listNotices()
+  if (window && !window.isDestroyed()) window.webContents.send('app:event', { type: 'notices-changed', notices: current })
+  if (popup && !popup.isDestroyed() && popupReady) popup.webContents.send('notices:update', current)
+  syncPopup()
+}
+
+function fromPopup(event: IpcMainEvent): boolean {
+  const frame = event.senderFrame
+  return Boolean(popup && !popup.isDestroyed() && event.sender === popup.webContents && frame === popup.webContents.mainFrame && frame && allowedNavigation(frame.url))
+}
+
+async function ensurePopup(): Promise<void> {
+  if (!shouldFloat()) return
+  const existing = Boolean(popup && !popup.isDestroyed())
+  if (!existing) {
+    popupReady = false
+    const host = new BrowserWindow({
+      width: 360,
+      height: 150,
+      show: false,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      thickFrame: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      backgroundColor: '#00000000',
+      webPreferences: {
+        preload: path.join(__dirname, '../preload/notices.js'),
+        ...windowWebPreferences,
+        backgroundThrottling: false
+      }
+    })
+    popup = host
+    host.setAlwaysOnTop(true, 'floating')
+    host.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    host.webContents.on('will-navigate', (event, url) => { if (!allowedNavigation(url)) event.preventDefault() })
+    host.webContents.on('will-attach-webview', (event) => event.preventDefault())
+    host.on('closed', () => { if (popup === host) { popup = null; popupReady = false } })
+    host.webContents.on('did-finish-load', () => {
+      if (popup !== host) return
+      popupReady = true
+      host.webContents.send('notices:update', listNotices())
+      const fallback = setTimeout(() => { if (popup === host) revealPopup() }, 400)
+      host.once('closed', () => clearTimeout(fallback))
+    })
+    host.once('ready-to-show', () => { if (popup === host && popupReady) revealPopup() })
+    const url = devUrl ? `${devUrl}${devUrl.includes('?') ? '&' : '?'}notices=1` : 'app://local/index.html?notices=1'
+    try { await host.loadURL(url) } catch { if (popup === host) host.destroy() }
+    return
+  }
+  revealPopup()
 }
 
 function createTray(): void {
@@ -105,7 +208,13 @@ async function createWindow(): Promise<void> {
       ...windowWebPreferences
     }
   })
-  window.once('ready-to-show', () => window?.show())
+  window.once('ready-to-show', () => { windowShown = true; window?.show(); syncPopup() })
+  window.on('show', syncPopup)
+  window.on('hide', syncPopup)
+  window.on('minimize', syncPopup)
+  window.on('restore', syncPopup)
+  window.on('focus', syncPopup)
+  window.on('blur', syncPopup)
   window.on('close', (event) => {
     if (quitting) return
     event.preventDefault()
@@ -157,33 +266,41 @@ app.whenReady().then(async () => {
   })
   riot.boot()
   createTray()
-  const notifiedJobs = new Set<string>()
+  // Jobs from earlier sessions are not new events; only later changes raise a card.
+  let notifiedJobs = seedAttention(riot.listJobs('app'))
+  ipcMain.on('notices:dismiss', (event, id: unknown) => {
+    if (!fromPopup(event) || typeof id !== 'string') return
+    notices = dismissNotice(notices, id)
+    publishNotices()
+  })
+  ipcMain.on('notices:open', (event, id: unknown) => {
+    if (!fromPopup(event) || typeof id !== 'string') return
+    const notice = notices.find((item) => item.id === id)
+    if (!notice) return
+    notices = dismissNotice(notices, id)
+    showWindow()
+    if (window && !window.isDestroyed()) window.webContents.send('app:event', notice.kind === 'reminder' ? { type: 'open-schedule', botId: notice.botId } : { type: 'open-jobs', botId: notice.botId })
+    publishNotices()
+  })
+  ipcMain.on('notices:resize', (event, height: unknown) => {
+    if (!fromPopup(event) || typeof height !== 'number') return
+    placePopup(height)
+    revealPopup()
+  })
   riot.onEvent((event) => {
     if (event.type === 'reminder-fired' && !quitting) {
-      const reminder = event.schedule
-      if (!Notification.isSupported()) riot?.noteReminderDelivery(reminder.id, 'Desktop notifications are unavailable. This reminder is saved in Schedule.')
-      else {
-        const notification = new Notification({ title: reminder.title, body: reminder.instructions, timeoutType: 'never' })
-        reminderNotifications.add(notification)
-        notification.once('close', () => reminderNotifications.delete(notification))
-        notification.once('failed', () => { reminderNotifications.delete(notification); riot?.noteReminderDelivery(reminder.id, 'Windows could not show this notification. The reminder is saved in Schedule.') })
-        notification.once('click', () => { showWindow(); window?.webContents.send('app:event', { type: 'open-schedule', botId: reminder.botId }) })
-        notification.show()
-      }
+      notices = pushNotice(notices, reminderNotice(event.schedule))
+      publishNotices()
     }
     if (event.type === 'jobs-changed' && riot) {
       const jobs = riot.listJobs('app')
       const running = jobs.filter((job) => job.status === 'running')
       tray?.setToolTip(`Riot Bot · ${running.length ? `${running.length} working` : 'Ready'}`)
-      for (const job of jobs) {
-        const state = job.awaitingApproval ? 'approval' : job.status
-        const key = `${job.id}:${job.attempt}:${state}`
-        if (notifiedJobs.has(key) || !['approval', 'completed', 'failed', 'paused'].includes(state)) continue
-        notifiedJobs.add(key)
-        if (window?.isVisible() || quitting || !Notification.isSupported()) continue
-        const notification = new Notification({ title: 'Riot Bot', body: state === 'approval' ? 'A bot needs your approval. Open Riot Bot to review it.' : state === 'completed' ? 'A job finished. Open Riot Bot to see the result.' : 'A job needs attention. Open Riot Bot to review it.' })
-        notification.on('click', showWindow)
-        notification.show()
+      const result = reconcileAttention(notices, jobs, notifiedJobs, !quitting && !mainWindowIsFocused(mainPresence()))
+      notifiedJobs = result.notified
+      if (result.changed) {
+        notices = result.notices
+        publishNotices()
       }
     }
     if (!window || window.isDestroyed()) return
@@ -205,7 +322,15 @@ app.whenReady().then(async () => {
       return riot
     },
     () => window,
-    credentials
+    credentials,
+    {
+      list: listNotices,
+      dismiss: (id) => {
+        notices = dismissNotice(notices, id)
+        publishNotices()
+        return listNotices()
+      }
+    }
   )
   await createWindow()
 }).catch((error: unknown) => {
@@ -222,6 +347,8 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   if (quitting) return
   quitting = true
+  popup?.destroy()
+  popup = null
   tray?.destroy()
   tray = null
   void riot.close().catch(() => console.error('Riot Bot could not finish shutdown cleanly. Unfinished jobs will need review on restart.')).finally(() => { quitReady = true;app.quit() })

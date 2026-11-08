@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { CodexService } from '../src/core/codex'
 import { Database } from '../src/core/db'
-import { decideGmailSend, directGmailAutonomy, parseGmailRuleInput, type GmailAutonomyRule } from '../src/core/gmail-autonomy'
+import { decideGmailSend, directGmailAutonomy, parseGmailRuleInput, REPLY_RULE_LIMITS, type GmailAutonomyRule } from '../src/core/gmail-autonomy'
 import { newId } from '../src/core/ids'
 import { MockProvider } from '../src/core/provider'
 import { RiotService } from '../src/core/service'
@@ -608,6 +608,11 @@ describe('enforced Gmail reply delegation', () => {
     expect(card).toContain(REPLY)
     expect(card).toContain('Turn off')
     expect(card).toContain('Refunds in the original message')
+    expect(card).toContain('HTML version')
+    expect(card).toContain('original text Riot could not read')
+    expect(REPLY_RULE_LIMITS).toContain('display name or comment')
+    expect(REPLY_RULE_LIMITS).toContain('stored separately')
+    expect(REPLY_RULE_LIMITS).toContain('every plain-text and HTML version')
     expect(card).not.toContain('Allow everything')
     const preview = { id: 'rule', revision: 2, title: 'Customer report', account: GMAIL_ACCOUNT, recipients: ['customer@example.com'], threadIds: [], templates: [REPLY], excludedRecipients: [], excludedPhrases: [], dailySendLimit: 5, limits: 'Riot still asks before new emails.' }
     const dialog = renderToStaticMarkup(createElement(GmailRuleApproval, { rule: preview, onResolve() {} }))
@@ -647,6 +652,427 @@ describe('reply rule IPC', () => {
       expect(paused.templates).toEqual(['A much wider reply.'])
       expect(paused.excludedPhrases).toEqual(['HR'])
       await expect(invoke('gmail-rules:enabled', saved.id, 'yes')).rejects.toThrow(/on/)
+    } finally { await f.app.close() }
+  })
+})
+
+describe('final Gmail send authority', () => {
+  function source(fake: FakeGmail) {
+    const payload = fake.messages.get('mail1')?.payload
+    if (!payload) throw new Error('Missing original message')
+    return payload
+  }
+  function duringFinalSourceRead(fake: FakeGmail, action: () => void) {
+    let reads = 0
+    fake.beforeRequest = route => { if (route === '/messages/mail1' && ++reads === 2) action() }
+  }
+  function storedDraft(fixture: ReturnType<typeof setup>, id: string) {
+    const db = new Database(fixture.dbPath)
+    try { return db.getGmailDraft(GMAIL_ACCOUNT, id, fixture.app.getSnapshot().bot!.id) } finally { db.close() }
+  }
+  function watchApprovals(fixture: ReturnType<typeof setup>, approve: boolean) {
+    const approvals: ApprovalView[] = []
+    fixture.app.onEvent(event => { if (event.type === 'approval' && event.approval) { approvals.push(event.approval); fixture.app.resolveApproval(event.approval.id, approve) } })
+    return approvals
+  }
+  async function enabledReply(fixture: ReturnType<typeof setup>, body = REPLY, extra: Record<string, unknown> = {}) {
+    fixture.app.saveGmailRule({ title: 'Customer report', recipients: ['customer@example.com'], threadIds: [], templates: [body], excludedRecipients: [], excludedPhrases: [], dailySendLimit: 5, enabled: true })
+    return saveReply(fixture, body, extra)
+  }
+  function alternative(fake: FakeGmail, plain: string, html: string) {
+    const payload = source(fake)
+    payload.mimeType = 'multipart/alternative'
+    payload.body = {}
+    payload.parts = [
+      { mimeType: 'text/plain', body: { data: Buffer.from(plain).toString('base64url') } },
+      { mimeType: 'text/html', body: { data: Buffer.from(html).toString('base64url') } }
+    ]
+  }
+  function stripSavedVersions(fixture: ReturnType<typeof setup>, id: string) {
+    const db = openDatabase(fixture.dbPath)
+    try {
+      const row = db.prepare('SELECT reply_json FROM gmail_drafts WHERE account = ? AND draft_id = ?').get(GMAIL_ACCOUNT, id) as { reply_json?: string }
+      const reply = JSON.parse(row.reply_json ?? '{}') as Record<string, unknown>
+      delete reply.representations
+      db.prepare('UPDATE gmail_drafts SET reply_json = ? WHERE account = ? AND draft_id = ?').run(JSON.stringify(reply), GMAIL_ACCOUNT, id)
+    } finally { db.close() }
+  }
+  function expectNoSend(fixture: ReturnType<typeof setup>, id: string) {
+    expect(fixture.fake.sendCount).toBe(0)
+    expect(posted(fixture.fake)).toBe(false)
+    expect(fixture.app.listGmailRules().rules[0]?.sendsToday).toBe(0)
+    expect(fixture.app.listGmailRules().activity[0]?.decision).not.toBe('allow')
+    expect(fixture.app.listGmailRules().activity[0]?.outcome).not.toBe('sent')
+    expect(fixture.app.listGmailRules().activity[0]?.reason ?? '').not.toMatch(/Matched reply rule/)
+    expect(storedDraft(fixture, id)?.status).toBe('draft')
+  }
+
+  it('sends one ordinary plain-text reply and one supported HTML reply', async () => {
+    const plain = setup()
+    try {
+      const id = await enabledReply(plain)
+      const approvals = watchApprovals(plain, false)
+      plain.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await plain.app.sendMessage(plain.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals).toHaveLength(0)
+      expect(plain.fake.sendCount).toBe(1)
+      expect(posted(plain.fake)).toBe(true)
+      expect(storedDraft(plain, id)?.reply).toMatchObject({ complete: true, participants: ['customer@example.com'] })
+      expect(storedDraft(plain, id)?.reply?.representations.join('\n')).toContain('morning report')
+      expect(plain.app.listGmailRules().activity[0]).toMatchObject({ decision: 'allow', outcome: 'sent' })
+    } finally { await plain.app.close() }
+
+    const html = setup()
+    try {
+      const payload = source(html.fake)
+      payload.mimeType = 'text/html'
+      payload.body = { data: Buffer.from('<p>Hello &amp; welcome</p>').toString('base64url') }
+      delete payload.parts
+      const id = await enabledReply(html, NEUTRAL)
+      const approvals = watchApprovals(html, false)
+      html.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await html.app.sendMessage(html.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals).toHaveLength(0)
+      expect(html.fake.sendCount).toBe(1)
+      expect(storedDraft(html, id)?.reply).toMatchObject({ complete: true, participants: ['customer@example.com'] })
+      expect(storedDraft(html, id)?.reply?.body).toContain('Hello & welcome')
+    } finally { await html.app.close() }
+
+    const alternative = setup()
+    try {
+      const payload = source(alternative.fake)
+      payload.mimeType = 'multipart/alternative'
+      payload.body = {}
+      payload.parts = [
+        { mimeType: 'text/plain', body: { data: Buffer.from('Can you send the morning report?').toString('base64url') } },
+        { mimeType: 'text/html', body: { data: Buffer.from('<p>Can you send the morning report?</p>').toString('base64url') } }
+      ]
+      const id = await enabledReply(alternative, NEUTRAL)
+      const approvals = watchApprovals(alternative, false)
+      alternative.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await alternative.app.sendMessage(alternative.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals).toHaveLength(0)
+      expect(alternative.fake.sendCount).toBe(1)
+      expect(storedDraft(alternative, id)?.reply).toMatchObject({ complete: true, participants: ['customer@example.com'] })
+      expect(storedDraft(alternative, id)?.reply?.body).toContain('morning report')
+      expect(storedDraft(alternative, id)?.reply?.representations).toHaveLength(2)
+      expect(alternative.app.listGmailRules().activity[0]).toMatchObject({ decision: 'allow', outcome: 'sent' })
+    } finally { await alternative.app.close() }
+  })
+
+  it('holds externally stored, undecoded, and unsupported original text for review', async () => {
+    for (const change of [
+      (fake: FakeGmail) => { source(fake).body = { attachmentId: 'external-text-body', size: 750 } },
+      (fake: FakeGmail) => { const payload = source(fake); payload.mimeType = 'text/plain'; payload.body = { data: '***not-base64***', size: 14 } },
+      (fake: FakeGmail) => { const payload = source(fake); payload.mimeType = 'application/pkcs7-mime'; payload.body = { data: Buffer.from('Unparsed encrypted content').toString('base64url'), size: 26 } }
+    ]) {
+      const f = setup()
+      try {
+        change(f.fake)
+        const id = await enabledReply(f, NEUTRAL)
+        const reply = storedDraft(f, id)?.reply
+        expect(reply?.complete).toBe(false)
+        expect(reply?.body ?? '').not.toContain('Unparsed encrypted content')
+        const approvals = watchApprovals(f, false)
+        f.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+        expect((await f.app.sendMessage(f.id, 'Send the reply.')).status).toBe('completed')
+        expect(approvals.map(item => item.kind)).toEqual(['email'])
+        expectNoSend(f, id)
+        expect(f.app.listGmailRules().activity[0]).toMatchObject({ decision: 'ask', outcome: 'declined' })
+        expect(f.app.listGmailRules().activity[0]?.reason).toMatch(/original conversation/)
+      } finally { await f.app.close() }
+    }
+  })
+
+  it('sends one reviewed reply when the original text was stored externally', async () => {
+    const f = setup()
+    try {
+      source(f.fake).body = { attachmentId: 'external-text-body', size: 750 }
+      const id = await enabledReply(f, NEUTRAL)
+      const approvals = watchApprovals(f, true)
+      f.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await f.app.sendMessage(f.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expect(f.fake.sendCount).toBe(1)
+      expect(posted(f.fake)).toBe(true)
+      expect(f.app.listGmailRules().rules[0]?.sendsToday).toBe(0)
+      expect(f.app.listGmailRules().activity[0]).toMatchObject({ decision: 'ask', outcome: 'sent' })
+    } finally { await f.app.close() }
+  })
+
+  it('does not treat a display name or comment as a conversation recipient', async () => {
+    const quoted = setup()
+    try {
+      replaceHeader(quoted.fake, 'From', '"customer@example.com" <colleague@example.com>')
+      replaceHeader(quoted.fake, 'Subject', 'Private staffing conversation')
+      const id = await enabledReply(quoted, NEUTRAL, { to: 'customer@example.com' })
+      expect(storedDraft(quoted, id)?.reply).toMatchObject({ complete: true, participants: ['colleague@example.com'] })
+      const approvals = watchApprovals(quoted, false)
+      quoted.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await quoted.app.sendMessage(quoted.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expectNoSend(quoted, id)
+      expect(quoted.app.listGmailRules().activity[0]?.reason).toMatch(/not in the original conversation/)
+    } finally { await quoted.app.close() }
+
+    const comment = setup()
+    try {
+      replaceHeader(comment.fake, 'From', 'colleague@example.com (customer@example.com)')
+      const id = await enabledReply(comment, NEUTRAL, { to: 'customer@example.com' })
+      expect(storedDraft(comment, id)?.reply).toMatchObject({ complete: true, participants: ['colleague@example.com'] })
+      watchApprovals(comment, false)
+      comment.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      await comment.app.sendMessage(comment.id, 'Send the reply.')
+      expectNoSend(comment, id)
+    } finally { await comment.app.close() }
+
+    const encoded = setup()
+    try {
+      // The display name decodes to "customer@example.com"; the real mailbox is the colleague.
+      replaceHeader(encoded.fake, 'From', '=?UTF-8?Q?customer=40example=2Ecom?= <colleague@example.com>')
+      const id = await enabledReply(encoded, NEUTRAL, { to: 'customer@example.com' })
+      expect(storedDraft(encoded, id)?.reply).toMatchObject({ complete: true, participants: ['colleague@example.com'] })
+      watchApprovals(encoded, false)
+      encoded.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      await encoded.app.sendMessage(encoded.id, 'Send the reply.')
+      expectNoSend(encoded, id)
+    } finally { await encoded.app.close() }
+
+    const malformed = setup()
+    try {
+      replaceHeader(malformed.fake, 'From', 'customer@example.com <colleague@example.com>')
+      const id = await enabledReply(malformed, NEUTRAL, { to: 'customer@example.com' })
+      const reply = storedDraft(malformed, id)?.reply
+      expect(reply?.complete).toBe(false)
+      expect(reply?.participants ?? []).not.toContain('customer@example.com')
+      watchApprovals(malformed, false)
+      malformed.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      await malformed.app.sendMessage(malformed.id, 'Send the reply.')
+      expectNoSend(malformed, id)
+    } finally { await malformed.app.close() }
+  })
+
+  it('sends to a real mailbox written with a name and comment, and still sends one approved redirect', async () => {
+    const named = setup()
+    try {
+      replaceHeader(named.fake, 'From', 'Customer Name (Support) <Customer@Example.com>')
+      const id = await enabledReply(named, NEUTRAL)
+      const approvals = watchApprovals(named, false)
+      named.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await named.app.sendMessage(named.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals).toHaveLength(0)
+      expect(named.fake.sendCount).toBe(1)
+      expect(storedDraft(named, id)?.reply?.participants).toEqual(['customer@example.com'])
+    } finally { await named.app.close() }
+
+    const quotedName = setup()
+    try {
+      replaceHeader(quotedName.fake, 'From', '"Smith, Pat" <customer@example.com>')
+      const id = await enabledReply(quotedName, NEUTRAL)
+      watchApprovals(quotedName, false)
+      quotedName.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await quotedName.app.sendMessage(quotedName.id, 'Send the reply.')).status).toBe('completed')
+      expect(quotedName.fake.sendCount).toBe(1)
+      expect(storedDraft(quotedName, id)?.reply?.participants).toEqual(['customer@example.com'])
+    } finally { await quotedName.app.close() }
+
+    const encodedName = setup()
+    try {
+      // "Müller, Pat" as Exchange writes it: the comma is inside the encoded word.
+      replaceHeader(encodedName.fake, 'From', '=?ISO-8859-1?Q?M=FCller=2C_Pat?= <customer@example.com>')
+      const id = await enabledReply(encodedName, NEUTRAL)
+      expect(storedDraft(encodedName, id)?.reply).toMatchObject({ complete: true, participants: ['customer@example.com'] })
+      watchApprovals(encodedName, false)
+      encodedName.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await encodedName.app.sendMessage(encodedName.id, 'Send the reply.')).status).toBe('completed')
+      expect(encodedName.fake.sendCount).toBe(1)
+    } finally { await encodedName.app.close() }
+
+    const reviewed = setup()
+    try {
+      replaceHeader(reviewed.fake, 'From', '"customer@example.com" <colleague@example.com>')
+      replaceHeader(reviewed.fake, 'Subject', 'Private staffing conversation')
+      const id = await enabledReply(reviewed, NEUTRAL, { to: 'customer@example.com' })
+      const approvals = watchApprovals(reviewed, true)
+      reviewed.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await reviewed.app.sendMessage(reviewed.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expect(approvals[0]?.email?.to).toEqual(['customer@example.com'])
+      expect(reviewed.fake.sendCount).toBe(1)
+      expect(posted(reviewed.fake)).toBe(true)
+      expect(reviewed.app.listGmailRules().rules[0]?.sendsToday).toBe(0)
+      expect(reviewed.app.listGmailRules().activity[0]).toMatchObject({ decision: 'ask', outcome: 'sent' })
+    } finally { await reviewed.app.close() }
+  })
+
+  it('does not send when the rule or send access changes during the final source read', async () => {
+    const revoked = setup()
+    try {
+      const saved = revoked.app.saveGmailRule({ title: 'Customer report', recipients: ['customer@example.com'], threadIds: [], templates: [REPLY], excludedRecipients: [], excludedPhrases: [], dailySendLimit: 5, enabled: true })
+      const id = await saveReply(revoked)
+      const approvals = watchApprovals(revoked, false)
+      duringFinalSourceRead(revoked.fake, () => { revoked.app.setGmailRuleEnabled(saved.id, false) })
+      revoked.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await revoked.app.sendMessage(revoked.id, 'Send the reply.')).status).toBe('paused')
+      expect(approvals).toHaveLength(0)
+      expectNoSend(revoked, id)
+      expect(revoked.app.listGmailRules().rules[0]?.enabled).toBe(false)
+    } finally { await revoked.app.close() }
+
+    const lowered = setup()
+    try {
+      const id = await enabledReply(lowered)
+      const approvals = watchApprovals(lowered, false)
+      duringFinalSourceRead(lowered.fake, () => { lowered.app.updateSettings({ gmailAccess: 'drafts' }) })
+      lowered.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await lowered.app.sendMessage(lowered.id, 'Send the reply.')).status).toBe('paused')
+      expect(approvals).toHaveLength(0)
+      expectNoSend(lowered, id)
+      expect(lowered.app.getSnapshot().settings.gmailAccess).toBe('drafts')
+    } finally { await lowered.app.close() }
+  })
+
+  it('does not send when Stop sending automatically is queued during the final source read', async () => {
+    const dir = tempDir(), fake = new FakeGmail(), credentials = gmailCredentials(), provider = new MockProvider()
+    const app = new RiotService({ dbPath: path.join(dir, 'riot.sqlite'), workspaceRoot: path.join(dir, 'workspaces'), credentials, provider, gmailFetchImpl: fake.fetch })
+    app.boot()
+    try {
+      app.updateSettings({ model: 'mock-model', gmailAccount: GMAIL_ACCOUNT, gmailAccess: 'send', autoMemory: false, autoSkillSuggestions: false })
+      app.saveGmailRule({ title: 'Customer report', recipients: ['customer@example.com'], threadIds: [], templates: [REPLY], excludedRecipients: [], excludedPhrases: [], dailySendLimit: 5, enabled: true })
+      const conversation = app.getSnapshot().ongoingConversationId!
+      provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_save_draft', { body: REPLY, reply_to_message_id: 'mail1' })
+      await app.sendMessage(conversation, 'Draft the reply.')
+      const id = [...fake.drafts.keys()].at(-1)!
+      const approvals: ApprovalView[] = []
+      app.onEvent(event => { if (event.type === 'approval' && event.approval) { approvals.push(event.approval); app.resolveApproval(event.approval.id, false) } })
+      let reads = 0
+      fake.beforeRequest = route => { if (route === '/messages/mail1' && ++reads === 2) app.queueMessage(conversation, 'Stop sending automatically.') }
+      provider.handler = input => input.messages.at(-1)?.role === 'user' && input.messages.at(-1)?.content === 'Send the reply.' ? tool('gmail_send_draft', { id }) : done
+      const run = await app.sendMessage(conversation, 'Send the reply.')
+      expect(run.status).toBe('paused')
+      expect(approvals).toHaveLength(0)
+      expect(fake.sendCount).toBe(0)
+      expect(posted(fake)).toBe(false)
+      expect(app.listGmailRules().rules[0]?.enabled).toBe(false)
+      expect(app.listGmailRules().rules[0]?.sendsToday).toBe(0)
+      expect(app.listGmailRules().activity[0]?.decision).not.toBe('allow')
+      expect(app.listGmailRules().activity[0]?.outcome).not.toBe('sent')
+      const db = new Database(path.join(dir, 'riot.sqlite'))
+      try { expect(db.getGmailDraft(GMAIL_ACCOUNT, id, app.getSnapshot().bot!.id)?.status).toBe('draft') } finally { db.close() }
+    } finally { await app.close() }
+  })
+
+  it('requires review when a neutral plain version hides a refund or HR exclusion in HTML', async () => {
+    const refund = setup()
+    try {
+      alternative(refund.fake, 'Hello, please acknowledge this message.', '<p>Please refund my order.</p>')
+      const id = await enabledReply(refund, NEUTRAL)
+      const saved = storedDraft(refund, id)?.reply
+      expect(saved?.complete).toBe(true)
+      expect(saved?.body).not.toContain('refund')
+      expect(saved?.representations.some(item => item.toLowerCase().includes('refund'))).toBe(true)
+      refund.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_read_email', { id: 'mail1' })
+      expect((await refund.app.sendMessage(refund.id, 'Read the email.')).status).toBe('completed')
+      const viewed = JSON.parse(refund.app.openConversation(refund.id).messages.filter(message => message.toolName === 'gmail_read_email').at(-1)?.content ?? '{}') as { body?: string; complete?: boolean }
+      expect(viewed.body).toContain('acknowledge')
+      expect(viewed.body).not.toContain('refund')
+      expect(viewed.complete).toBe(true)
+      const approvals = watchApprovals(refund, false)
+      refund.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await refund.app.sendMessage(refund.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expectNoSend(refund, id)
+      expect(refund.app.listGmailRules().activity[0]?.reason).toMatch(/Refunds/)
+    } finally { await refund.app.close() }
+
+    const hr = setup()
+    try {
+      alternative(hr.fake, 'Hello, please acknowledge this message.', '<p>Please assign this case to HR.</p>')
+      hr.app.saveGmailRule({ title: 'Customer report', recipients: ['customer@example.com'], threadIds: [], templates: [NEUTRAL], excludedRecipients: [], excludedPhrases: ['HR'], dailySendLimit: 5, enabled: true })
+      const id = await saveReply(hr, NEUTRAL)
+      expect(storedDraft(hr, id)?.reply?.body).not.toContain('HR')
+      expect(storedDraft(hr, id)?.reply?.representations.some(item => item.includes('HR'))).toBe(true)
+      const approvals = watchApprovals(hr, false)
+      hr.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await hr.app.sendMessage(hr.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expectNoSend(hr, id)
+      expect(hr.app.listGmailRules().activity[0]?.reason).toMatch(/excludes/)
+    } finally { await hr.app.close() }
+  })
+
+  it('sends one reviewed reply when the HTML version contains a refund', async () => {
+    const f = setup()
+    try {
+      alternative(f.fake, 'Hello, please acknowledge this message.', '<p>Please refund my order.</p>')
+      const id = await enabledReply(f, NEUTRAL)
+      const approvals = watchApprovals(f, true)
+      f.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await f.app.sendMessage(f.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expect(f.fake.sendCount).toBe(1)
+      expect(posted(f.fake)).toBe(true)
+      expect(f.app.listGmailRules().rules[0]?.sendsToday).toBe(0)
+      expect(f.app.listGmailRules().activity[0]).toMatchObject({ decision: 'ask', outcome: 'sent' })
+      expect(f.app.listGmailRules().activity[0]?.messageId).toBeTruthy()
+      expect(f.app.openConversation(f.id).messages.filter(message => message.toolName === 'gmail_send_draft').at(-1)?.content).toContain('confirmed')
+    } finally { await f.app.close() }
+  })
+
+  it('does not keep automatic authority when only the HTML version changes', async () => {
+    const changed = setup()
+    try {
+      alternative(changed.fake, 'Hello, please acknowledge this message.', '<p>Hello, please acknowledge this message.</p>')
+      const id = await enabledReply(changed, NEUTRAL)
+      expect(storedDraft(changed, id)?.reply?.representations).toHaveLength(2)
+      source(changed.fake).parts![1].body = { data: Buffer.from('<p>Please call me tomorrow.</p>').toString('base64url') }
+      const approvals = watchApprovals(changed, false)
+      changed.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await changed.app.sendMessage(changed.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expectNoSend(changed, id)
+      expect(changed.app.listGmailRules().activity[0]?.reason).toMatch(/original conversation/)
+    } finally { await changed.app.close() }
+
+    const duringRead = setup()
+    try {
+      alternative(duringRead.fake, 'Hello, please acknowledge this message.', '<p>Hello, please acknowledge this message.</p>')
+      const id = await enabledReply(duringRead, NEUTRAL)
+      const approvals = watchApprovals(duringRead, false)
+      duringFinalSourceRead(duringRead.fake, () => { source(duringRead.fake).parts![1].body = { data: Buffer.from('<p>Please call me tomorrow.</p>').toString('base64url') } })
+      duringRead.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await duringRead.app.sendMessage(duringRead.id, 'Send the reply.')).status).toBe('paused')
+      expect(approvals).toHaveLength(0)
+      expectNoSend(duringRead, id)
+    } finally { await duringRead.app.close() }
+
+    const legacy = setup()
+    try {
+      const id = await enabledReply(legacy)
+      expect(storedDraft(legacy, id)?.reply?.representations.length).toBeGreaterThan(0)
+      stripSavedVersions(legacy, id)
+      expect(storedDraft(legacy, id)?.reply?.complete).toBe(false)
+      const approvals = watchApprovals(legacy, false)
+      legacy.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await legacy.app.sendMessage(legacy.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expectNoSend(legacy, id)
+      expect(legacy.app.listGmailRules().activity[0]?.reason).toMatch(/original conversation/)
+    } finally { await legacy.app.close() }
+  })
+
+  it('holds combined plain and HTML text that exceeds the read limit for review', async () => {
+    const f = setup()
+    try {
+      const chunk = 'a'.repeat(60_000)
+      alternative(f.fake, chunk, `<p>${chunk}</p>`)
+      const id = await enabledReply(f, NEUTRAL)
+      expect(storedDraft(f, id)?.reply?.complete).toBe(false)
+      const approvals = watchApprovals(f, false)
+      f.provider.handler = input => input.messages.at(-1)?.role === 'tool' ? done : tool('gmail_send_draft', { id })
+      expect((await f.app.sendMessage(f.id, 'Send the reply.')).status).toBe('completed')
+      expect(approvals.map(item => item.kind)).toEqual(['email'])
+      expectNoSend(f, id)
     } finally { await f.app.close() }
   })
 })

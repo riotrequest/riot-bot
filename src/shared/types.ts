@@ -96,10 +96,16 @@ export interface AppPreferences {
   showToolDetails: boolean
 }
 
+export type WebResearchMode = 'automatic' | 'browser' | 'connection'
+
 export interface AppSettings {
   provider: ProviderId
   model: string
   maxEstimatedSpendPerDayUsd: number | null
+  webResearch: WebResearchMode
+  researchDailyCap: number
+  researchTavily: boolean
+  researchFirecrawl: boolean
 }
 
 export interface AttachmentView {
@@ -400,6 +406,13 @@ export interface CredentialStatus {
   explanation: string
   openaiConfigured: boolean
   openrouterConfigured: boolean
+  tavilyConfigured: boolean
+  firecrawlConfigured: boolean
+}
+
+export interface ResearchCheck {
+  ok: boolean
+  message: string
 }
 
 export interface CredentialSaveResult {
@@ -539,12 +552,29 @@ export interface BotCreateResult {
   status: string
 }
 
+export interface AppNotice {
+  id: string
+  kind: 'reminder' | 'attention'
+  title: string
+  body: string
+  botId: string
+}
+
+export interface NoticeBridge {
+  onChange(handler: (notices: AppNotice[]) => void): () => void
+  dismiss(id: string): void
+  open(id: string): void
+  resize(height: number): void
+}
+
 export type AppEvent =
   | { type: 'gmail-status'; status: GmailStatus }
+  | { type: 'notices-changed'; notices: AppNotice[] }
   | { type: 'gmail-rules-changed' }
   | { type: 'schedules-changed' }
   | { type: 'reminder-fired'; schedule: ScheduleView }
   | { type: 'open-schedule'; botId: string }
+  | { type: 'open-jobs'; botId: string }
   | { type: 'jobs-changed' }
   | { type: 'artifacts-changed' }
   | { type: 'codex-status'; status: CodexStatus }
@@ -554,6 +584,7 @@ export type AppEvent =
   | { type: 'approval'; approval: ApprovalView | null }
   | { type: 'memories-changed' }
   | { type: 'learning-settings'; botId: string; autoMemory: boolean; autoSkillSuggestions: boolean }
+  | { type: 'bot-renamed'; botId: string; name: string }
   | { type: 'skills-changed' }
   | { type: 'skill-proposal'; proposal: SkillProposal | null }
   | { type: 'usage'; usage: UsageSummary }
@@ -635,12 +666,17 @@ export interface RiotBridge {
   updateAppSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   setCredential(provider: ApiProviderId, secret: string): Promise<CredentialSaveResult>
   clearCredential(provider: ApiProviderId): Promise<CredentialStatus>
+  setResearchKey(provider: 'tavily' | 'firecrawl', secret: string): Promise<CredentialSaveResult>
+  clearResearchKey(provider: 'tavily' | 'firecrawl'): Promise<CredentialStatus>
+  checkResearchKey(provider: 'tavily' | 'firecrawl'): Promise<ResearchCheck>
   pickWorkspace(): Promise<string | null>
   resolveApproval(id: string, approved: boolean, remember?: boolean): Promise<void>
   saveLogin(input: LoginDraft): Promise<{login:SavedLogin;persistent:boolean}>
   removeLogin(id:string): Promise<void>
   undoEdit(id: string): Promise<{ ok: boolean; message: string }>
   copyText(text: string): Promise<void>
+  listNotices(): Promise<AppNotice[]>
+  dismissNotice(id: string): Promise<AppNotice[]>
   onEvent(handler: (event: AppEvent) => void): () => void
 }
 
