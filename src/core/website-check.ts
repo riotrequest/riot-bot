@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { chromium, type Browser } from 'playwright-core'
 import { bundledChromiumExecutable, chromiumLaunchOptions, installedBrowserChannel } from './browser-playwright'
 import { startBrowserProxy, type BrowserProxy } from './browser-proxy'
-import { resolveWorkspacePath } from './path-safety'
+import { resolveWorkspacePath, withWorkspaceFile } from './path-safety'
 import { StopError } from './errors'
 
 const ORIGIN = 'https://riot-preview.invalid'
@@ -21,9 +21,12 @@ export function previewAsset(workspace: string, url: string): {status:number;con
     let file = resolveWorkspacePath(workspace,relative)
     if (fs.statSync(file).isDirectory()) file = resolveWorkspacePath(workspace,path.join(relative,'index.html'))
     const type = MIME[path.extname(file).toLowerCase()]
-    const stat = fs.statSync(file)
-    if (!type || !stat.isFile() || stat.size>10_000_000) throw new Error('Not a static asset')
-    return {status:200,contentType:type,body:fs.readFileSync(file)}
+    if (!type) throw new Error('Not a static asset')
+    const body = withWorkspaceFile(file,'r',(fd,stat)=>{
+      if (!stat.isFile() || stat.size>10_000_000) throw new Error('Not a static asset')
+      return fs.readFileSync(fd)
+    })
+    return {status:200,contentType:type,body}
   } catch { return {status:404,contentType:'text/plain',body:'Static file not found or excluded.'} }
 }
 

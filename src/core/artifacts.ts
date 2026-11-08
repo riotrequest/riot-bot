@@ -4,7 +4,7 @@ import path from 'path'
 import type { ArtifactView } from '../shared/types'
 import type { ArtifactRecord, Database, JobRecord } from './db'
 import { newId } from './ids'
-import { resolveWorkspacePath } from './path-safety'
+import { resolveWorkspacePath, withWorkspaceFile } from './path-safety'
 
 const MAX_FILE_BYTES = 20_000_000
 const MAX_JOB_BYTES = 100_000_000
@@ -60,7 +60,7 @@ export function captureArtifacts(input: {
       const file = resolveWorkspacePath(input.workspace,requested)
       const stat = fs.lstatSync(file)
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES || total+stat.size > MAX_JOB_BYTES) continue
-      const data = fs.readFileSync(file)
+      const data = withWorkspaceFile(file,'r',fd=>fs.readFileSync(fd))
       if (data.length>MAX_FILE_BYTES || total+data.length>MAX_JOB_BYTES) continue
       if (input.secrets.some(secret=>secret.length>=8&&data.includes(Buffer.from(secret)))) continue
       const id = newId()
