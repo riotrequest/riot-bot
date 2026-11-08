@@ -6,6 +6,10 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 8, 2026 — Hard-linked files refused
+
+- **File tools:** reading, searching, editing, Undo, the website checker and Library capture now refuse a file with more than one name (a hard link). Before this, a hard link inside a workspace could expose or overwrite a file outside it, including a `.env` under an innocent name. **Allow project secrets** does not lift the refusal. See [saved logins and permissions](docs/security.md#project-files-and-powerful-actions).
+
 ### November 8, 2026 — Local and custom model endpoints
 
 - **Local models:** a **Local or custom model** connection works with Ollama, LM Studio, vLLM or another OpenAI-compatible server. Plain `http://` is accepted only for `localhost`, `127.0.0.1` and `[::1]`; other servers must be public `https://` addresses. The address is checked and pinned before every request, redirects are not followed, and an optional key stays in the Windows-protected store. Dollar limits stay blocked until you enter prices. Not yet checked against a real Ollama, LM Studio or vLLM server. See [local and custom model endpoints](docs/custom-endpoints.md).
