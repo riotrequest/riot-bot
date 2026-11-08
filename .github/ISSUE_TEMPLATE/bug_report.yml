@@ -1,0 +1,108 @@
+name: Bug report
+description: Report something that doesn't work as documented. Use synthetic data only and never include secrets.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        **Security vulnerabilities don't belong here.** Follow `SECURITY.md` in the repository root instead.
+
+        **Use synthetic data only.** Riot Bot handles passwords, API keys, OAuth tokens, browser sessions and email. Never paste real passwords, API keys, tokens, cookies, Google setup (client secret) files, app-data folders or backups, private emails or chat transcripts. Replace real names, addresses, sites and message text with made-up examples such as `example.com` and `someone@example.com`. Issues are public and hard to fully delete.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Before you submit
+      options:
+        - label: This report uses only synthetic data. It contains no passwords, API keys, tokens, cookies, setup files, private messages or app-data files.
+          required: true
+        - label: This is not a security vulnerability. (Report those as described in SECURITY.md.)
+          required: true
+        - label: I searched existing issues for this bug.
+          required: false
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use made-up data throughout, for example example.com sites, someone@example.com addresses and invented message text.
+      placeholder: |
+        1. Create a bot with the purpose "..."
+        2. Send the message "..."
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Riot Bot version or commit
+      description: The version from package.json, or the output of `git rev-parse --short HEAD` if you run from source.
+      placeholder: 0.1.0 or a commit hash
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version (only if you run from source)
+      placeholder: "24.x"
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Model connection
+      options:
+        - OpenAI API
+        - OpenRouter
+        - ChatGPT account (Codex preview)
+        - Not related to a model connection
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model ID
+      description: The exact model ID, if the bug involves a model.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Bots and chat
+        - Files and terminal
+        - Browser
+        - Saved logins and site access
+        - Web search
+        - Gmail
+        - Reminders and schedules
+        - Memory and skills
+        - Limits, usage and activity
+        - Setup, building or installing
+        - Other
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: |
+        Optional. Lines from %APPDATA%\riot-bot\riot-bot.log. The log is redacted, but redaction only catches known patterns. Read every line before you paste it and remove anything private.
+      render: text

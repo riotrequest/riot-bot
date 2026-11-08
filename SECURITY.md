@@ -1,5 +1,8 @@
 # Security
 
+<!-- TODO(owner): replace this notice with the real reporting instructions once a private route exists. Do not publish the repository before then. -->
+> **TODO (owner): set up a private vulnerability-reporting route before the repository is public.** Enable GitHub private vulnerability reporting, or publish a private contact you control. Test that it works, then replace this notice with instructions. Also add the route as a contact link in `.github/ISSUE_TEMPLATE/config.yml`. Until then there is no private channel, so please don't post vulnerability details in public issues.
+
 Riot Bot is in private development. A public vulnerability-reporting channel and supported-release policy have not been established yet. Before making the repository public, the owner must enable GitHub private vulnerability reporting (or publish a private contact) and verify that the route works. Do not invent an address or route reports into public issues containing secrets.
 
 For a report, include the affected version/commit, operating system, steps using synthetic data, expected versus observed behavior, and any relevant redacted logs. Never include real passwords, provider keys, cookies, OAuth tokens, app-data backups or private messages. Verify fixes with disposable profiles and local sentinels; avoid real accounts and paid model requests.
