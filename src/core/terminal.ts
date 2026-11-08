@@ -11,7 +11,10 @@ export interface TerminalResult {
 }
 
 export interface TerminalRunInput {
+  /** The shell command line, or a readable description when `direct` is set. */
   command: string
+  /** Runs this program with these arguments without a shell, so no argument is reinterpreted. */
+  direct?: { program: string; args: string[] }
   cwd: string
   timeoutMs: number
   maxOutputChars: number
@@ -31,9 +34,9 @@ export class OsTerminal implements TerminalRunner {
     if (input.signal.aborted) {
       return { stdout: '', stderr: '', exitCode: null, timedOut: false, cancelled: true, truncated: false, note: 'Stopped before the command started.' }
     }
-    const command = process.platform === 'win32' ? process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe' : '/bin/sh'
-    const args = process.platform === 'win32' ? ['/d', '/s', '/c', input.command] : ['-c', input.command]
-    const child = spawn(command, args, {
+    const shell = process.platform === 'win32' ? process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe' : '/bin/sh'
+    const shellArgs = process.platform === 'win32' ? ['/d', '/s', '/c', input.command] : ['-c', input.command]
+    const child = spawn(input.direct?.program ?? shell, input.direct?.args ?? shellArgs, {
       cwd: input.cwd,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe']

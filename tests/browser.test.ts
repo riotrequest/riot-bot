@@ -46,7 +46,8 @@ describe('browser policy', () => {
     const options = chromiumLaunchOptions('http://127.0.0.1:9')
     expect(options.headless).toBe(false)
     expect(options.chromiumSandbox).toBe(true)
-    expect(options.acceptDownloads).toBe(false)
+    // Chromium accepts downloads; the page layer cancels any that a click or key press did not start.
+    expect(options.acceptDownloads).toBe(true)
     expect(options.args.join(' ')).not.toMatch(/no-sandbox/)
     expect(fs.existsSync(playwrightCliPath())).toBe(true)
     const source = fs.readFileSync(path.join(process.cwd(), 'src', 'core', 'browser.ts'), 'utf8')

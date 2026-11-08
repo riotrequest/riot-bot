@@ -27,6 +27,7 @@ import type {
   Snapshot,
   RiotBridge,
   SavedLogin,
+  SavedServerLogin,
   Skill,
   SkillProposal,
   SkillVersion,
@@ -751,8 +752,8 @@ function ChatPane(props: {
 }
 
 function SavedLogins({api,onError,onSite}:{api:RiotBridge;onError:(message:string)=>void;onSite:(origin:string)=>void}){
-  const [entries,setEntries]=useState<SavedLogin[]>([]),[url,setUrl]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[note,setNote]=useState('')
-  useEffect(()=>{let active=true;void api.getSnapshot().then(snapshot=>{if(active)setEntries(snapshot.savedLogins??[])}).catch(error=>{if(active)onError(messageOf(error))});return()=>{active=false}},[api,onError])
+  const [entries,setEntries]=useState<SavedLogin[]>([]),[servers,setServers]=useState<SavedServerLogin[]>([]),[url,setUrl]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[note,setNote]=useState('')
+  useEffect(()=>{let active=true;void api.getSnapshot().then(snapshot=>{if(active){setEntries(snapshot.savedLogins??[]);setServers(snapshot.savedServerLogins??[])}}).catch(error=>{if(active)onError(messageOf(error))});return()=>{active=false}},[api,onError])
   async function save():Promise<void>{
     if(busy)return
     setBusy(true);setNote('')
@@ -760,13 +761,17 @@ function SavedLogins({api,onError,onSite}:{api:RiotBridge;onError:(message:strin
     catch(error){onError(messageOf(error))}finally{setBusy(false)}
   }
   async function remove(id:string):Promise<void>{if(busy)return;setBusy(true);try{await api.removeLogin(id);setEntries(current=>current.filter(item=>item.id!==id))}catch(error){onError(messageOf(error))}finally{setBusy(false)}}
-  return <section className="settings-section"><h3>Saved website logins</h3><p className="help">Save a login once and ask your bot to sign in. Passwords are encrypted on this computer and filled directly into the matching HTTPS website. Saving a login also allows this bot to work on that website without repeated prompts.</p>
+  async function removeServer(id:string):Promise<void>{if(busy)return;setBusy(true);try{await api.removeServerLogin(id);setServers(current=>current.filter(item=>item.id!==id))}catch(error){onError(messageOf(error))}finally{setBusy(false)}}
+  return <><section className="settings-section"><h3>Saved website logins</h3><p className="help">Save a login once and ask your bot to sign in. Passwords are encrypted on this computer and filled directly into the matching HTTPS website. Saving a login also allows this bot to work on that website without repeated prompts.</p>
     {entries.map(entry=><div className="row" key={entry.id}><span><strong>{entry.origin}</strong><small> · {entry.username}</small></span><button type="button" disabled={busy} onClick={()=>void remove(entry.id)}>Remove login</button></div>)}
     <label>Website<input type="url" placeholder="https://example.com" value={url} disabled={busy} onChange={event=>setUrl(event.target.value)}/></label>
     <label>Username or email<input autoComplete="off" value={username} disabled={busy} onChange={event=>setUsername(event.target.value)}/></label>
     <label>Password<input type="password" autoComplete="new-password" value={password} disabled={busy} onChange={event=>setPassword(event.target.value)}/></label>
     <button type="button" disabled={busy||!url||!username||!password} onClick={()=>void save()}>{busy?'Saving…':'Save login'}</button>{note&&<p role="status" className="help">{note}</p>}
   </section>
+  <section className="settings-section"><h3>Saved server logins</h3><p className="help">Paste a PuTTY, plink or sshpass command that includes a password into the chat and Riot saves the login here, encrypted, and removes the password from the message. Your bot can then run commands on that server. Each command asks you first.</p>
+    {servers.map(server=><div className="row" key={server.id}><span><strong>{server.username}@{server.host}</strong><small> · port {server.port}</small></span><button type="button" disabled={busy} onClick={()=>void removeServer(server.id)}>Remove login</button></div>)}
+  </section></>
 }
 
 export function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; onResolve: (approved: boolean,remember?:boolean) => void }) {
@@ -775,14 +780,16 @@ export function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; 
   const files = approval.kind === 'codex' && approval.title === 'Allow this Codex file?'
   const browser = approval.kind === 'browser'
   const site=approval.kind==='site'
+  const website = site || (browser && /^https?:\/\//.test(approval.cwd))
+  const server = approval.kind === 'terminal' && approval.cwd.startsWith('ssh://')
   const firstLine = approval.command.trim().split(/[\r\n]/, 1)[0]
   const preview = firstLine.slice(0, 160) + (approval.command.trim().length > Math.min(firstLine.length,160) ? '…' : '')
   return (
     <section className="approval" aria-label="Approval request">
-      <strong>{site?'Allow this website?':files ? 'Allow file changes?' : browser ? 'Allow browser action?' : 'Allow command?'}</strong>
+      <strong>{site?'Allow this website?':files ? 'Allow file changes?' : browser ? approval.title || 'Allow browser action?' : server ? approval.title : 'Allow command?'}</strong>
       <p className="approval-summary">{files ? 'Codex wants to update project files.' : <code>{preview}</code>}</p>
       <p className="approval-warning">{approval.warning}</p>
-      <p className="approval-folder" title={approval.cwd}>{site?'Website':'Folder'}: {approval.cwd}</p>
+      <p className="approval-folder" title={approval.cwd}>{website?'Website':server?'Server':'Folder'}: {server?approval.cwd.slice('ssh://'.length):approval.cwd}</p>
       <details className="approval-details">
         <summary>{site?'View request':files ? 'View changes' : browser ? 'View action details' : 'View command'}</summary>
         <p className="help">Time limit: {Math.round(approval.timeoutMs / 1000)} seconds</p>
@@ -794,7 +801,7 @@ export function ApprovalCard({ approval, onResolve }: { approval: ApprovalView; 
         </button>
         {site&&approval.siteOrigin&&<button type="button" onClick={()=>onResolve(true)}>This task only</button>}
         <button type="button" className="send" onClick={() => onResolve(true,site&&Boolean(approval.siteOrigin))}>
-          {site?approval.siteOrigin?'Remember & allow':'Allow this task':files ? 'Allow changes' : browser ? 'Allow action' : 'Allow command'}
+          {site?approval.siteOrigin?'Remember & allow':'Allow this task':approval.confirmLabel ?? (files ? 'Allow changes' : browser ? 'Allow action' : 'Allow command')}
         </button>
       </div>
     </section>
@@ -1172,6 +1179,7 @@ function SettingsPane(props: {
       {tab === 'limits' && <>
         <div className="page-intro"><h2>Set a comfortable pace.</h2><p>Limit how long a task can run. You can stop your bot at any time.</p></div>
         <section className="settings-section"><h3>Time per task</h3><NumberField label="Maximum minutes" value={Math.round(draft.maxTaskDurationMs / 60000)} onChange={value => update({ maxTaskDurationMs: value * 60 * 1000 })} /><p className="help">When time runs out, work pauses and partial results are kept.</p></section>
+        <section className="settings-section"><h3>Browser steps per task</h3><NumberField label="Most browser steps" value={draft.maxBrowserActionsPerTask} onChange={value => update({ maxBrowserActionsPerTask: value })} /><p className="help">Each page opened, read, clicked or typed into is one step. Long forms and multi-page jobs need more. Between 5 and 200.</p></section>
         {draft.provider === 'codex' ? <div className="callout"><strong>Uses your ChatGPT account limits</strong><p>Codex manages its own usage and context. Riot’s API dollar and token limits do not apply. The task timer and Stop still work.</p></div> : <section className="settings-section"><h3>Optional spending limits</h3><p className="help">Leave these blank to use time and call limits only. To estimate spending, Riot needs both token prices from your provider.</p>
           <div className="grid"><OptionalMoney label="Per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={value => update({ maxEstimatedSpendPerTaskUsd: value })} /><OptionalMoney label="This bot, per day (USD)" value={draft.botSpendPerDayUsd} onChange={value => update({ botSpendPerDayUsd: value })} /></div>
           <p className="help">The app-wide spending ceiling is managed in app Settings. This bot’s limit can make it tighter.</p>

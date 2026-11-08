@@ -83,6 +83,7 @@ const api: RiotBridge = {
   resolveApproval: (id, approved, remember) => ipcRenderer.invoke('approvals:resolve', id, approved, remember),
   saveLogin: input=>ipcRenderer.invoke('logins:save',input),
   removeLogin: id=>ipcRenderer.invoke('logins:remove',id),
+  removeServerLogin: id=>ipcRenderer.invoke('server-logins:remove',id),
   undoEdit: (id) => ipcRenderer.invoke('edits:undo', id),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   listNotices: () => ipcRenderer.invoke('notices:list'),

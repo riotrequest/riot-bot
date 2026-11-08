@@ -5,13 +5,13 @@ import { RiotApp, type RiotAppOptions } from '../src/core/app'
 import { MemoryCredentialStore } from '../src/core/credentials'
 import { MemoryLogger } from '../src/core/logger'
 import { MockProvider } from '../src/core/provider'
-import type { TerminalRunner } from '../src/core/terminal'
+import type { TerminalRunInput, TerminalRunner } from '../src/core/terminal'
 
 export function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'riot-bot-'))
 }
 
-export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fetchImpl' | 'lookupHost' | 'createProvider' | 'workspaceRoot' | 'openFolder' | 'revealFile' | 'writeClipboard' | 'browserOpener' | 'now' | 'codex' | 'gmail' | 'gmailFetchImpl' | 'openLink' | 'researchTransport'>> & { provider?: MockProvider; dbPath?: string; learning?: boolean; credentials?: MemoryCredentialStore }) {
+export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'findSshClient' | 'fetchImpl' | 'lookupHost' | 'createProvider' | 'workspaceRoot' | 'openFolder' | 'revealFile' | 'writeClipboard' | 'browserOpener' | 'now' | 'codex' | 'gmail' | 'gmailFetchImpl' | 'openLink' | 'researchTransport'>> & { provider?: MockProvider; dbPath?: string; learning?: boolean; credentials?: MemoryCredentialStore }) {
   const dir = options?.dbPath ? path.dirname(options.dbPath) : tempDir()
   const dbPath = options?.dbPath ?? path.join(dir, 'riot.sqlite')
   const provider = options?.provider ?? new MockProvider()
@@ -23,6 +23,7 @@ export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fet
     credentials,
     logger,
     terminal: options?.terminal,
+    findSshClient: options?.findSshClient,
     codex: options?.codex,
     gmail: options?.gmail,
     gmailFetchImpl: options?.gmailFetchImpl,
@@ -72,9 +73,11 @@ export async function waitFor(check: () => boolean, timeoutMs = 4000): Promise<v
 
 export class FakeTerminal implements TerminalRunner {
   ran: string[] = []
+  inputs: TerminalRunInput[] = []
   stopCount = 0
+  constructor(private readonly reply: { stdout?: string; stderr?: string; exitCode?: number } = {}) {}
 
-  async run(input: { command: string }): Promise<{
+  async run(input: TerminalRunInput): Promise<{
     stdout: string
     stderr: string
     exitCode: number | null
@@ -84,7 +87,8 @@ export class FakeTerminal implements TerminalRunner {
     note: string
   }> {
     this.ran.push(input.command)
-    return { stdout: 'ok', stderr: '', exitCode: 0, timedOut: false, cancelled: false, truncated: false, note: '' }
+    this.inputs.push(input)
+    return { stdout: this.reply.stdout ?? 'ok', stderr: this.reply.stderr ?? '', exitCode: this.reply.exitCode ?? 0, timedOut: false, cancelled: false, truncated: false, note: '' }
   }
 
   stop(): { ok: boolean; detail: string } {

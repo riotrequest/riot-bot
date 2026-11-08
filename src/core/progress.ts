@@ -40,6 +40,8 @@ export function progressLabel(name: string): string {
       return 'Updating project files…'
     case 'run_terminal':
       return 'Running the approved command…'
+    case 'run_on_server':
+      return 'Running the command on your server…'
     case 'verify_website':
       return 'Checking desktop and mobile pages…'
     case 'fetch_url':
@@ -56,11 +58,21 @@ export function progressLabel(name: string): string {
     case 'read_page':
       return 'Reading a page…'
     case 'page_snapshot':
+    case 'page_screenshot':
     case 'list_tabs':
       return 'Looking at the page…'
+    case 'wait_for':
+      return 'Waiting for the page…'
+    case 'upload_file':
+      return 'Uploading a file…'
     case 'click_element':
     case 'fill_element':
+    case 'select_option':
+    case 'press_key':
+    case 'hover_element':
+    case 'drag_element':
     case 'scroll_page':
+    case 'switch_tab':
     case 'close_tab':
       return 'Using the browser…'
     case 'react':
