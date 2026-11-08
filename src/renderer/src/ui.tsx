@@ -28,7 +28,7 @@ export function Icon({ name }: { name: IconName }) {
   return <svg className="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d={paths[name]} /></svg>
 }
 
-export const providerName = (provider: ProviderId): string => provider === 'codex' ? 'ChatGPT / Codex' : provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'
+export const providerName = (provider: ProviderId): string => provider === 'codex' ? 'ChatGPT / Codex' : provider === 'openrouter' ? 'OpenRouter' : provider === 'custom' ? 'Custom endpoint' : 'OpenAI'
 
 export function ModelBadge({ provider, model, models, onClick }: { provider: ProviderId; model: string; models?: CodexStatus['models']; onClick: () => void }) {
   const name = provider === 'codex' ? models?.find(item => item.id === model)?.name ?? model : model
@@ -41,7 +41,8 @@ export function ProviderPicker({ value, onChange }: { value: ProviderId; onChang
     {([
       ['codex', 'ChatGPT account', 'Sign in with ChatGPT. Uses Codex (preview).'],
       ['openrouter', 'OpenRouter', 'Use an API key. Billed by OpenRouter.'],
-      ['openai', 'OpenAI API', 'Use an API key. Billed separately from ChatGPT.']
+      ['openai', 'OpenAI API', 'Use an API key. Billed separately from ChatGPT.'],
+      ['custom', 'Local or custom model', 'Ollama, LM Studio, vLLM, or another OpenAI-compatible endpoint.']
     ] as const).map(([id, title, description]) => <label className={`provider-option ${value === id ? 'selected' : ''}`} key={id}>
       <input type="radio" name="provider" value={id} checked={value === id} onChange={() => onChange(id)} />
       <span><strong>{title}</strong><small>{description}</small></span>
@@ -63,7 +64,7 @@ export function ChatWelcome({ name, purpose, configured, onConnect, onPrompt }: 
     <p className="welcome-description">{purpose || `A question, a rough idea, a task you’ve been putting off. ${name} is here to help.`}</p>
     {!configured && <div className="setup-card">
       <span className="step-number">1</span>
-      <div><strong>First, connect your AI</strong><p>Use your ChatGPT account or an API key. We’ll walk you through it.</p></div>
+      <div><strong>First, connect your AI</strong><p>Use your ChatGPT account, an API key, or a model running on your computer. We’ll walk you through it.</p></div>
       <button type="button" className="send" onClick={onConnect}>Let’s set up <Icon name="arrow" /></button>
     </div>}
     <div className="starter-grid">{starters.map((starter) => <button className="starter-card" type="button" key={starter.title} onClick={() => onPrompt(starter.prompt)}>

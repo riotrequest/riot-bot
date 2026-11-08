@@ -966,7 +966,7 @@ function AppSettingsPane(props: {
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
-  const keySaved = draft.provider === 'openai' ? props.credentials.openaiConfigured : draft.provider === 'openrouter' && props.credentials.openrouterConfigured
+  const keySaved = apiKeySaved(draft.provider, props.credentials)
   const changed = JSON.stringify(draft) !== JSON.stringify(props.settings) || Boolean(key.trim()) || Boolean(tavilyKey.trim()) || Boolean(firecrawlKey.trim())
   function update(patch: Partial<AppSettings>): void { setDraft(current => ({ ...current, ...patch })); setNote(''); setError('') }
   async function save(): Promise<void> {
@@ -991,7 +991,8 @@ function AppSettingsPane(props: {
       }
       const next = await props.api.updateAppSettings(draft)
       setDraft(next)
-      props.onSaved(next, credentials)
+      // The saved address is what makes the custom endpoint usable; the main process still checks it before every request.
+      props.onSaved(next, { ...credentials, customConfigured: Boolean(next.customBaseUrl) })
       setNote('App settings saved. Existing bots keep their chosen models.')
     } catch (reason) { setError(messageOf(reason)) }
     finally { setSaving(false); props.onBusy(false) }
@@ -1007,15 +1008,25 @@ function AppSettingsPane(props: {
       {tab === 'connection' ? <>
         <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Your starting point for every new bot.</h2><p>Manage shared connections and choose the model new bots start with. Existing bots keep their own choices.</p></div>
         <section className="settings-section"><div className="section-heading"><span className="step-number">1</span><h3>Choose your default connection</h3></div><ProviderPicker value={draft.provider} onChange={provider => { setKey(''); update({ provider, model: '' }) }} /></section>
-        <section className="settings-section"><div className="section-heading"><span className="step-number">2</span><h3>{draft.provider === 'codex' ? 'Connect your ChatGPT account' : 'Connect your provider'}</h3>{keySaved && <span className="small-badge"><Icon name="check" /> Key saved</span>}</div>
-          {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : <>
+        <section className="settings-section"><div className="section-heading"><span className="step-number">2</span><h3>{draft.provider === 'codex' ? 'Connect your ChatGPT account' : draft.provider === 'custom' ? 'Connect your model server' : 'Connect your provider'}</h3>{draft.provider === 'custom' ? props.credentials.customConfigured && <span className="small-badge"><Icon name="check" /> Address saved</span> : keySaved && <span className="small-badge"><Icon name="check" /> Key saved</span>}</div>
+          {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : draft.provider === 'custom' ? <>
+            <p className="help">Use a model server on this computer, such as Ollama or LM Studio, or any OpenAI-compatible endpoint at a public https:// address. Plain http:// works only for localhost, 127.0.0.1 and [::1]. Servers elsewhere on your home or office network are not supported yet.</p>
+            <label>Endpoint address<input inputMode="url" autoComplete="off" spellCheck={false} value={draft.customBaseUrl} placeholder="http://localhost:11434/v1" onChange={event => update({ customBaseUrl: event.target.value })} /></label>
+            <div className="row"><button type="button" onClick={() => update({ customBaseUrl: 'http://localhost:11434/v1' })}>Use Ollama’s address</button><button type="button" onClick={() => update({ customBaseUrl: 'http://localhost:1234/v1' })}>Use LM Studio’s address</button></div>
+            <p className="help">Riot adds /chat/completions to this address. It does not follow redirects and never switches to another connection if this one fails.</p>
+            <label>Context length (tokens)<input type="number" min={1024} step={1} value={draft.customContextTokens ?? ''} placeholder="For example 8192" onChange={event => update({ customContextTokens: event.target.value === '' ? null : Number(event.target.value) })} /></label>
+            <p className="help">Enter the context your server actually runs the model with. Riot fits each request to it; a blank value uses a conservative 32,768-token fallback. A bot can set its own capacity in Bot settings → Advanced.</p>
+            <label>API key (optional)<input type="password" autoComplete="off" spellCheck={false} value={key} placeholder={keySaved ? 'A key is saved. Paste here only to replace it.' : 'Leave blank if your server does not need a key'} onChange={event => { setKey(event.target.value); setNote('') }} /></label>
+            <p className="help">{props.credentials.explanation} A saved key is sent only to this endpoint address. Local servers usually need no key.</p>
+            {keySaved && <details className="subtle-details"><summary>Manage saved key</summary><p className="help">Removing this key stops sending it to your endpoint. The address stays saved.</p><button type="button" className="danger" onClick={() => { void props.api.clearCredential('custom').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove saved key</button></details>}
+          </> : <>
             <p className="help">This key is shared by all bots using {providerName(draft.provider)}. API usage is billed by your provider.</p>
             <label>API key<input type="password" autoComplete="off" spellCheck={false} value={key} placeholder={keySaved ? 'A key is saved. Paste here only to replace it.' : `Paste your ${providerName(draft.provider)} API key`} onChange={event => { setKey(event.target.value); setNote('') }} /></label>
             <p className="help">{props.credentials.explanation} New keys are saved with Save app settings.</p>
             {keySaved && <details className="subtle-details"><summary>Manage saved key</summary><p className="help">Removing this key disconnects all bots using {providerName(draft.provider)}.</p><button type="button" className="danger" onClick={() => { if (draft.provider !== 'codex') void props.api.clearCredential(draft.provider).then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove saved key</button></details>}
           </>}
         </section>
-        <section className="settings-section"><div className="section-heading"><span className="step-number">3</span><h3>Choose your default model</h3></div><ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => update({ model })} /><p className="help">{draft.provider === 'codex' ? 'Sign in first to load the models available to your account.' : 'Copy the exact model ID from your provider’s catalog.'} New bots start with this choice; each bot can use a different model in Bot settings.</p></section>
+        <section className="settings-section"><div className="section-heading"><span className="step-number">3</span><h3>Choose your default model</h3></div><ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => update({ model })} /><p className="help">{draft.provider === 'codex' ? 'Sign in first to load the models available to your account.' : draft.provider === 'custom' ? 'Enter the model name your server uses, for example llama3.2 in Ollama or the model identifier LM Studio shows.' : 'Copy the exact model ID from your provider’s catalog.'} New bots start with this choice; each bot can use a different model in Bot settings.</p></section>
       </> : tab === 'email' ? <>
         <GmailConnection api={props.api} status={props.gmail} onStatus={props.onGmail} onError={props.onError} />
         {props.bot && <section className="settings-section"><h3>Choose which apps each bot can use</h3><p className="help">Manage Gmail access in the selected bot’s Workspace → Apps.</p><div className="row"><button type="button" onClick={props.onApps}>Open Apps for {props.bot.name}<Icon name="arrow" /></button></div></section>}
@@ -1135,9 +1146,9 @@ function SettingsPane(props: {
         <section className="settings-section"><h3>Or choose a model for this bot</h3>
           <ProviderPicker value={draft.provider} onChange={provider => chooseModel(provider, '')} />
           <ModelField provider={draft.provider} model={draft.model} codex={props.codex} onChange={model => chooseModel(draft.provider, model)} />
-          <p className="help">{draft.provider === 'codex' ? props.codex?.connected ? 'Choose from the models available to your ChatGPT account.' : 'Connect your ChatGPT account in app Settings to load models.' : 'Copy the exact model ID from your provider’s catalog.'}</p>
+          <p className="help">{draft.provider === 'codex' ? props.codex?.connected ? 'Choose from the models available to your ChatGPT account.' : 'Connect your ChatGPT account in app Settings to load models.' : draft.provider === 'custom' ? 'Enter the model name your server uses.' : 'Copy the exact model ID from your provider’s catalog.'}</p>
         </section>
-        <div className="callout"><strong>Connections are shared across the app</strong><p>{draft.provider === 'codex' ? props.codex?.connected ? 'Your ChatGPT account is connected.' : 'Your ChatGPT account needs to be connected.' : (draft.provider === 'openai' ? props.credentials.openaiConfigured : props.credentials.openrouterConfigured) ? `An API key for ${providerName(draft.provider)} is saved.` : `Add a ${providerName(draft.provider)} API key in app Settings.`}</p><button type="button" onClick={() => props.onAppSettings()}>Manage connections in app Settings</button></div>
+        <div className="callout"><strong>Connections are shared across the app</strong><p>{draft.provider === 'codex' ? props.codex?.connected ? 'Your ChatGPT account is connected.' : 'Your ChatGPT account needs to be connected.' : draft.provider === 'custom' ? props.credentials.customConfigured ? `Your custom endpoint is saved: ${props.appSettings.customBaseUrl}.` : 'Add your model server address in app Settings.' : apiKeySaved(draft.provider, props.credentials) ? `An API key for ${providerName(draft.provider)} is saved.` : `Add a ${providerName(draft.provider)} API key in app Settings.`}</p><button type="button" onClick={() => props.onAppSettings()}>Manage connections in app Settings</button></div>
       </>}
       {tab === 'workspace' && <>
         <div className="page-intro"><h2>A place to get things done.</h2><p>Choose where your bot works and what it can do.</p></div>
@@ -1164,7 +1175,7 @@ function SettingsPane(props: {
         {draft.provider === 'codex' ? <div className="callout"><strong>Uses your ChatGPT account limits</strong><p>Codex manages its own usage and context. Riot’s API dollar and token limits do not apply. The task timer and Stop still work.</p></div> : <section className="settings-section"><h3>Optional spending limits</h3><p className="help">Leave these blank to use time and call limits only. To estimate spending, Riot needs both token prices from your provider.</p>
           <div className="grid"><OptionalMoney label="Per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={value => update({ maxEstimatedSpendPerTaskUsd: value })} /><OptionalMoney label="This bot, per day (USD)" value={draft.botSpendPerDayUsd} onChange={value => update({ botSpendPerDayUsd: value })} /></div>
           <p className="help">The app-wide spending ceiling is managed in app Settings. This bot’s limit can make it tighter.</p>
-          <h4>Model prices, per million tokens</h4><div className="grid"><OptionalMoney label="Input price (USD)" value={draft.inputUsdPerMillion} onChange={value => update({ inputUsdPerMillion: value })} /><OptionalMoney label="Output price (USD)" value={draft.outputUsdPerMillion} onChange={value => update({ outputUsdPerMillion: value })} /></div><p className="help">These are estimates. Your provider’s bill may differ.</p>
+          <h4>Model prices, per million tokens</h4><div className="grid"><OptionalMoney label="Input price (USD)" value={draft.inputUsdPerMillion} onChange={value => update({ inputUsdPerMillion: value })} /><OptionalMoney label="Output price (USD)" value={draft.outputUsdPerMillion} onChange={value => update({ outputUsdPerMillion: value })} /></div><p className="help">These are estimates. Your provider’s bill may differ.{draft.provider === 'custom' ? ' Riot does not assume a local model is free: with no prices, dollar limits stay blocked. Enter 0 for both prices only if this endpoint really costs nothing.' : ''}</p>
         </section>}
       </>}
       {tab === 'advanced' && <>
@@ -1177,7 +1188,7 @@ function SettingsPane(props: {
             {draft.replyMode === 'manual' && <NumberField label="Reply chunk token limit" value={draft.maxOutputTokens} onChange={value => update({ maxOutputTokens: value })} />}
             <label>Context fitting<select value={draft.contextMode} onChange={event => update({ contextMode: event.target.value === 'manual' ? 'manual' : 'automatic' })}><option value="automatic">Automatic</option><option value="manual">Manual input budget</option></select></label>
             {draft.contextMode === 'manual' && <NumberField label="Manual input working budget" value={draft.contextTokenBudget} onChange={value => update({ contextTokenBudget: value })} />}
-            <label>Model context capacity<input type="number" min="1024" step="1" placeholder="Use documented size" value={draft.modelContextTokens ?? ''} onChange={event => update({ modelContextTokens: event.target.value === '' ? null : Number(event.target.value) })} /></label>
+            <label>Model context capacity<input type="number" min="1024" step="1" placeholder={draft.provider === 'custom' ? 'Use the connection’s context length' : 'Use documented size'} value={draft.modelContextTokens ?? ''} onChange={event => update({ modelContextTokens: event.target.value === '' ? null : Number(event.target.value) })} /></label>
             <NumberField label="Tool preview characters" value={draft.maxToolOutputChars} onChange={value => update({ maxToolOutputChars: value })} />
           </div><p className="help">Automatic mode manages older messages and reserves room for replies. If the provider does not publish a context capacity, a blank value uses a conservative 32,768-token fallback. Manual mode uses your input budget as the ceiling.</p></details>
           <details className="settings-section advanced-details"><summary>Web search settings</summary><label>Search URL template<input value={draft.searchUrlTemplate} onChange={event => update({ searchUrlTemplate: event.target.value })} /></label><p className="help">Use an HTTPS search address containing {'{query}'}. Browser search has no separate search fee; AI calls still use your normal budget.</p></details>
@@ -1241,7 +1252,11 @@ function OptionalMoney({ label, value, onChange }: { label: string; value: numbe
 function providerReady(settings: PublicSettings, credentials: CredentialStatus, codex: CodexStatus | null): boolean {
   if (settings.provider === 'codex') return Boolean(settings.model.trim() && codex?.connected && !codex.loginPending && (!codex.models.length || codex.models.some(model => model.id === settings.model)))
   if (!settings.model.trim()) return false
-  return settings.provider === 'openai' ? credentials.openaiConfigured : credentials.openrouterConfigured
+  return settings.provider === 'custom' ? credentials.customConfigured : apiKeySaved(settings.provider, credentials)
+}
+
+function apiKeySaved(provider: PublicSettings['provider'], credentials: CredentialStatus): boolean {
+  return provider === 'openai' ? credentials.openaiConfigured : provider === 'openrouter' ? credentials.openrouterConfigured : provider === 'custom' ? credentials.customKeyConfigured : false
 }
 
 function ContextDetails({ context }: { context: ContextView }) {
@@ -1255,7 +1270,7 @@ function ContextDetails({ context }: { context: ContextView }) {
             {context.contextLimit} fitted tokens.
             {context.capacitySource === 'fallback' ? ' Conservative limit, not a documented model window.' : ''}
             {context.capacitySource === 'provider' ? ' From the provider’s published context length.' : ''}
-            {context.capacitySource === 'configured' ? ' From the capacity entered in Advanced settings.' : ''}
+            {context.capacitySource === 'configured' ? ' From the capacity entered in Settings.' : ''}
             {context.assemblyTarget != null && context.capacitySource !== 'manual' ? ` Older chat is compacted toward ${context.assemblyTarget}.` : ''}
           </dd>
         </div>
@@ -1856,7 +1871,7 @@ export function ModelField(props: {provider: PublicSettings['provider'];model: s
       <option value="">{props.loading ? 'Loading Codex models…' : props.codex?.connected ? 'Choose an available model' : 'Connect Codex to load models'}</option>
       {props.model && !props.codex?.models.some(model => model.id === props.model) && <option value={props.model}>{props.model} · current choice</option>}
       {props.codex?.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
-    </select> : <input aria-label="Model ID" value={props.model} placeholder="Paste the model ID from your provider" onChange={(event) => props.onChange(event.target.value)} />}
+    </select> : <input aria-label="Model ID" value={props.model} placeholder={props.provider === 'custom' ? 'The model name on your server, for example llama3.2' : 'Paste the model ID from your provider'} onChange={(event) => props.onChange(event.target.value)} />}
   </label>
 }
 
@@ -1901,7 +1916,7 @@ export function NewBotForm(props: { settings: PublicSettings; api: RiotBridge; c
         <label>Give it a name<input value={name} maxLength={40} placeholder="For example: Scout" onChange={event => setName(event.target.value)} /></label>
         <p className="help">Use any name you like. If you clear it, an API connection may use one short setup request to suggest one. You can also ask the bot in chat to choose or change its name.</p>
       </section>
-      <div className="inherit-note"><Icon name="check" /><div><strong>{model ? `Uses ${provider === props.settings.provider && model === props.settings.model ? 'app default' : 'custom connection'}: ${providerName(provider)}` : 'You can connect your AI after creating your bot'}</strong><p>{model ? model : 'Create it now, then we’ll guide you through setup.'}</p></div></div>
+      <div className="inherit-note"><Icon name="check" /><div><strong>{model ? `Uses ${provider === props.settings.provider && model === props.settings.model ? 'app default' : 'its own choice'}: ${providerName(provider)}` : 'You can connect your AI after creating your bot'}</strong><p>{model ? model : 'Create it now, then we’ll guide you through setup.'}</p></div></div>
       <details className="settings-section advanced-details"><summary>Connection & model <span>Optional</span></summary><p className="help">Your app default is filled in. Change it only if you want this bot to use a different model. Shared sign-ins and API keys are managed in app Settings.</p>
         <ProviderPicker value={provider} onChange={value => { setProvider(value); setModel('') }} />
         <ModelField provider={provider} model={model} codex={props.codex} loading={loadingModels} onChange={setModel} />

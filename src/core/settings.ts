@@ -1,4 +1,4 @@
-import type { PublicSettings } from '../shared/types'
+import type { ProviderId, PublicSettings } from '../shared/types'
 import { DEFAULT_SEARCH_TEMPLATE } from './browser-policy'
 import { validatePublicUrl } from './web'
 import { trustedSite } from './logins'
@@ -80,8 +80,13 @@ export function estimateCostUsd(inputTokens: number, outputTokens: number, price
   return (inputTokens / 1_000_000) * price.inputPerMillion + (outputTokens / 1_000_000) * price.outputPerMillion
 }
 
+/** Maps stored or supplied provider values to a known connection. Unknown values fall back to the OpenAI default. */
+export function parseProviderId(value: unknown): ProviderId {
+  return value === 'codex' || value === 'openrouter' || value === 'custom' ? value : 'openai'
+}
+
 export function sanitizeSettings(input: Partial<Settings>): Settings {
-  const provider = input.provider === 'codex' ? 'codex' : input.provider === 'openrouter' ? 'openrouter' : 'openai'
+  const provider = parseProviderId(input.provider)
   const model = String(input.model ?? '').replace(/[\r\n]/g, '').trim().slice(0, 200)
   return {
     provider,
@@ -121,7 +126,7 @@ export function sanitizeSettings(input: Partial<Settings>): Settings {
   }
 }
 
-function optionalTokens(value: unknown): number | null {
+export function optionalTokens(value: unknown): number | null {
   if (value == null || value === '') return null
   const number = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(number) || number < 1024 || number > 2_000_000) {

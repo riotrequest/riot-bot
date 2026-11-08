@@ -6,7 +6,7 @@ import type { RiotService } from '../core/service'
 import { isId } from '../core/ids'
 import type { SkillDraft } from '../core/skills'
 import { publicErrorMessage } from '../core/redact'
-import type { AppNotice, AppPreferences, BotDraft, BotMenuAction, GmailRuleDraftInput, ProviderId, PublicSettings } from '../shared/types'
+import type { ApiProviderId, AppNotice, AppPreferences, BotDraft, BotMenuAction, GmailRuleDraftInput, ProviderId, PublicSettings } from '../shared/types'
 import type { ElectronCredentialStore } from './credentials'
 import type { ScheduleDraft } from '../shared/types'
 
@@ -222,7 +222,7 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('settings:update', (app, args) => app.updateSettings(pickSettings(args[0])))
   handle('settings:updateApp', (app, args) => {
     const patch = pickSettings(args[0])
-    return app.updateAppSettings({ ...(patch.provider !== undefined ? { provider: requireProvider(patch.provider) } : {}), ...(patch.model !== undefined ? { model: patch.model } : {}), ...(patch.maxEstimatedSpendPerDayUsd !== undefined ? { maxEstimatedSpendPerDayUsd: patch.maxEstimatedSpendPerDayUsd } : {}), ...researchSettingsPatch(args[0]) })
+    return app.updateAppSettings({ ...(patch.provider !== undefined ? { provider: requireProvider(patch.provider) } : {}), ...(patch.model !== undefined ? { model: patch.model } : {}), ...(patch.maxEstimatedSpendPerDayUsd !== undefined ? { maxEstimatedSpendPerDayUsd: patch.maxEstimatedSpendPerDayUsd } : {}), ...customEndpointPatch(args[0]), ...researchSettingsPatch(args[0]) })
   })
   handle('codex:status', (app) => app.getCodexStatus())
   handle('codex:connect', (app) => app.connectCodex())
@@ -282,13 +282,29 @@ function attachmentInput(value: unknown): { botId: string; name: string; bytes: 
 }
 
 function requireProvider(value: unknown): ProviderId {
-  if (value !== 'openai' && value !== 'openrouter' && value !== 'codex') throw new Error('Choose OpenAI, OpenRouter, or Codex.')
+  if (value !== 'openai' && value !== 'openrouter' && value !== 'custom' && value !== 'codex') throw new Error('Choose OpenAI, OpenRouter, a custom endpoint, or Codex.')
   return value
 }
 
-function requireApiProvider(value: unknown): 'openai' | 'openrouter' {
-  if (value !== 'openai' && value !== 'openrouter') throw new Error('API keys are only used by OpenAI and OpenRouter.')
+function requireApiProvider(value: unknown): ApiProviderId {
+  if (value !== 'openai' && value !== 'openrouter' && value !== 'custom') throw new Error('API keys are only used by OpenAI, OpenRouter, and a custom endpoint.')
   return value
+}
+
+/** Type checks only. The address itself is validated in core before it is saved and again before every request. */
+function customEndpointPatch(value: unknown): { customBaseUrl?: string; customContextTokens?: number | null } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const record = value as Record<string, unknown>
+  const patch: { customBaseUrl?: string; customContextTokens?: number | null } = {}
+  if ('customBaseUrl' in record) {
+    if (typeof record.customBaseUrl !== 'string' || record.customBaseUrl.length > 2000) throw new Error('Enter the endpoint address as text.')
+    patch.customBaseUrl = record.customBaseUrl
+  }
+  if ('customContextTokens' in record) {
+    if (record.customContextTokens !== null && (typeof record.customContextTokens !== 'number' || !Number.isFinite(record.customContextTokens))) throw new Error('Enter the context length as a number, or leave it blank.')
+    patch.customContextTokens = record.customContextTokens
+  }
+  return patch
 }
 
 function skillDraft(value: unknown): SkillDraft {

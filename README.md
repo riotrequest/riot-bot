@@ -68,6 +68,8 @@ Codex is now available as a preview backend through the official CLI and its man
 
 Requires Node.js 22.13 or newer in the 22.x line, 24.x, or 26 and newer for development and tests. The packaged app includes its own runtime.
 
+To chat you need one model connection: a ChatGPT account (Codex preview), an OpenAI or OpenRouter API key, or a model server such as Ollama, LM Studio, or vLLM running on this computer. Any other OpenAI-compatible endpoint at a public `https://` address also works. See [Credentials](#credentials) and [local and custom model endpoints](docs/custom-endpoints.md).
+
 ```powershell
 cd riot-bot
 npm install
@@ -82,7 +84,7 @@ Data lives in `%APPDATA%\riot-bot\`:
 - `avatars\` — uploaded bot images, stored as PNG thumbnails named by bot id
 - `browser-profiles\<bot id>\` — that bot’s Chromium cookies and site storage
 - `playwright-browsers\` — the Chromium download, after you choose Install Chromium
-- `credentials.bin.json` — Windows-encrypted API keys, Gmail credentials and per-bot website logins
+- `credentials.bin.json` — Windows-encrypted API keys (including an optional custom-endpoint key), Gmail credentials and per-bot website logins
 - `codex\` — Riot-owned Codex authentication, native sessions, and configuration; managed by the official CLI
 - `artifacts\<bot id>\` — immutable saved file versions in that bot’s Library
 - `riot-bot.log` — redacted operational log
@@ -156,6 +158,16 @@ That statement applies to the API-key backends. Codex has its own authentication
 
 OpenAI requests go to `https://api.openai.com/v1/chat/completions`. OpenRouter requests go to `https://openrouter.ai/api/v1/chat/completions`.
 
+For **Local or custom model** (Ollama, LM Studio, vLLM, or another OpenAI-compatible endpoint):
+
+1. Start your model server. Choose the **Local or custom model** card.
+2. Enter the endpoint address, for example `http://localhost:11434/v1` for Ollama or `http://localhost:1234/v1` for LM Studio. Plain `http://` is accepted only for `localhost`, `127.0.0.1`, and `[::1]`. Any other server must use `https://` and a public address. Servers elsewhere on your home or office network are refused for now.
+3. Enter the context length your server runs the model with, and the model name your server uses.
+4. Paste an API key only if the endpoint needs one. It is optional, saved in the same Windows-protected store as other keys, and never written to settings.
+5. Choose **Save app settings**.
+
+Custom endpoint requests go to the address you saved plus `/chat/completions`, and nowhere else. The address and its DNS answers are checked before every request, the connection is pinned to the checked address, and redirects are not followed. The key is sent only to that endpoint. Pricing is unknown, so dollar limits stay blocked until you enter both prices for the bot; call, time, and output limits still apply. A failure stops the task; Riot never switches to another connection. Details are in [local and custom model endpoints](docs/custom-endpoints.md).
+
 ## What you can ask it to do
 
 Chat hides successful **Completed · … actions** rows by default. Turn on **Settings → Preferences & spending → Show completed actions in Chat** to see expandable action history across all bots. This global preference saves immediately. Errors, interrupted work, approval requests, file links/Undo, and the bot's reply remain available. Full logs stay in **Usage & activity**.
@@ -196,7 +208,7 @@ Typed addresses must be public `http` or `https`. A local proxy validates destin
 
 ## Limits
 
-Context fitting is automatic. Riot Bot uses the model’s documented context length when the provider publishes one, or a capacity you enter under **Bot settings → Advanced → Model limits & context**. For OpenRouter, the public model list also supplies the output cap when available. This metadata is cached and is not a model completion. Without a documented or configured context size, automatic mode uses a labeled conservative limit of 32,768 tokens. Older chat is compacted toward about 12,000 fitted input tokens; a larger window does not send the whole transcript.
+Context fitting is automatic. Riot Bot uses the model’s documented context length when the provider publishes one, or a capacity you enter under **Bot settings → Advanced → Model limits & context**. For a custom endpoint, the context length saved with that connection applies unless the bot has its own capacity. For OpenRouter, the public model list also supplies the output cap when available. This metadata is cached and is not a model completion. Without a documented or configured context size, automatic mode uses a labeled conservative limit of 32,768 tokens. Older chat is compacted toward about 12,000 fitted input tokens; a larger window does not send the whole transcript.
 
 Reply allowance is automatic too. It starts at 8,192 tokens, includes model reasoning, and can grow after a truncated tool request or an empty reply that exhausted its allowance. Growth stays within the published output cap, context reserve, and an application ceiling of 32,768. Replies can continue across calls. Every call still checks time and spending limits. A custom manual reply cap remains available in Advanced; saved custom caps are preserved. An incomplete tool batch is rejected before any of its actions run, then retried within the same task limits. The old untouched 2,048-token setting migrates to automatic mode.
 
@@ -226,7 +238,7 @@ Every model call goes through one gateway with a run id. A call starts only from
 
 Each request is built from the bot profile, pinned instructions, pinned memories, the rolling summary, the current task, a few retrieved memories, a short skill catalog, and recent messages that fit the input budget. The full skill text is loaded only when a tool asks for it. Older text stays in SQLite and can be searched, including the messages around a match. There is no embeddings index.
 
-Web fetches resolve the host, refuse the request if any address is local or private, and connect to a resolved address while keeping the original Host header and the normal HTTPS certificate check. Each redirect is checked again. TLS verification is not turned off. The browser’s local proxy does the same kind of check for connections it handles. That does not make the browser isolated from the local network.
+Web fetches resolve the host, refuse the request if any address is local or private, and connect to a resolved address while keeping the original Host header and the normal HTTPS certificate check. A custom model endpoint uses the same checks before every request, except that plain `http://` is allowed for exactly `localhost`, `127.0.0.1`, and `[::1]`; it accepts only its saved origin and path and never follows redirects. Each redirect is checked again. TLS verification is not turned off. The browser’s local proxy does the same kind of check for connections it handles. That does not make the browser isolated from the local network.
 
 ## Packaging
 
@@ -279,7 +291,8 @@ The running window was also checked at 1180 and 880 pixels wide. The sidebar sta
 - One task per bot runs at a time, with up to two bots working independently; overlapping workspaces take turns. Only saved schedules start work on a timer. Optional memory/skill reviews follow successful user turns; skills still require explicit approval to save.
 - Typed drafts survive a bot switch in the same session and are not written to disk. Pending file and screenshot attachments are persisted.
 - No accounts, sync, telemetry, plugin marketplace, or extra agents.
-- Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one.
+- Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one, and a custom endpoint uses the context length you enter.
+- A custom model endpoint must be on this computer or at a public `https://` address. Servers elsewhere on a home or office network are refused until the owner decides how to grant them. Custom endpoint requests do not use Windows proxy settings, and Riot does not list the models on that server. The custom endpoint has not yet been checked against a real Ollama, LM Studio, or vLLM server.
 - The earlier provider check’s cancellation step did not pass. These mock tests do not rerun that live check.
 - The installer is unsigned and does not yet include this version.
 
@@ -300,7 +313,7 @@ This does not call a model until you send a message. Installed Chrome or Edge ca
 This uses API credits. Do it only when you want that.
 
 1. `cd riot-bot` then `npm run dev`.
-2. Open **Settings**. Choose OpenAI or OpenRouter, paste the model ID from that provider and your API key, and choose **Save settings**.
+2. Open **Settings**. Choose OpenAI or OpenRouter, paste the model ID from that provider and your API key, and choose **Save settings**. For a local or custom model, enter its endpoint address, context length, and model name instead; a local server does not use API credits.
 3. If a task or daily dollar cap is filled in, also enter the input and output prices per million tokens. Leave the dollar boxes blank to use call and token limits only.
 4. Choose **Save settings**.
 5. Open **Advanced → Test your saved connection** and choose **Preview provider check**. Read the credit note. It allows at most 4 calls and 64 output tokens each. It does not contact the provider yet.

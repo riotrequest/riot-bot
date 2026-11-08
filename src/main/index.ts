@@ -8,6 +8,7 @@ import type { AppNotice } from '../shared/types'
 import { ConfigError } from '../core/errors'
 import type { Logger } from '../core/logger'
 import { createOpenAICompatibleProvider, MockProvider } from '../core/provider'
+import { createCustomEndpointProvider } from '../core/custom-endpoint'
 import { ElectronCredentialStore } from './credentials'
 import { registerIpc } from './ipc'
 import { contentSecurityPolicy, windowWebPreferences } from './security'
@@ -255,8 +256,10 @@ app.whenReady().then(async () => {
     openLink: (url) => {
       void shell.openExternal(url)
     },
-    createProvider: (settings) => {
+    createProvider: (settings, connection) => {
       if (settings.provider === 'codex') throw new ConfigError('Codex uses its native connection. It cannot use an API key.')
+      // The custom endpoint never uses providerFetch: its own transport pins the checked addresses and refuses redirects.
+      if (settings.provider === 'custom') return createCustomEndpointProvider({ baseUrl: connection.customBaseUrl, apiKey: credentials.get('custom') })
       const key = credentials.get(settings.provider)
       if (!key) {
         throw new ConfigError('Add your API key in Settings. A ChatGPT or Cursor subscription does not provide this key.')

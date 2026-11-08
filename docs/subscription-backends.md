@@ -1,12 +1,13 @@
 **Subscription backend design — checked November 2, 2026**
 
-Codex has now been implemented as a preview backend after authorization. The OpenAI and OpenRouter API-key backends remain available. [Codex setup and current limits](codex.md) describes the implemented managed-login route; Claude remains a saved design.
+Codex has now been implemented as a preview backend after authorization. The OpenAI and OpenRouter API-key backends remain available, and an OpenAI-compatible [local or custom endpoint](custom-endpoints.md) uses the same Riot agent loop. [Codex setup and current limits](codex.md) describes the implemented managed-login route; Claude remains a saved design.
 
 The requirement is to preserve the provider's agent capabilities. An API model uses Riot Bot's existing tool loop and free browser search. A native agent backend should use its own agent loop, tools, search, sessions, and permission protocol when available. Riot Bot supplies the bot identity, scoped memories, task intent, UI, and consent. Native search results still do not establish an observed Google organic position; an exact ranking request needs the browser evidence for that engine.
 
 | Backend | Owner of agent loop and default tools | Authentication and billing |
 | --- | --- | --- |
 | OpenAI/OpenRouter API | Riot Bot; existing browser, files, terminal approvals, and memory tools | User's API key; current estimated/reported dollar accounting |
+| Local or custom OpenAI-compatible endpoint | Riot Bot; same tools as the API backends | Optional key for that endpoint only; dollar accounting only from prices the user enters |
 | Codex native agent | Official Codex app-server; keep supported native search, file, execution, and MCP capabilities | Documented ChatGPT/Codex authentication or registered ChatGPT-plan integration, subject to eligibility |
 | Claude native agent | Unmodified Claude Code; keep its available native tools and permissions | Each user's own authentication through Anthropic's flow, subject to the embedding conditions |
 
