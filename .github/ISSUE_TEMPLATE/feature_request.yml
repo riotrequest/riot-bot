@@ -1,0 +1,56 @@
+name: Feature request
+description: Suggest a new capability or an improvement to an existing one.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Please use made-up examples and leave out private data and secrets.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe what you are trying to do and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Riot Bot to do?
+      description: Describe the behavior you have in mind, from the user's point of view.
+    validations:
+      required: true
+  - type: textarea
+    id: permissions
+    attributes:
+      label: Data and permissions
+      description: |
+        Riot Bot enforces permissions in application code. What would this feature read, send or change? Which services or sites would receive data? Which steps should need your approval, and should that approval be remembered?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Bots and chat
+        - Files and terminal
+        - Browser
+        - Saved logins and site access
+        - Web search
+        - Gmail
+        - Reminders and schedules
+        - Memory and skills
+        - Model connections and limits
+        - Setup, building or installing
+        - Documentation
+        - Other
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, links to similar tools, or anything else that helps.

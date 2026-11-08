@@ -1,82 +1,145 @@
 # Riot Bot
 
-Riot Bot is a personal Windows desktop assistant. Each bot has one ongoing conversation, its own memories, skills, workspace, and browser profile. The app does not call a model when it is idle, opened, or restarted.
+**A local-first AI assistant for Windows. Run several bots, each with its own memory, workspace and browser, and let the app itself, not a prompt, decide what they are allowed to do.**
 
-## Saved logins and security — November 3, 2026
+> [!NOTE]
+> Riot Bot is an early preview (version 0.1.0). Today it is a Windows desktop app, built from source, with no signed installer yet. Other platforms and an always-on server are on the [roadmap](#roadmap). Read the [known limitations](#known-limitations) before giving a bot access to anything important.
 
-Save website logins once in **Bot settings → Files & tools → Saved website logins**, or use the labelled chat format in [saved logins and permissions](docs/security.md). Passwords use Windows-protected storage and are filled locally on the matching HTTPS site. Browser sessions and per-bot site access persist. A new site can be allowed for one task or remembered, so normal work on an approved site does not ask for every click. Remembered access includes sharing information and changing content on that site; remove it in the same settings panel.
+<!-- TODO(owner): replace this placeholder with a short GIF or screenshot. Suggested file: docs/images/hero.gif, referenced from here as an image. -->
+> **Screenshot placeholder (hero GIF):** the main window, showing the bot list on the left, a bot working through a request in Chat, and the Workspace sidebar (Tasks, Files, Memories, Schedule, Apps) on the right.
 
-This follow-up fixes browser WebRTC bypasses, page-controlled approval bypasses, known-credential exposure in successful text results/streams, network paths in disk-space checks and credential deletion after encryption failure. Common project secret files need an explicit per-workspace grant. Electron packaging now has a fuse/integrity policy and a separate signing-required release command; CI checks code, dependencies and secrets. See the [security review and remaining limits](docs/security-review.md) and [contributor/AI guidance](AGENTS.md). Native Codex still has broader filesystem reads under its tested legacy Windows policy. This work does not publish a release.
+## Why Riot
 
-## Gmail — November 3, 2026
+Riot is for people who want an assistant that does real work on their own computer: research, files, websites, email and recurring checks. Your data stays local and every permission is explicit. You bring your own model connection: an OpenAI or OpenRouter API key, a ChatGPT account through the Codex preview, or a model server you run yourself, such as Ollama or LM Studio.
 
-Connect an existing **Gmail / Google Workspace** mailbox in **Workspace → Apps → Gmail** using your own Google Desktop OAuth app setup file. Riot connects directly from your computer; it does not host your mailbox or require a Riot email account. [Set up Gmail](docs/gmail.md).
+Each bot has one ongoing conversation, its own memories, skills, workspace, and browser profile. The app does not call a model when it is idle, opened, or restarted.
 
-Enable access separately for each bot: no access, reading and drafts, or reading and drafts with a review before every send. Bots can search mail, read messages and conversations, and save plain-text replies in Gmail. Chat and scheduled bot work use the same connection and permissions. Sending shows every recipient and the full message, and records Gmail's confirmation. An uncertain send pauses rather than retrying automatically. Attachments, mailbox cleanup, multiple connected accounts, and unattended sending are not included in this first version.
+What makes it different:
 
-## Easier setup and everyday use — November 3, 2026
+- **Local-first.** Chats, memories, skills, schedules and saved files live in a SQLite database and folders on your PC. Riot has no account, server, sync or telemetry. What leaves your computer goes to services you choose to use, such as your model provider, the sites a bot visits, Google for Gmail, and the research service for web search.
+- **Multiple bots, kept apart.** Each bot has its own memory, skills, working folder, browser profile, schedules, saved logins and permissions. Two bots can work at the same time, and a running task stays with the bot that started it. (Native Codex bots can read more of the filesystem; see [known limitations](#known-limitations).)
+- **Permissions enforced in application code.** File, terminal, browser, Gmail and spending rules are checked in Electron's main process. Web pages, emails, tool output and the model's own replies cannot approve an action, raise a budget or grant another bot's access.
+- **Saved logins in the Windows credential store.** Website passwords are encrypted with Windows protection and kept out of chat, memory and the model's context. Riot fills them locally, only for the bot that owns the login and only on the exact saved HTTPS site.
+- **Gmail with reviewed sending.** Connect your own mailbox through your own Google app. Every send shows each recipient and the full message for you to approve, unless you turn on a narrow per-bot reply rule for an exact saved reply.
+- **Schedules.** Reminders pop up without an AI call. Scheduled bot tasks run with that bot's usual tools, approvals and budget.
+- **Browser automation.** A visible Chromium, Chrome or Edge window with a separate profile for each bot. You grant site access once or for a single task, revoke it at any time, and can take over the window for sign-in or verification.
+- **Keyless web research.** Search and page reading work out of the box, with no API key or sign-up, under a per-bot daily cap.
 
-Start in Chat with **Let’s set up**. **Settings** at the bottom of the left sidebar manages shared connections and the default model for new bots. **Bot settings** at the bottom of the right Workspace sidebar controls the selected bot’s model, profile, working folder, tools, and limits. Save the app default, then use **Bot settings → Model → Use app default** to apply it to an existing bot. New bots start with the app default automatically. A starter idea fills your draft without sending it. Trying to send before connecting opens setup and keeps your draft.
+## Quick start
 
-The right Workspace sidebar includes **Apps**, where you connect Gmail and choose the selected bot’s access. Account sign-in is shared across Riot, while app access stays separate for each bot. Shared Gmail account management is also available in **Settings → Email**. The right sidebar uses **Tasks** for work in progress, **Files** for saved versions, and **Memories** for facts and preferences. **Usage & activity** is below Settings on the left. Empty screens explain how to get started. **New bot** offers a few starting ideas and starts with the app-wide default provider and model. Its default name avoids a naming request; connection overrides, folders, and appearance are optional disclosures.
+### Requirements
 
-**Bot settings** has **Profile & browser**, **Model**, **Files & tools**, **Limits**, and **Advanced**. Model/context tuning and the optional connection test live in Advanced. Profile & browser contains its name, purpose, extra instructions, icon, browser, earlier conversations, and deletion. Shared credentials, display preferences, the app-wide spending ceiling, and defaults live in the left sidebar’s app Settings. Defaults are seeded once from the previously selected bot on upgrade; later changes apply to new bots and do not switch existing bots. Chat shows the current provider and model below the bot’s name. The working status and View tasks stay together above the composer, using the same content width. Choosing a different working folder turns editing off in the form until you explicitly enable it and save. Existing saved permissions are preserved.
+- Windows.
+- Node.js 22.13 or newer in the 22.x line, 24.x, or 26 and newer, for development and tests. The packaged app includes its own runtime.
+- A model connection: an [OpenAI](https://platform.openai.com/) or [OpenRouter](https://openrouter.ai/) API key, a ChatGPT account together with the official Codex CLI, or a model server such as Ollama, LM Studio or vLLM running on this computer. Any other OpenAI-compatible endpoint at a public `https://` address also works; see [local and custom model endpoints](docs/custom-endpoints.md).
+- Optional: Google Chrome or Microsoft Edge. Bots can use either one, so you don't need to download Chromium.
 
-## Disk-space checks — November 3, 2026
-
-API and native Codex bots can use **get_disk_space** (`riot_get_disk_space` in Codex) to read capacity from Riot’s runtime. It reports bytes and decimal GB for a local drive or folder, defaulting to the bot’s working folder. It requires tools but not editing. Network shares, mapped drives and remote link targets are refused. A fixed noninteractive Windows helper classifies local drives; no model-provided command is executed and no terminal approval is needed. Unavailable values are errors, with a full disk distinguished from missing counters.
-
-This avoids restricted native PowerShell/WMI queries for routine disk-space questions. Native instructions prefer this tool and discourage cycling through command variants after permission failures. Completed turns containing failed actions now show **Finished · … · … failed**, with streamed tool errors and timing matched to their recorded result.
-
-## Reminders and scheduled work — November 3, 2026
-
-**Schedule** in the right Workspace supports reminders and bot tasks: once, daily, weekdays, or weekly. Ask in Chat (“Remind me to check email at 9 PM” or “Check the RLH email system every weekday at 8 AM”), or add one directly. Reminders show a Riot popup without an AI call. The popup stays at the corner of the screen while Riot is minimized, in the tray, or behind another window, and stays hidden while Riot is the focused window. It is not a Windows alert. A job that needs attention while Riot is not focused uses the same popup. Bot tasks save conversation context, use that bot’s current setup and usual approvals, and put their results in Chat and Tasks. Both API and native Codex bots expose the built-in scheduling tools; scripts and Windows scheduled tasks are unnecessary.
-
-Schedules run while Riot is open or in the tray and this computer is awake. Missed reminders catch up when Riot resumes. Missed AI work waits for **Run now** rather than automatically repeating overdue work. Failed or stopped tasks pause their schedule. Edit, pause, resume, cancel, and the next run/result are available in Schedule. See [scheduling and recovery](docs/scheduling.md) for details.
-
-Chat and the main panels scroll without a visible scrollbar; mouse wheels, touchpads, and keyboard scrolling still work. File changes stay in a collapsed **View files & undo** section, with each edit’s Undo control available inside.
-
-## Persistent jobs and saved files — November 2, 2026
-
-Messages now become durable jobs. You can queue a follow-up while a bot works and switch to another bot. Two bots can run independently; each has its own provider, tools, browser, approvals and Stop control. Jobs sharing a workspace take turns. The **Tasks** view shows queued work, approvals and outcomes across one or all bots.
-
-Closing the chat hides it in the Windows system tray while work continues. Double-click the Riot tray icon to reopen; use its menu to stop all work or **Quit Riot Bot**. Quit interrupts active jobs and pauses the queue. Reopening does not replay interrupted work: choose **Resume** for work you want to continue. Future scheduled tasks run at their saved time. The computer must remain on and awake. This is a local desktop service; cloud/mobile control is not available.
-
-The per-bot **Files** screen keeps versioned copies of files created or changed during a job, including partial results from a stopped job. Copies remain available after the workspace original changes or is deleted. Chat keeps short summaries and workspace file links. **Show in folder** reveals the version in Explorer; HTML does not render automatically. See [job, Library and verification behavior](docs/jobs-and-library.md) for bounds and recovery details.
-
-API and native Codex bots can use **verify_website** for a static HTML file. It loads desktop and mobile viewports in fresh browser contexts, blocks external page requests, and saves screenshots plus a report. It checks initial script errors, missing local assets and horizontal overflow. It does not establish that every interaction, backend or visual detail works. General project commands still require approval.
-
-## Review fixes — November 1, 2026
-
-Tool arguments are checked against their definitions before any action in a batch runs. Missing file contents, malformed JSON, and unknown tools pause without executing the batch. A cut-off tool batch is discarded and retried in smaller complete pieces within the task limits. Turning tools off is enforced in the main process, including while a terminal command waits for approval.
-
-Incomplete provider streams fail instead of reporting success. Partial replies are kept, and a failed request is not automatically retried after text has streamed. Provider checks require observed streaming and an actual cancellation before marking those steps passed. Task deadlines abort in-flight requests; Stop also cancels a model-catalog lookup. Closing waits for replies, provider checks, and bot setup before closing the database.
-
-Private-address checks now cover compressed and expanded IPv6 spellings and IPv4-mapped IPv6. Browser references expire across snapshots, navigation, and takeover, and are checked again after approval. Generic form buttons require confirmation. Closed tabs are removed from the live tab list.
-
-History, memory, and skill search filter by bot before applying the result limit. Another bot's matching records cannot crowd out this bot's recall. File replacement refuses binary or non-UTF-8 files, enforces the write limit in bytes, and rejects Windows alternate data streams. Undo compares the exact bytes. Bot setup does not borrow prices from a different model.
-
-`npm run check` runs TypeScript checks, tests, and a production build. Vitest was updated to 5.0.5. The production dependency audit has no reported advisories; the remaining 15 moderate advisories are in packaging development dependencies. The existing installer in `release` has not been rebuilt for these changes.
-
-The follow-up adds paged history, saved per-turn outcomes, attachment uploads and screenshot paste, and preserves the All bots Activity filter when a task finishes. Provider and model-catalog requests use Electron's networking stack so they honor Windows trust and proxy settings; public web tools keep their separate address checks. Google result parsing preserves observed opaque redirect links and displayed destinations. Real browser and image/text tasks passed with the selected OpenRouter DeepSeek model on November 1, 2026.
-
-The November 2 search follow-up makes Brave the default and upgrades saved DuckDuckGo defaults on startup, preserving custom templates. It reads parent result cards rather than counting grouped links, rereads existing results after human verification, distinguishes reader failures from sign-in requests, and detects closed browser contexts before reopening them.
-
-Codex is now available as a preview backend through the official CLI and its managed ChatGPT sign-in. It runs Codex’s native agent loop, search, and tools alongside Riot’s scoped memory/history/attachment tools. See [Codex setup and behavior](docs/codex.md). The separate API backends keep their existing tool loop and free Brave browser search. The [backend design](docs/subscription-backends.md) records the remaining Claude work.
-
-## Setup
-
-Requires Node.js 22.13 or newer in the 22.x line, 24.x, or 26 and newer for development and tests. The packaged app includes its own runtime.
-
-To chat you need one model connection: a ChatGPT account (Codex preview), an OpenAI or OpenRouter API key, or a model server such as Ollama, LM Studio, or vLLM running on this computer. Any other OpenAI-compatible endpoint at a public `https://` address also works. See [Credentials](#credentials) and [local and custom model endpoints](docs/custom-endpoints.md).
+### Install and run
 
 ```powershell
+git clone <repository-url> riot-bot   # TODO(owner): replace <repository-url> with the public clone URL
 cd riot-bot
-npm install
+npm ci
 npm run dev
 ```
 
-The first launch of this version keeps the existing database. Chats, memories, skills, and settings stay with the bot that owns them. A one-time backup from the earlier migration is `riot-bot.sqlite.v2.bak` beside the database and is not overwritten. Workspace files are not moved.
+Riot makes no model call until you send a message.
+
+### Connect a model
+
+1. In Chat, choose **Let’s set up**, or open **Settings → Connections & default model** at the bottom of the left sidebar.
+2. Pick a connection:
+   - **OpenAI API** or **OpenRouter:** paste your API key, then copy the exact model ID from that provider’s catalog. Riot never picks or substitutes a model for you.
+   - **ChatGPT account (preview):** install the official Codex CLI, restart Riot, choose **Sign in with ChatGPT**, then pick a model. See [Codex in Riot Bot](docs/codex.md).
+   - **Local or custom model:** start your model server, then enter its address (for example `http://localhost:11434/v1` for Ollama or `http://localhost:1234/v1` for LM Studio), the context length it runs the model with, and the model name it uses. A key is optional. See [local and custom model endpoints](docs/custom-endpoints.md).
+3. Choose **Save app settings**, then send your bot a message.
+
+API-key connections are billed by your provider. Call and time limits are on by default. Dollar limits apply once you enter a cap and the model's prices. See [Model connections and limits](#model-connections-and-limits).
+
+### Next steps
+
+- [Run a first browser task](docs/user-guide.md#first-browser-task) or [check a paid provider safely](docs/user-guide.md#first-real-provider-check).
+- [Save a website login](docs/security.md#save-a-login-once) for a bot.
+- [Connect Gmail](docs/gmail.md) and choose what each bot may do.
+- [Schedule a reminder or a recurring bot task](docs/scheduling.md).
+
+## Feature tour
+
+### Bots and chat
+
+The left sidebar lists your bots. **New Bot** creates another assistant with its own purpose, instructions, avatar, model and working folder. Each bot keeps one ongoing conversation. Riot compacts older history automatically and searches it for recall, so there is no New Chat button. You can rename a bot from its menu, or by asking in its Chat (“Call yourself Scout”).
+
+Replies use Markdown. Links open in your own browser after a public-address check, and images in model replies are never loaded. You can attach files or paste a screenshot. Each reply shows whether its run completed, failed, paused or was interrupted, and **Usage & activity** keeps the full record of every model call, including what went into its context.
+
+<!-- TODO(owner): replace with a screenshot. Suggested file: docs/images/chat.png -->
+> **Screenshot placeholder (chat):** a bot answering a request with a one-line tool status, file links with Undo, and an emoji reaction.
+
+Details: [user guide: bots and chats](docs/user-guide.md#bots-and-chats) and [chat](docs/user-guide.md#chat).
+
+### Files, commands and saved versions
+
+Each bot works in its own folder. Riot’s file tools stay inside that folder, check symlinks and junctions, and block common secret files like `.env` and private keys unless you grant access for that folder. Editing is off for existing folders until you turn it on, and each edit Riot makes has an Undo control. A terminal command runs only after you approve that exact command.
+
+Every message becomes a durable job. You can queue follow-ups, switch bots while one works, and close the window to the tray while work continues. The **Files** screen keeps versioned copies of everything a job created or changed. **verify_website** checks a static HTML page at desktop and mobile sizes and saves screenshots and a report.
+
+Details: [tasks, saved files and local verification](docs/jobs-and-library.md).
+
+### Browser automation
+
+Each bot gets a visible browser window with its own profile, separate from your personal Chrome or Edge profile. Sign-ins and cookies persist across restarts. Bots read pages through compact snapshots and act on the elements they observed. They have no tool for running arbitrary page scripts. Automatic downloads are cancelled, and you choose any file to upload yourself.
+
+The first time a bot needs to interact with a site, a card offers **Remember & allow**, **This task only**, or **Deny**. Remembered access lets that bot click and fill forms on that site without asking each time, including actions that send, pay, publish or delete there. You can revoke it in **Bot settings**. **Take over** hands you the window for sign-in, MFA or a CAPTCHA. For the connections it handles, a local proxy refuses private and local-network destinations, including after redirects.
+
+<!-- TODO(owner): replace with a screenshot. Suggested file: docs/images/site-access.png -->
+> **Screenshot placeholder (site access):** the site-access card with Remember & allow, This task only and Deny, beside the bot's browser window.
+
+Details: [user guide: browser](docs/user-guide.md#browser) and [saved logins and permissions](docs/security.md#remember-website-access).
+
+### Saved website logins
+
+Save a login once in **Bot settings → Files & tools → Saved website logins**, or with a labelled chat command. The password goes into the Windows-protected credential store, apart from chat history and memory. The model only sees an ID and metadata. Riot checks the bot, the exact HTTPS origin and the current page elements, then fills the password locally. Removing a login deletes its stored entry.
+
+Details: [saved logins and permissions](docs/security.md).
+
+### Keyless web research
+
+By default, research uses **Automatic — free, limited**. Searches go to Tavily without a key, with one Firecrawl fallback. Riot reads public pages directly and uses a reading service only when a page can’t be read. Each bot can make 40 research requests a day. You can switch to your own Tavily or Firecrawl key, or to browser search with Google, Brave, DuckDuckGo or a custom search address. After a bot has read private sources, sending a search to a research service needs your approval.
+
+Details: [web search](docs/web-search.md).
+
+### Gmail with reviewed sending
+
+Connect an existing Gmail or Google Workspace mailbox with your own Google Desktop OAuth app. There is no Riot mail server or shared OAuth app. You choose access separately for each bot: none, read and draft, or read, draft and send. Before every send, Riot shows the sender, every recipient and the full message. An unconfirmed send is never retried automatically.
+
+A **reply rule** that you turn on for one bot can send an exact saved reply to people who were already in the conversation, within a daily limit. Anything else waits for review, including money words, exclusions, new recipients, attachments and changed originals.
+
+<!-- TODO(owner): replace with a screenshot. Suggested file: docs/images/gmail-review.png -->
+> **Screenshot placeholder (Gmail review):** the send review card showing the sender, every recipient and the full message, with Send email and Don’t send.
+
+Details: [connect Gmail](docs/gmail.md).
+
+### Reminders and scheduled work
+
+The **Schedule** screen holds reminders and bot tasks that run once, daily, on weekdays or weekly. You can also ask in Chat (“Remind me to check email at 9 PM”). A reminder shows a Riot popup without any AI call. A bot task runs with that bot’s current setup, approvals and budget, and its results appear in Chat and Tasks. Missed AI work waits for **Run now** and is never replayed automatically. Schedules run while Riot is open or in the tray and the computer is awake.
+
+<!-- TODO(owner): replace with a screenshot. Suggested file: docs/images/schedule.png -->
+> **Screenshot placeholder (schedule):** the Schedule screen with a daily bot task and a reminder, plus a Riot reminder popup in the corner of the screen.
+
+Details: [reminders and scheduled bot work](docs/scheduling.md).
+
+### Memory and skills
+
+Say `remember this: …` to save a fact or preference. A short, optional review after a successful reply can save one well-supported memory and suggest a reusable skill, but a skill is never saved until you choose **Save skill**. Skills are procedures written as text. They cannot grant permissions, raise a budget or override the app’s rules.
+
+Details: [user guide: what you can ask it to do](docs/user-guide.md#what-you-can-ask-it-to-do) and [quiet memory and skill reviews](docs/quiet-learning.md).
+
+### Model connections and limits
+
+Riot works with OpenAI and OpenRouter API keys, with a ChatGPT account through the official Codex CLI (preview), and with a local or custom OpenAI-compatible model server. Riot never silently switches provider, account, model or billing. Each API task has call and time limits (24 model calls and 10 minutes by default). Optional dollar caps work per bot and app-wide, using prices you enter. Context fitting and reply length adjust automatically to the model’s published limits. Codex usage comes from your ChatGPT account’s allowance, not from Riot’s dollar budget. A custom endpoint has no known prices, so its dollar limits stay blocked until you enter both prices for the bot; call, time and output limits still apply.
+
+Details: [user guide: credentials](docs/user-guide.md#credentials), [limits](docs/user-guide.md#limits), [Codex in Riot Bot](docs/codex.md) and [local and custom model endpoints](docs/custom-endpoints.md).
+
+## Where your data lives
 
 Data lives in `%APPDATA%\riot-bot\`:
 
@@ -91,144 +154,7 @@ Data lives in `%APPDATA%\riot-bot\`:
 
 New workspaces are created under your home folder in `RiotBot\workspaces\`, with file editing enabled for that new folder. Existing folders start with editing off. Writes can create subfolders inside the workspace. Browser profiles are not inside the workspace and are not your Chrome or Edge profile.
 
-To remove the browser without touching chats, quit the app and delete `playwright-browsers` and `browser-profiles`. Deleting a profile removes that bot’s signed-in site storage. Do not delete the database to uninstall Chromium.
-
-For a full backup, preserve the database, encrypted credentials, avatars, complete browser profiles, and the Codex profile when connected. A source ZIP or Git bundle does not contain these. Workspace files are separate and need their own backup. Quit Riot Bot and its browser windows before an ordinary folder copy; for a running database use SQLite's backup API rather than copying its hot WAL files. Restore into a separate folder, check the database and file hashes, and keep the current app-data folder aside before replacing it. Do not mix a restored database with an older WAL/SHM pair. Credentials and browser sign-ins can depend on the same Windows account and machine. Keep app-data archives private.
-
-## Bots and chats
-
-The sidebar is **New Bot** and a vertical list of bots. Each row shows the avatar and display name. The selected bot has a marker. Click a bot to open its ongoing conversation. The selected bot is remembered after a restart.
-
-**New Bot** creates another assistant with exactly one ongoing conversation. The purpose is required. Leave the name blank to let one setup request suggest a name and initial instructions, or type a name and skip that request. The setup request is labeled `bot_setup`, has no tools, and follows the same spending limits. If no model is configured, or the reply is not usable, the bot is still created with a name taken from the purpose.
-
-There is no New Chat button. Compaction, memory, and history search stay automatic. A bot that already had several chats keeps every message. The most recently active chat becomes the ongoing conversation. The others stay in the bot menu under **Earlier conversations**, and search there stays on that bot. Those chats are read-only. New messages go to the ongoing conversation. Nothing is merged or deleted.
-
-Right-click a bot, use its **…** button, or press **Shift + F10** on its row for **Rename bot**, **Bot settings**, **Open working folder**, and **Delete bot**. Opening the menu keeps the current chat; choosing an action selects the bot you clicked. Rename preserves its conversation and setup. Delete opens a confirmation naming that bot, with Cancel focused by default. Confirming removes it without requiring you to type its name. Delete is disabled while that bot is working, and the service checks again before deleting.
-
-**Bot settings → Profile & browser** also opens the selected bot’s controls in the main panel: rename, purpose, instructions, avatar, **Open Workspace**, earlier conversations, Settings, and browser controls. Its **Delete this bot** option uses the same confirmation. Deletion discards the bot’s queue and removes Riot’s chats, memories, skills, schedules, Library copies, avatar and browser profile. The project folder, shared provider sign-ins, anonymous usage totals and Codex’s managed session history remain. Other bots stay intact. You can delete the last bot and create another from the empty app.
-
-You can also rename a bot from its Chat. A message that opens with a request such as “Call yourself Scout” or “Change your name to Scout” saves that exact name right away. A request without a clear name, such as “pick a better name for yourself” or a lowercase name, lets the bot choose one. Everyday phrases such as “go by the spec”, quoted text, and scheduled tasks do not rename a bot.
-
-Switching bots keeps the unsent draft for each bot during the session. A running task, its approval, and its browser stay with the bot that started them. Memory, skills, workspace, history, and the browser profile stay separate.
-
-The app-wide daily spending ceiling applies to every bot. A bot’s own daily limit can only make that ceiling tighter. Credentials stay in the app-level store.
-
-## Chat
-
-Short replies stay compact. Longer answers use Markdown: paragraphs, headings, lists, quotes, tables, and code. A finished article is the article itself. A word count is added only when you ask for one. An `http` or `https` link opens in your own browser after a public-address check. It is not loaded in the app window. Images in model Markdown are not loaded.
-
-Project work defaults to saved files and a short summary with file links. Clicking a workspace filename reveals it in its folder, without running it. File links are checked in the main process against the selected bot’s workspace, including symlink/junction checks. Full source is requested explicitly; large code blocks are collapsed behind **View source** and remain available to expand or copy. Workspace editing must be enabled to save files; a disabled write pauses with **Open Settings** rather than falling back to a source dump.
-
-An API reply that reaches its per-response cap continues automatically into the same saved message. Incomplete tool batches never execute; the model is asked for smaller complete chunks. `write_file` can append chunks, retaining one Undo record for that file write. Every continuation still passes the same time, call, and spending checks, and Stop remains effective. If a limit prevents finishing, the task is paused with its partial work preserved. Previously cut-off replies that were incorrectly marked completed are relabeled paused on upgrade. None are automatically replayed.
-
-Casual acknowledgements can be a short reply, an emoji reaction on the message, or both. The reaction is chosen in the same model turn. A reaction does not replace an answer to a question. **Copy** copies the assistant’s Markdown, without the avatar, tool log, or status line.
-
-Tool activity is one status line, such as “Checking memory…”, “Searching the web…”, or “Reading a page…”. When the turn is finished, the details say whether that run completed, failed, paused, or was interrupted, and how many actions finished. A finished tool does not by itself mean the request succeeded. Approvals, errors, file undo, and skill previews stay visible. A pause is shown once, in the chat. If the pause says Open Settings, that button is on the same notice. **Show tool details by default** is off until you turn it on in Settings. The full record remains in Activity, for this bot or for all bots.
-
-The transcript follows new text only while you are near the bottom. Otherwise it leaves a **Jump to latest** control.
-
-Opening a long chat loads the newest 80 messages. **Load earlier messages** prepends another page while keeping your reading position. The complete transcript remains searchable. Completed, paused, stopped, interrupted, and failed outcomes come from each saved run, including after restart. Legacy records without an outcome are labeled as unavailable.
-
-Use **Attach files**, drag files onto the composer, or paste a screenshot with Ctrl+V after Win+Shift+S. **Paste screenshot** reads an image only when clicked. PNG/JPEG images (8 MB maximum, within 8192 pixels per side and 32 megapixels) are decoded and resized to at most 2048 pixels per side. UTF-8 text/code files can be up to 1 MB. Up to four files can accompany a message, including a message with no typed text. Pending attachments stay with their bot across switching and restart. Remove discards the pending copy and leaves the original file intact. Attaching, pasting, and removing do not call a model.
-
-Sending shares those attachments with the selected backend. Images require a vision-capable model and are sent as image parts. Text has a short preview and a `read_attachment` tool (`riot_read_attachment` in Codex) for the full saved contents in bounded sections. API images reserve 16,384 estimated input tokens apiece for fitting and budget checks; actual provider usage varies. Codex manages its own context and account usage. Attachments are stored in SQLite and removed with their conversation. PDFs, Office documents, archives, audio/video, GIF, and WebP are not supported in chat yet; convert documents to UTF-8 text or take a PNG screenshot. Earlier images are not replayed after compaction; attach the image again if exact visual details are needed.
-
-The bot’s workspace path is part of its profile. Ask “what is your workspace location” and it can answer from that profile without searching files.
-
-## Avatars
-
-Every bot has an avatar in the bot list, the chat header, and once beside each assistant reply. A new bot gets a built-in icon. You can pick another icon or emoji and a background color, or upload a PNG, JPEG, GIF, or WebP. Uploads are checked, decoded, and stored as a small PNG. SVG, HTML, and remote image addresses are not used. A missing image falls back to a built-in icon. Choosing an avatar does not call a model.
-
-## Credentials
-
-Open the left sidebar’s **Settings → Connections & default model**.
-
-For **ChatGPT account**, sign in with ChatGPT, choose a model from the account’s picker, and choose **Save app settings**. This uses the Codex preview connection and requires the official Codex CLI. Full instructions and permission differences are in [docs/codex.md](docs/codex.md).
-
-For **OpenAI API** or **OpenRouter**:
-
-1. Choose the connection card for your provider.
-2. Paste your API key. If a key is already saved, leave the box empty to keep it.
-3. Copy the exact model ID from that provider’s catalog into Model ID. Riot does not select or substitute an API model.
-4. Choose **Save app settings**. New bots start with this model. For an existing bot, open **Bot settings → Model → Use app default**, then save that bot’s settings.
-
-A ChatGPT Plus, Codex, or Cursor subscription does not supply this key. The key is shared by every bot. Keys stay in the main process. The window only learns whether a key is saved. On this machine Windows credential protection is available, so a saved key survives restart. If that protection is unavailable, the key is kept in memory for the session and forgotten on quit.
-
-That statement applies to the API-key backends. Codex has its own authentication, native tools, permissions, and usage limits. A Codex quota or authentication failure never switches to an API key.
-
-OpenAI requests go to `https://api.openai.com/v1/chat/completions`. OpenRouter requests go to `https://openrouter.ai/api/v1/chat/completions`.
-
-For **Local or custom model** (Ollama, LM Studio, vLLM, or another OpenAI-compatible endpoint):
-
-1. Start your model server. Choose the **Local or custom model** card.
-2. Enter the endpoint address, for example `http://localhost:11434/v1` for Ollama or `http://localhost:1234/v1` for LM Studio. Plain `http://` is accepted only for `localhost`, `127.0.0.1`, and `[::1]`. Any other server must use `https://` and a public address. Servers elsewhere on your home or office network are refused for now.
-3. Enter the context length your server runs the model with, and the model name your server uses.
-4. Paste an API key only if the endpoint needs one. It is optional, saved in the same Windows-protected store as other keys, and never written to settings.
-5. Choose **Save app settings**.
-
-Custom endpoint requests go to the address you saved plus `/chat/completions`, and nowhere else. The address and its DNS answers are checked before every request, the connection is pinned to the checked address, and redirects are not followed. The key is sent only to that endpoint. Pricing is unknown, so dollar limits stay blocked until you enter both prices for the bot; call, time, and output limits still apply. A failure stops the task; Riot never switches to another connection. Details are in [local and custom model endpoints](docs/custom-endpoints.md).
-
-## What you can ask it to do
-
-Chat hides successful **Completed · … actions** rows by default. Turn on **Settings → Preferences & spending → Show completed actions in Chat** to see expandable action history across all bots. This global preference saves immediately. Errors, interrupted work, approval requests, file links/Undo, and the bot's reply remain available. Full logs stay in **Usage & activity**.
-
-Riot’s API file tools stay inside the selected bot’s workspace. File creation and editing stay off until **Allow Riot Bot to create and edit files in this folder** is checked. Each app-made edit can be undone from the chat if the file has not changed since. The API workspace is not an operating-system sandbox. Codex uses its native sandbox and file tools; its edits do not have Riot’s Undo button, and its legacy Windows policy permits broader reads. See the Codex guide.
-
-An API terminal command is shown with its working folder and time limit, and it runs only after you approve that exact command. The workspace folder does not contain the API shell. Codex follows its native approval rules: safe read commands can run automatically, and native requests that need approval appear in Riot Bot.
-
-`fetch_url` is still the lightweight tool for a straightforward public page. The browser is for JavaScript pages, search, and interaction.
-
-Say `remember this: …` to save that wording locally right away. The chat reply still uses your model. A guess is saved when you explicitly ask to remember it, and you can correct or delete it afterward. Obvious secret patterns are blocked. That check does not catch every secret.
-
-**Bot settings → Memory & skills** has independent switches for **Automatic memory** and **Suggest reusable skills**, both on by default. One short, quiet review after a successful chat reply checks for important durable preferences, project facts, and confirmed decisions, and for useful repeatable procedures. It can save one evidenced memory; a skill always waits for **Save skill**. Say `Turn off automatic memory`, `Stop suggesting skills`, or `Turn off both background checks` to change these settings for the current bot. Existing notes and skills stay available, and explicit save requests still work. Reviews use the bot's current connection/model and appear as **Memory & skill check** in Usage & activity. They consume extra API usage or native Codex allowance. See [quiet learning](docs/quiet-learning.md) for limits and behavior.
-
-A memory is a fact or preference. A skill is a procedure. Say `Save this workflow as a skill.` or `Update that skill with the correction we just discovered.` to save or update one. After a substantial task, Riot Bot may show a preview with **Save**, **Edit**, and **Dismiss**. Nothing about later chats changes until you save it. Skills cannot grant permissions, raise a budget, or override the app rules. The **Skills** screen lists, edits, disables, deletes, and restores versions. Markdown export and import are text only: import shows a preview first, adds the skill disabled, and does not run code or install anything. The catalog added to a request is at most eight short descriptions, and about 400 estimated tokens.
-
-## Browser
-
-Each bot’s browser data is under `%APPDATA%\riot-bot\browser-profiles\<bot id>`. Bundled Chromium uses that profile directly. Installed Chrome and Edge use separate `chrome` and `msedge` subfolders there; your personal browser profile is not opened. Cookies and site storage persist across restarts. Another process cannot open the same profile at the same time. The window opens only when you choose **Open Browser** or a task you sent needs it. Launch and idle time do not open it and do not call a model. **Close Browser** closes the window and keeps the profile. Stop cancels the browser action in progress. It does not erase the profile or undo a page that already loaded. After a restart, an unfinished browsing task is not resumed.
-
-A signed-in page can keep making ordinary website requests while that window is open. That traffic is not a model call. Zero idle model calls does not mean zero network traffic from a page you left open.
-
-The bot menu shows the available browser. Riot Bot prefers its downloaded Chromium when present, and can otherwise use installed Google Chrome or Microsoft Edge on Windows. No separate download is required when one of those browsers is available. **Install Chromium** remains an optional download from Playwright’s browser distribution into `playwright-browsers`. The progress line includes the download size. It is not a model charge, and it does not start on launch. The app uses a visible browser with its sandbox on. Pages are not embedded in the window.
-
-Browser tools can list tabs, open an `http` or `https` URL, read the page, take a compact snapshot with element references, click or fill an observed element, scroll, go back, close a tab, and search. A reference belongs to one tab and one snapshot. A stale or ambiguous reference is rejected. There is no tool for arbitrary page scripts, a shell inside the page, or the browser’s debugging protocol. Automatic downloads are cancelled. A file upload is not chosen by the bot; take over the window and pick the file yourself.
-
-Search opens a public search page in that browser. The default template is `https://search.brave.com/search?q={query}`. On first startup of this version, saved copies of the old DuckDuckGo default are changed to Brave; custom templates are preserved. You can explicitly request Brave, Google, or DuckDuckGo, or set another public `https` template containing `{query}` under **Bot settings → Advanced → Web search settings**. There is no separate search API fee. The model still spends tokens from the task budget to read the results. Snippets are only a way to find a page. Open the source before treating a detailed claim as verified, and include the source URL. Brave result numbers count parent web cards, excluding ads and grouped sitelinks. Only the returned numbered cards were observed; eight cards do not establish a top-ten sweep.
-
-An explicit Google search uses Google even when the default is Brave. The tool accepts `engine: "google"`, `"brave"`, `"duckduckgo"`, or `"default"`. A request such as “forget Google” overrides a stale Google tool argument. It keeps the exact query and records the engine, actual results URL, observation time, and observed organic result cards. Ads and grouped sitelinks are excluded from the numbered cards. The explicit Google route requests US English results with personalization off; it is one observation, not a universal SEO rank. Another engine's result numbers do not establish a Google position.
-
-Search remains free and uses no extra search-service key. A CAPTCHA pauses the task without another model call or alternate-URL retries. Its notice has **Take over browser** and **Resume browser** controls. Complete verification, choose Resume browser, and send the request again. A new request to inspect a solved search challenge can also reread that pending search. Riot Bot reuses the existing results instead of starting the search over; a retry with an unspecified engine keeps the pending search's engine. Resume alone does not start a model call. A result-reader failure is reported separately and leaves browser control available; it does not ask you to sign in. A window closed during an action pauses the run, and the next request reopens the bot's saved profile. No free search engine can guarantee unattended access on every network; Brave can also present a challenge.
-
-**Take over** gives you browser control for verification, sign-in, or other page interaction. Manual takeover on ordinary pages stays paused until **Resume**. Saved-login tools fill passwords locally on the exact saved HTTPS site; general fill tools cannot fill password fields. New interactive sites need site access, which you can remember to allow later clicks and fills without repeated prompts. This includes actions that send, pay, publish or delete on that site. Button labels never grant authority. File selection remains manual. Public research follows exact user/source links; generated destinations and search after private-source reads need their site's access. See [the permission scopes and limits](docs/security.md).
-
-Limits for one task: 12 browser actions, 5 tabs, 20 seconds for navigation, and 8 seconds for other browser actions. Hitting a limit stops with the result so far. Those steps share the task’s model-call budget. Search is always available. The other browser tools are added when the browser is already open or the request is about opening or using a page. File and terminal tools are added when the request is about files or commands. A request can also ask for one of those groups and receive it on the next step. A closed browser does not add browser definitions to an unrelated message.
-
-Typed addresses must be public `http` or `https`. A local proxy validates destinations and pins connections to public addresses, including for redirects. Chromium policy prevents non-proxied WebRTC traffic; real Chrome and Edge STUN/TURN tests check this boundary. The static checker additionally uses a deny-all proxy. These are tested transport restrictions, not a formal guarantee for every future browser version or protocol. Remembered site access does not bypass the private-address restrictions.
-
-## Limits
-
-Context fitting is automatic. Riot Bot uses the model’s documented context length when the provider publishes one, or a capacity you enter under **Bot settings → Advanced → Model limits & context**. For a custom endpoint, the context length saved with that connection applies unless the bot has its own capacity. For OpenRouter, the public model list also supplies the output cap when available. This metadata is cached and is not a model completion. Without a documented or configured context size, automatic mode uses a labeled conservative limit of 32,768 tokens. Older chat is compacted toward about 12,000 fitted input tokens; a larger window does not send the whole transcript.
-
-Reply allowance is automatic too. It starts at 8,192 tokens, includes model reasoning, and can grow after a truncated tool request or an empty reply that exhausted its allowance. Growth stays within the published output cap, context reserve, and an application ceiling of 32,768. Replies can continue across calls. Every call still checks time and spending limits. A custom manual reply cap remains available in Advanced; saved custom caps are preserved. An incomplete tool batch is rejected before any of its actions run, then retried within the same task limits. The old untouched 2,048-token setting migrates to automatic mode.
-
-The manual input working budget, default 8000, applies only when context fitting is set to manual. It stays under **Bot settings → Advanced → Model limits & context**, with the per-response allowance and model-call cap. Ordinary use does not require tuning these controls.
-
-Other defaults: 24 model calls per task and 10 minutes. Migration raises the old 12-call default only for automatic replies; custom caps remain unchanged. The last four calls include a reminder to finish the deliverable and reserve a final handoff instead of continuing optional polishing. Dollar limits are off until you enter both a spend cap and a price per million input tokens and output tokens. The app daily ceiling applies across bots. If a dollar cap is on and a price is missing, the call is refused. Figures are labeled estimated or reported. They are not a provider invoice. A cancelled or failed call that already left the app keeps a conservative estimate when the provider does not report usage. Compaction, retries, and tool follow-ups share the same budget. Riot Bot does not raise a spending limit to make a request fit.
-
-Failed optional tools, such as a missing research page, return an error to the model so it can continue with successful sources. Stop, permissions, browser takeover, and task limits still pause or stop the task. Public fetches use the operating system's trusted certificates as well as Node's defaults, while retaining certificate validation and connections pinned to verified public addresses. Tool results remain stored up to each tool's size limit; chat details show a preview. Stored-result reads advance through the original source in bounded sections (24,000 characters in automatic mode, 1,600 in manual mode). Those sections stay in subsequent requests until normal history compaction; they are not clipped again on the next call. File search accepts a file or folder and includes a matching-line excerpt. Optional conversation compaction runs at most once per task; empty or truncated summaries cannot replace the previous summary or mark originals summarized.
-
-Stop aborts the current task and blocks later model and tool calls in that task. Work the provider already accepted may still be billed. After a restart, an unfinished task is marked interrupted and is not resumed. Text that had already streamed is kept and marked interrupted.
-
-A Playwright documentation task on November 1, 2026 paused after two successful model calls. The search could not run because Chromium was not installed, so the model fetched a docs page. That stored result was 5,316 characters, about 2,038 estimated tokens. The follow-up was about 6,738 estimated tokens before the fit margin, and about 8,086 after it: instructions near 1,731, tool definitions 2,619, plus the page, the short request, and the tool-call text. The 8,000 figure was the app’s assembly cap. The published OpenRouter context length for the selected model was 1,048,576 tokens. The follow-up was refused before it was sent, and the tool details still said Completed.
-
-Automatic mode no longer treats 8,000 as that ceiling. Long tool results stay stored and the model request gets a short preview, with a way to read another section. If the provider rejects a request for context length, Riot Bot rebuilds a smaller request and retries once. A message that itself does not fit asks for a smaller message or a workspace file. Instructions and tool definitions that cannot fit the selected model are reported as a configuration problem. A dollar limit is reported as a spending limit.
-
-## Context
-
-Open a call in **Activity** and expand **Context**. It shows the usable input, whether that size came from the provider, a capacity you entered, the conservative fallback, or the manual budget, the reply allowance, the estimated input size, provider-reported input tokens when the provider sent them, and the estimated size of instructions, memories, summary, skills, history, and tool definitions. It names the memories and skills that were included, says whether a summary step ran, and says whether older messages were left out. Estimates and provider measurements are labeled separately. The panel does not show API keys or hidden reasoning.
-
-Deleting a memory or disabling a skill removes it from later requests. The original chat can still contain the earlier mention.
+See [backups and removing the browser](docs/user-guide.md#backups-and-removing-the-browser) before copying, restoring or deleting any of these.
 
 ## Architecture
 
@@ -240,7 +166,9 @@ Each request is built from the bot profile, pinned instructions, pinned memories
 
 Web fetches resolve the host, refuse the request if any address is local or private, and connect to a resolved address while keeping the original Host header and the normal HTTPS certificate check. A custom model endpoint uses the same checks before every request, except that plain `http://` is allowed for exactly `localhost`, `127.0.0.1`, and `[::1]`; it accepts only its saved origin and path and never follows redirects. Each redirect is checked again. TLS verification is not turned off. The browser’s local proxy does the same kind of check for connections it handles. That does not make the browser isolated from the local network.
 
-## Packaging
+For a map of the source tree, see [CONTRIBUTING.md](CONTRIBUTING.md#project-layout).
+
+## Building an installer
 
 ```powershell
 npm run dist:win
@@ -250,38 +178,19 @@ Without a configured signing identity, this writes a local unsigned development 
 
 `release\Riot-Bot-Setup-0.1.0.exe`
 
-For an eventual public release, use `npm run dist:win:release`; its separate config requires a real publisher signature. No certificate is configured by this work. The existing NSIS installer in `release/` was not replaced and predates these fixes. The November 3 hardening check rebuilt an isolated unpacked Windows app, checked its actual fuses and exercised packaged startup. See [the security report](docs/security-review.md) for artifact verification and remaining release work.
+For an eventual public release, use `npm run dist:win:release`; its separate config requires a real publisher signature. No signing certificate is configured yet. See [the security report](docs/security-review.md) for artifact verification and remaining release work.
 
 `playwright-core` remains unpacked for optional Chromium setup, so those files are outside the main ASAR's integrity check. The installer runs in an Electron utility process with its download helper in a worker thread, preserving installation with RunAsNode disabled. Chromium downloads into `%APPDATA%\riot-bot\playwright-browsers` only when requested. The app still uses the default Electron icon.
 
-## Tests
-
-```powershell
-npm run check
-```
-
-The November 3 follow-up passes `npm run check`: TypeScript, **44 test files / 281 tests**, and a production build. Regressions cover saved-logins/site authority, successful-result and streaming redaction, WebRTC transports, real DOM authorization and stale references, credential removal, local-only disk checks, project-secret grants and the isolated installer worker, alongside the existing job/Gmail/native/provider checks. Node can print an experimental SQLite warning. Model calls use mocks; offline browser cases use disposable profiles and skip explicitly if no supported browser is installed. Bundled Chromium and installed Chrome/Edge passed on this machine. Passing these checks does not establish that every provider model accepts all capabilities.
-
-Additional desktop checks used isolated app data and exercised 80-message pages, scroll preservation, saved failed outcomes, actual PNG/JPEG decoding and resizing, screenshot paste, the file-picker handler, bot separation, pending-upload persistence across restart, message previews, and app-wide Activity after task completion. The history test visits 2,081 messages with identical timestamps without skips or duplicates. No renderer errors were recorded.
-
-Live checks used a verified restoration of app data, the saved Windows-encrypted key, and the selected `deepseek/deepseek-v4.1-flash-1017` model through OpenRouter. The exact Google query `angelicpedia.com` returned Angelicpedia at organic position 1 in the observed US/English page on November 1, 2026; that completed three-call run reported $0.00083484324. A separate one-call image/text check correctly named the synthetic red square, blue circle, and attached code word; it reported $0.000635877. Search used the free browser route. These are observations of those runs, not a permanent ranking or a provider invoice. No normal app-data chats or settings were used as test fixtures.
-
-The Brave follow-up also passed an actual search through the browser tool: the homepage was first and Azrael second, while the nested Christianity sitelink was excluded. Closing the real browser context was detected and the next search reopened it. A separate selected-model run included a synthetic old Google/Chromium error, then successfully used Brave and reported the homepage first without appending an unrelated answer. It used two model calls and reported $0.0002832786. Human-check recovery, reader failures, explicit engine changes, saved-default migration, and a window closing mid-action have regression tests.
-
-An isolated Electron smoke check also verified startup, the renderer sandbox and preload bridge, the New Bot form, saved settings, named-bot creation, bot switching, and separate unsent drafts. Its database and workspaces were temporary, it reported no renderer errors, and Activity stayed at zero model calls. It did not use the normal app-data directory.
-
-Covered: one ongoing conversation after restart, with an earlier chat left intact; a short workspace question with the current tool set and a saved summary; a long conversation that drops older history before refusing; overhead that names Settings instead of the message; automatic fitting that sends a request whose estimate exceeds the old 8,000-token cap; a mock search, open, and stored-section read; one context-length retry that does not repeat the tool; compaction that does not fold the same messages twice; a spending block that stays distinct from context; catalog lookup only for OpenRouter and not on idle; same-bot recall and no cross-bot leakage; migration and a second startup; renaming without moving the workspace; setup calls through the gateway and absent on idle; a bot switch during a run; the app-wide daily ceiling; reactions; avatars; Markdown; scroll stickiness; idle launch and restart; compaction; retries; dollar limits; stop; path checks; command approval; credential redaction; private-network web fetches; browser profiles, stale element references, takeover, cancellation, consequential-click confirmation, and blocked destinations; streamed tool calls; and the provider-check preview making no call.
-
-The earlier browser-only smoke check downloaded Chromium and read a public page without a model call. The later selected-model checks described above exercised the assistant through the provider and browser tools.
-
-The running window was also checked at 1180 and 880 pixels wide. The sidebar stayed a vertical bot list with New Bot, avatars, a selected-bot marker, and the bot menu. Earlier conversations still listed a saved chat. Switching bots kept each unsent draft with that bot. No model call was made.
-
 ## Known limitations
 
+- Riot Bot currently runs only on Windows, as a desktop app on your own computer. macOS, Linux and an always-on server are planned, not shipped; see the [roadmap](#roadmap).
 - Recall is summary plus search, not a full replay of every past message. If the saved messages do not establish an answer, the assistant is instructed to say so.
 - A deleted memory or disabled skill leaves later requests, but older messages that mention it remain in the transcript.
 - Dollar figures can differ from the provider bill. A missing price blocks dollar-budget mode; it does not invent a price.
 - An API terminal command is not sandboxed. Approval is per exact command. Codex uses its own sandbox and approval rules; its legacy Windows policy permits broader filesystem reads.
+- Bots are separated in Riot’s own storage and tools, but native Codex filesystem reads are not a confidentiality boundary between bots. See [Codex permissions](docs/codex.md#permissions-and-sessions).
+- Permission checks reduce unintended sharing. They are not a complete data-loss-prevention system: approved sites, public pages and research services receive what a task sends them. See [saved logins and permissions](docs/security.md#remember-website-access).
 - Stop ends the command tree through `taskkill /T /F` on Windows. A process that already detached can survive, and that case is reported when the stop call fails.
 - Web fetch uses the first public address after refusing any host that also resolves to a private address. TLS verification stays on.
 - The browser is not isolated from the local network. The proxy covers connections it handles. It does not prove that every browser subrequest is blocked.
@@ -296,36 +205,46 @@ The running window was also checked at 1180 and 880 pixels wide. The sidebar sta
 - The earlier provider check’s cancellation step did not pass. These mock tests do not rerun that live check.
 - The installer is unsigned and does not yet include this version.
 
-## First browser task
+The [security review](docs/security-review.md) records the remaining architectural risks in more detail.
 
-This does not call a model until you send a message. Installed Chrome or Edge can be used without downloading Chromium.
+## Roadmap
 
-1. `cd riot-bot` then `npm run dev`.
-2. Open **Bot settings → Profile & browser → Browser & website sign-ins** and check the available browser. If none is available, choose **Install Chromium** and wait for the size and progress line.
-3. Choose **Open Browser**. A normal browser window opens using that bot’s separate profile.
-4. In the ongoing chat, ask it to search for something and open one of the results. Search has no separate API fee. The model calls that read the pages still use your normal task budget.
-5. For a site that needs a login, choose **Use browser myself**, sign in yourself in that window, then choose **Let bot continue**. Do not paste the password into chat.
-6. If it wants to send, pay, publish, delete, or upload, read the preview and confirm or deny it.
-7. Stop cancels the current task and leaves the profile in place. **Close Browser** closes the window and also leaves the profile in place.
+Riot Bot is a Windows desktop app today. The long-term goal is a UI and a backend that people can run on an always-on server, on more than just Windows. These items are **planned and not shipped**. Nothing in this section works yet:
 
-## First real-provider check
+- **Self-hostable, always-on backend with a web UI** *(planned, not shipped)*: run Riot on a machine that stays on, so schedules and bot work no longer depend on a desktop session, and use it from a browser.
+- **macOS and Linux support** *(planned, not shipped)*: run Riot on platforms other than Windows.
 
-This uses API credits. Do it only when you want that.
+Features that depend on Windows today, such as the Windows-protected credential store, will need a platform-appropriate replacement that keeps the same guarantees before these items can ship.
 
-1. `cd riot-bot` then `npm run dev`.
-2. Open **Settings**. Choose OpenAI or OpenRouter, paste the model ID from that provider and your API key, and choose **Save settings**. For a local or custom model, enter its endpoint address, context length, and model name instead; a local server does not use API credits.
-3. If a task or daily dollar cap is filled in, also enter the input and output prices per million tokens. Leave the dollar boxes blank to use call and token limits only.
-4. Choose **Save settings**.
-5. Open **Advanced → Test your saved connection** and choose **Preview provider check**. Read the credit note. It allows at most 4 calls and 64 output tokens each. It does not contact the provider yet.
-6. Choose **Start provider check**. It asks for a short reply, a harmless memory-list tool call, a follow-up that uses that result, and then cancels one request.
-7. Read the four results. Open **Activity** and confirm the calls are labeled `provider_check`, with estimated or reported cost. A model that does not call the tool is reported as not verified for that step.
-8. Quit and reopen. Confirm Activity did not gain a call while the app was idle.
+## Documentation
 
-A pass on one model ID does not establish that another model ID works.
+| Document | What it covers |
+| --- | --- |
+| [User guide](docs/user-guide.md) | Everyday use: layout, bots, chat, credentials, tools, browser, limits, context, backups |
+| [Saved logins and permissions](docs/security.md) | Saved website logins, remembered site access, project secrets, powerful actions |
+| [Web search](docs/web-search.md) | Keyless research, your own connection, browser search, research permissions |
+| [Gmail](docs/gmail.md) | Google setup, per-bot access, send review, reply rules |
+| [Reminders and scheduled work](docs/scheduling.md) | Schedules, popups, context capture, recovery |
+| [Tasks and saved files](docs/jobs-and-library.md) | Durable jobs, the tray, the Files library, static website checks |
+| [Quiet memory and skill reviews](docs/quiet-learning.md) | Automatic memory and skill suggestions |
+| [Codex in Riot Bot](docs/codex.md) | The ChatGPT-account preview backend and how its permissions differ |
+| [Local and custom model endpoints](docs/custom-endpoints.md) | Ollama, LM Studio, vLLM and other OpenAI-compatible servers: setup, address checks, limits |
+| [Backend design](docs/subscription-backends.md) | API and native agent backends, including the saved Claude design |
+| [Security review](docs/security-review.md) | Findings, fixes, verification and remaining release work |
+| [Changelog](CHANGELOG.md) | Dated development updates and verification records |
 
-## Next command
+## Contributing
 
-```powershell
-cd riot-bot
-npm run dev
-```
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, checks and test expectations. The security rules every change must follow are in [AGENTS.md](AGENTS.md#security-rules-for-changes).
+
+## Security
+
+Please don't report vulnerabilities in public issues. [SECURITY.md](SECURITY.md) explains how to report one and what to include.
+
+<!-- TODO(owner): enable GitHub private vulnerability reporting (or publish a private contact you control), test it, and update SECURITY.md before the repository is public. -->
+> **TODO (owner):** a private vulnerability-reporting route has not been set up yet. See [SECURITY.md](SECURITY.md).
+
+## License
+
+<!-- TODO(owner): choose a license, add a LICENSE file, and replace this section. -->
+> **TODO (owner):** no license has been chosen yet, and the repository has no LICENSE file. Until the owner adds one, no open-source license is granted.
