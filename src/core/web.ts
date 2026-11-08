@@ -88,6 +88,8 @@ export interface PinnedConnection {
   timeoutMs: number
   maxBytes: number
   headers: Record<string, string>
+  method?: 'GET' | 'POST'
+  body?: string
 }
 
 export interface PinnedResult {
@@ -110,12 +112,14 @@ export async function connectPinned(input: PinnedConnection): Promise<PinnedResu
   const port = input.url.port ? Number(input.url.port) : secure ? 443 : 80
   const path = `${input.url.pathname || '/'}${input.url.search}`
   return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = { ...input.headers, Host: input.hostHeader }
+    if (input.body !== undefined) headers['Content-Length'] = String(Buffer.byteLength(input.body))
     const requestOptions: https.RequestOptions = {
       host: input.address,
       port,
-      method: 'GET',
+      method: input.method ?? 'GET',
       path,
-      headers: { ...input.headers, Host: input.hostHeader },
+      headers,
       servername: input.servername,
       rejectUnauthorized: input.rejectUnauthorized,
       ca: typeof tls.getCACertificates === 'function'
@@ -159,7 +163,7 @@ export async function connectPinned(input: PinnedConnection): Promise<PinnedResu
     })
     req.on('error', fail)
     req.on('close', () => input.signal.removeEventListener('abort', onAbort))
-    req.end()
+    req.end(input.body)
   })
 }
 

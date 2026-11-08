@@ -207,6 +207,7 @@ describe('automatic context', () => {
       }
     })
     const conversationId = app.getSnapshot().current?.conversation.id ?? ''
+    app.updateAppSettings({ webResearch: 'browser' })
     app.getSnapshot()
     expect(provider.calls).toHaveLength(0)
     expect(fetches).toHaveLength(0)

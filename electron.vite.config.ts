@@ -16,6 +16,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          notices: resolve(__dirname, 'src/preload/notices.ts')
+        },
         external: ['electron']
       }
     }

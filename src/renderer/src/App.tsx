@@ -39,12 +39,19 @@ import { JobsPane, LibraryPane } from './jobs'
 import { SchedulesPane } from './schedules'
 import { EmailApproval, GmailConnection, GmailRuleApproval } from './email'
 import { AppsPane } from './apps'
+import { NoticePopup } from './notices'
 import { ChatWelcome, EmptyState, Icon, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
 type Screen = 'chat' | 'apps' | 'jobs' | 'schedules' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
-type AppSettingsTab = 'connection' | 'email' | 'preferences'
+type AppSettingsTab = 'connection' | 'email' | 'web' | 'preferences'
 
 export function App() {
+  if (new URLSearchParams(window.location.search).get('notices') === '1') {
+    document.documentElement.classList.add('notice-host')
+    document.body.classList.add('notice-host')
+    const notices = window.riotNotices
+    return notices ? <NoticePopup api={notices} /> : <main className="boot-error" />
+  }
   const api = window.riot
   if (!api) {
     return (
@@ -64,8 +71,8 @@ function Shell({ api }: { api: RiotBridge }) {
   const [bot, setBot] = useState<Bot | null>(null)
   const [jobs, setJobs] = useState<JobView[]>([])
   const [schedules, setSchedules] = useState<ScheduleView[]>([])
-  const [reminder, setReminder] = useState<ScheduleView | null>(null)
   const [scheduleTarget, setScheduleTarget] = useState<string | null>(null)
+  const [jobsTarget, setJobsTarget] = useState<string | null>(null)
   const [artifacts, setArtifacts] = useState<ArtifactView[]>([])
   const [preferences, setPreferences] = useState<AppPreferences>({ showToolDetails: false })
   const [activityScope, setActivityScope] = useState<'bot' | 'app'>('bot')
@@ -158,8 +165,8 @@ function Shell({ api }: { api: RiotBridge }) {
         void api.listSchedules().then(items => { if (id === viewedBotId.current) setSchedules(items) }).catch(() => undefined)
         return
       }
-      if (event.type === 'reminder-fired') { setReminder(event.schedule); return }
       if (event.type === 'open-schedule') { setScheduleTarget(event.botId); return }
+      if (event.type === 'open-jobs') { setJobsTarget(event.botId); return }
       if (event.type === 'jobs-changed') {
         void api.listJobs('app').then(setJobs).catch(() => undefined)
         const id = viewedBotId.current
@@ -194,6 +201,11 @@ function Shell({ api }: { api: RiotBridge }) {
       }
       if (event.type === 'learning-settings') {
         if (event.botId === viewedBotId.current) setSettings(current => current ? { ...current, autoMemory: event.autoMemory, autoSkillSuggestions: event.autoSkillSuggestions } : current)
+        return
+      }
+      if (event.type === 'bot-renamed') {
+        setBots(current => current.map(item => item.id === event.botId ? { ...item, name: event.name } : item))
+        setBot(current => current?.id === event.botId ? { ...current, name: event.name } : current)
         return
       }
       if (event.type === 'skills-changed') {
@@ -290,6 +302,11 @@ function Shell({ api }: { api: RiotBridge }) {
     if (!scheduleTarget || navigationLocked) return
     void selectBot(scheduleTarget).then(() => setScreen('schedules')).catch((reason: unknown) => setError(messageOf(reason))).finally(() => setScheduleTarget(null))
   }, [scheduleTarget, navigationLocked])
+
+  useEffect(() => {
+    if (!jobsTarget || navigationLocked) return
+    void selectBot(jobsTarget).then(() => setScreen('jobs')).catch((reason: unknown) => setError(messageOf(reason))).finally(() => setJobsTarget(null))
+  }, [jobsTarget, navigationLocked])
 
   async function showBotActions(item: Bot, position: { x: number; y: number }): Promise<void> {
     if (navigationLocked || menuPending.current) return
@@ -393,7 +410,6 @@ function Shell({ api }: { api: RiotBridge }) {
             <button onClick={() => setError(null)}>Dismiss</button>
           </div>
         )}
-        {reminder && <div className="banner reminder-banner" role="status"><div><strong>Reminder: {reminder.title}</strong><p>{reminder.instructions}</p></div><div className="row"><button onClick={() => { setScheduleTarget(reminder.botId); setReminder(null) }}>View schedule</button><button onClick={() => setReminder(null)}>Dismiss</button></div></div>}
         {approval && (
           <ApprovalCard
             key={approval.id}
@@ -944,11 +960,14 @@ function AppSettingsPane(props: {
   const [tab, setTab] = useState<AppSettingsTab>('connection')
   const [draft, setDraft] = useState(props.settings)
   const [key, setKey] = useState('')
+  const [tavilyKey, setTavilyKey] = useState('')
+  const [firecrawlKey, setFirecrawlKey] = useState('')
+  const [checkNote, setCheckNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const keySaved = draft.provider === 'openai' ? props.credentials.openaiConfigured : draft.provider === 'openrouter' && props.credentials.openrouterConfigured
-  const changed = JSON.stringify(draft) !== JSON.stringify(props.settings) || Boolean(key.trim())
+  const changed = JSON.stringify(draft) !== JSON.stringify(props.settings) || Boolean(key.trim()) || Boolean(tavilyKey.trim()) || Boolean(firecrawlKey.trim())
   function update(patch: Partial<AppSettings>): void { setDraft(current => ({ ...current, ...patch })); setNote(''); setError('') }
   async function save(): Promise<void> {
     if (saving) return
@@ -958,6 +977,16 @@ function AppSettingsPane(props: {
       if (key.trim() && draft.provider !== 'codex') {
         credentials = (await props.api.setCredential(draft.provider, key.trim())).status
         setKey('')
+        props.onSaved(props.settings, credentials)
+      }
+      if (tavilyKey.trim()) {
+        credentials = (await props.api.setResearchKey('tavily', tavilyKey.trim())).status
+        setTavilyKey('')
+        props.onSaved(props.settings, credentials)
+      }
+      if (firecrawlKey.trim()) {
+        credentials = (await props.api.setResearchKey('firecrawl', firecrawlKey.trim())).status
+        setFirecrawlKey('')
         props.onSaved(props.settings, credentials)
       }
       const next = await props.api.updateAppSettings(draft)
@@ -971,6 +1000,7 @@ function AppSettingsPane(props: {
     <nav className="settings-tabs" aria-label="App settings sections">
       <button type="button" disabled={saving} className={tab === 'connection' ? 'active' : ''} aria-current={tab === 'connection' ? 'page' : undefined} onClick={() => setTab('connection')}>Connections & default model</button>
       <button type="button" disabled={saving} className={tab === 'email' ? 'active' : ''} aria-current={tab === 'email' ? 'page' : undefined} onClick={() => setTab('email')}>Email</button>
+      <button type="button" disabled={saving} className={tab === 'web' ? 'active' : ''} aria-current={tab === 'web' ? 'page' : undefined} onClick={() => setTab('web')}>Web search</button>
       <button type="button" disabled={saving} className={tab === 'preferences' ? 'active' : ''} aria-current={tab === 'preferences' ? 'page' : undefined} onClick={() => setTab('preferences')}>Preferences & spending</button>
     </nav>
     <fieldset className="settings-content" disabled={saving}>
@@ -990,6 +1020,36 @@ function AppSettingsPane(props: {
         <GmailConnection api={props.api} status={props.gmail} onStatus={props.onGmail} onError={props.onError} />
         {props.bot && <section className="settings-section"><h3>Choose which apps each bot can use</h3><p className="help">Manage Gmail access in the selected bot’s Workspace → Apps.</p><div className="row"><button type="button" onClick={props.onApps}>Open Apps for {props.bot.name}<Icon name="arrow" /></button></div></section>}
         <p className="help">Gmail connection and access changes save immediately.</p>
+      </> : tab === 'web' ? <>
+        <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Search without setting anything up.</h2><p>Ordinary research can run before a browser, account, or key is added. Each bot still needs its own tool and website permission.</p></div>
+        <section className="settings-section"><h3>How Riot searches</h3>
+          <label className="check permission-option"><input type="radio" name="web-research" checked={draft.webResearch === 'automatic'} onChange={() => update({ webResearch: 'automatic' })} /><span><strong>Automatic — free, limited</strong><small>Search queries go to Tavily. If Tavily is unavailable, Riot tries Firecrawl once. When a public page cannot be read directly, its address can be sent to the same service for text. No key is sent, even if one is saved.</small></span></label>
+          <label className="check permission-option"><input type="radio" name="web-research" checked={draft.webResearch === 'connection'} onChange={() => update({ webResearch: 'connection', researchTavily: draft.researchTavily || !draft.researchFirecrawl })} /><span><strong>Use my own connection</strong><small>Use a saved Tavily or Firecrawl key. Requests count toward that account and toward each bot’s 40-request day. Provider charges are separate from model spending.</small></span></label>
+          <label className="check permission-option"><input type="radio" name="web-research" checked={draft.webResearch === 'browser'} onChange={() => update({ webResearch: 'browser' })} /><span><strong>Use the browser</strong><small>Search stays in the bot’s browser. A custom search address in Bot settings is kept and used there. Queries are not sent to Tavily or Firecrawl.</small></span></label>
+        </section>
+        {draft.webResearch === 'connection' ? <section className="settings-section"><h3>Your connection</h3>
+          <p className="help">Saving a key does not switch on account use by itself. Turn on the service below. Keys stay in the protected credential store and are not shown again.</p>
+          <label>Tavily key<input type="password" autoComplete="off" spellCheck={false} value={tavilyKey} placeholder={props.credentials.tavilyConfigured ? 'A Tavily key is saved. Paste here only to replace it.' : 'Paste a Tavily key'} onChange={event => { setTavilyKey(event.target.value); setNote(''); setCheckNote('') }} /></label>
+          <label className="check"><input type="checkbox" checked={draft.researchTavily} onChange={event => update({ researchTavily: event.target.checked })} /><span>Use the Tavily key</span></label>
+          <label>Firecrawl key<input type="password" autoComplete="off" spellCheck={false} value={firecrawlKey} placeholder={props.credentials.firecrawlConfigured ? 'A Firecrawl key is saved. Paste here only to replace it.' : 'Paste a Firecrawl key'} onChange={event => { setFirecrawlKey(event.target.value); setNote(''); setCheckNote('') }} /></label>
+          <label className="check"><input type="checkbox" checked={draft.researchFirecrawl} onChange={event => update({ researchFirecrawl: event.target.checked })} /><span>Use the Firecrawl key</span></label>
+          <label>Daily account cap<input type="number" min={1} max={200} value={draft.researchDailyCap} onChange={event => update({ researchDailyCap: Number(event.target.value) })} /></label>
+          <p className="help">{`Account-backed calls stop after ${draft.researchDailyCap} per day, and each bot also stops after 40 research requests per day. Fallbacks and the check button count. A saved key does not raise the 40-request limit. A refused counter does not spend the other one.`}</p>
+          <p className="help">Check sends one search for the word “example” to that service only. It counts as one of this bot’s 40 daily requests and one account-capped request. It does not check the other service.</p>
+          <div className="row">
+            <button type="button" disabled={!props.credentials.tavilyConfigured} onClick={() => { setCheckNote(''); void props.api.checkResearchKey('tavily').then(result => setCheckNote(result.message)).catch(reason => setError(messageOf(reason))) }}>Check Tavily</button>
+            <button type="button" disabled={!props.credentials.firecrawlConfigured} onClick={() => { setCheckNote(''); void props.api.checkResearchKey('firecrawl').then(result => setCheckNote(result.message)).catch(reason => setError(messageOf(reason))) }}>Check Firecrawl</button>
+          </div>
+          {checkNote && <p role="status">{checkNote}</p>}
+          {(props.credentials.tavilyConfigured || props.credentials.firecrawlConfigured) && <div className="row">
+            {props.credentials.tavilyConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('tavily').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Tavily key</button>}
+            {props.credentials.firecrawlConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('firecrawl').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Firecrawl key</button>}
+          </div>}
+        </section> : <p className="help">Each bot can make 40 Tavily and Firecrawl requests a day, including one fallback. The services can also limit free use. A saved key is not sent until you choose Use my own connection.{(props.credentials.tavilyConfigured || props.credentials.firecrawlConfigured) ? '' : ' Riot does not show a signup prompt during chat.'}</p>}
+        {draft.webResearch !== 'connection' && (props.credentials.tavilyConfigured || props.credentials.firecrawlConfigured) && <details className="subtle-details"><summary>Saved research keys</summary><p className="help">These keys stay unused until you choose Use my own connection.</p><div className="row">
+          {props.credentials.tavilyConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('tavily').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Tavily key</button>}
+          {props.credentials.firecrawlConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('firecrawl').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Firecrawl key</button>}
+        </div></details>}
       </> : <>
         <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Make Riot work your way.</h2><p>These preferences apply across your bots.</p></div>
         <section className="settings-section"><h3>Conversation display</h3><label className="check permission-option"><input type="checkbox" checked={props.preferences.showToolDetails} onChange={event => void props.api.updatePreferences({ showToolDetails: event.target.checked }).then(props.onPreferences).catch(reason => props.onError(messageOf(reason)))} /><span><strong>Show completed actions in Chat</strong><small>Add expandable action history to every bot’s chat. Off by default. Errors and approval requests still appear. This preference saves immediately.</small></span></label><p className="help">Full action history is always available in Usage & activity.</p></section>
@@ -1839,7 +1899,7 @@ export function NewBotForm(props: { settings: PublicSettings; api: RiotBridge; c
       <section className="settings-section">
         <label>What should this bot help with?<textarea autoFocus required minLength={2} maxLength={400} value={purpose} rows={3} placeholder="For example: Help me write newsletters for my small business." onChange={event => setPurpose(event.target.value)} /></label>
         <label>Give it a name<input value={name} maxLength={40} placeholder="For example: Scout" onChange={event => setName(event.target.value)} /></label>
-        <p className="help">Use any name you like. If you clear it, an API connection may use one short setup request to suggest one.</p>
+        <p className="help">Use any name you like. If you clear it, an API connection may use one short setup request to suggest one. You can also ask the bot in chat to choose or change its name.</p>
       </section>
       <div className="inherit-note"><Icon name="check" /><div><strong>{model ? `Uses ${provider === props.settings.provider && model === props.settings.model ? 'app default' : 'custom connection'}: ${providerName(provider)}` : 'You can connect your AI after creating your bot'}</strong><p>{model ? model : 'Create it now, then we’ll guide you through setup.'}</p></div></div>
       <details className="settings-section advanced-details"><summary>Connection & model <span>Optional</span></summary><p className="help">Your app default is filled in. Change it only if you want this bot to use a different model. Shared sign-ins and API keys are managed in app Settings.</p>

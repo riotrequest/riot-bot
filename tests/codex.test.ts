@@ -2,7 +2,10 @@ import fs from 'fs'
 import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexService, type CodexTurnInput } from '../src/core/codex'
+import { Database } from '../src/core/db'
+import { RESEARCH_ATTEMPT_LIMIT } from '../src/core/research'
 import { redact } from '../src/core/redact'
+import { localDay } from '../src/core/settings'
 import { makeApp, tempDir, waitFor } from './helpers'
 import type { ChatMessageView } from '../src/shared/types'
 
@@ -20,9 +23,9 @@ function fixture(config: Record<string, unknown> = {}) {
   return { dir, home, codex, opened, requests }
 }
 
-function nativeApp(config: Record<string, unknown> = {}) {
+function nativeApp(config: Record<string, unknown> = {}, extra: { researchTransport?: import('../src/core/research').ResearchTransport; lookupHost?: (hostname: string) => Promise<string[]> } = {}) {
   const fake = fixture(config)
-  const setup = makeApp({ dbPath: path.join(fake.dir, 'riot.sqlite'), codex: fake.codex, createProvider: () => { throw new Error('Unexpected API fallback') } })
+  const setup = makeApp({ dbPath: path.join(fake.dir, 'riot.sqlite'), codex: fake.codex, createProvider: () => { throw new Error('Unexpected API fallback') }, researchTransport: extra.researchTransport, lookupHost: extra.lookupHost })
   cleanups.push(() => setup.app.close())
   const workspace = path.join(fake.dir, 'workspace')
   fs.mkdirSync(workspace)
@@ -173,7 +176,49 @@ describe('native Codex connection', () => {
     const start = requests().find(item => item.method === 'thread/start')
     expect(start.params.config.web_search).toBe('live')
     expect(start.params.dynamicTools.some((item: any) => item.name === 'riot_list_memories')).toBe(true)
-    expect(start.params.dynamicTools.some((item: any) => item.name === 'riot_web_search' || item.name === 'riot_run_terminal')).toBe(false)
+    expect(start.params.dynamicTools.some((item: any) => item.name === 'riot_web_search')).toBe(true)
+    expect(start.params.dynamicTools.some((item: any) => item.name === 'riot_fetch_url')).toBe(true)
+    expect(start.params.dynamicTools.some((item: any) => item.name === 'riot_run_terminal')).toBe(false)
+  })
+
+  it('calls Riot web search through the fixture without a model-provider request or an Authorization header', async () => {
+    const calls: { url: string; headers: Record<string, string>; body: string }[] = []
+    const { app, id, provider } = nativeApp({ scenario: 'research' }, {
+      lookupHost: async () => ['93.184.216.34'],
+      researchTransport: async (exchange) => {
+        calls.push({ url: exchange.url, headers: exchange.headers, body: exchange.body })
+        return { status: 200, headers: {}, body: JSON.stringify({ results: [{ title: 'Example', url: 'https://example.com/', content: 'A public example.' }] }) }
+      }
+    })
+    const run = await app.sendMessage(id, 'Look up a fixture public topic')
+    expect(run.status).toBe('completed')
+    expect(provider.calls).toHaveLength(0)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('https://api.tavily.com/search')
+    expect(calls[0].headers.Authorization).toBeUndefined()
+    expect(calls[0].headers['X-Tavily-Access-Mode']).toBe('keyless')
+    expect(calls[0].body).toContain('fixture public topic')
+    expect(app.getSnapshot().current!.messages.some(item => item.content.includes('Web search via Tavily'))).toBe(true)
+  })
+
+  it('applies the shared web request cap to a native Riot search', async () => {
+    const calls: string[] = []
+    const { app, id, dbPath } = nativeApp({ scenario: 'research' }, {
+      lookupHost: async () => ['93.184.216.34'],
+      researchTransport: async () => {
+        calls.push('sent')
+        return { status: 200, headers: {}, body: '{"results":[]}' }
+      }
+    })
+    const database = new Database(dbPath)
+    try {
+      const botId = app.getSnapshot().bot!.id
+      for (let count = 0; count < RESEARCH_ATTEMPT_LIMIT; count += 1) expect(database.reserveResearchUse(`bot:${botId}`, localDay(Date.now()), RESEARCH_ATTEMPT_LIMIT)).toBe(true)
+      const run = await app.sendMessage(id, 'Look up a fixture public topic')
+      expect(run.status).toBe('completed')
+      expect(calls).toEqual([])
+      expect(app.getSnapshot().current!.messages.some(item => item.content.includes('daily web request limit'))).toBe(true)
+    } finally { database.close() }
   })
 
   it('resumes only the same bot/conversation/account/settings and records token deltas', async () => {

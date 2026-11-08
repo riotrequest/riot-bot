@@ -10,6 +10,7 @@ export function progressLabel(name: string): string {
     case 'gmail_list_rules': return 'Checking reply rules…'
     case 'gmail_propose_rule': return 'Preparing a reply rule…'
     case 'set_learning_preferences': return 'Updating memory and skill preferences…'
+    case 'rename_bot': return 'Saving your bot’s name…'
     case 'get_disk_space': return 'Checking available disk space…'
     case 'create_schedule': return 'Saving your schedule…'
     case 'list_schedules': return 'Checking your schedules…'
@@ -42,7 +43,7 @@ export function progressLabel(name: string): string {
     case 'verify_website':
       return 'Checking desktop and mobile pages…'
     case 'fetch_url':
-      return 'Fetching a page…'
+      return 'Reading the page…'
     case 'read_tool_result':
       return 'Reading a stored result…'
     case 'describe_tools':

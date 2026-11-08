@@ -76,12 +76,17 @@ const api: RiotBridge = {
   updateAppSettings: (patch) => ipcRenderer.invoke('settings:updateApp', patch),
   setCredential: (provider, secret) => ipcRenderer.invoke('credentials:set', provider, secret),
   clearCredential: (provider) => ipcRenderer.invoke('credentials:clear', provider),
+  setResearchKey: (provider, secret) => ipcRenderer.invoke('research:setKey', provider, secret),
+  clearResearchKey: (provider) => ipcRenderer.invoke('research:clearKey', provider),
+  checkResearchKey: (provider) => ipcRenderer.invoke('research:checkKey', provider),
   pickWorkspace: () => ipcRenderer.invoke('workspace:pick'),
   resolveApproval: (id, approved, remember) => ipcRenderer.invoke('approvals:resolve', id, approved, remember),
   saveLogin: input=>ipcRenderer.invoke('logins:save',input),
   removeLogin: id=>ipcRenderer.invoke('logins:remove',id),
   undoEdit: (id) => ipcRenderer.invoke('edits:undo', id),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
+  listNotices: () => ipcRenderer.invoke('notices:list'),
+  dismissNotice: (id) => ipcRenderer.invoke('notices:dismiss', id),
   onEvent: (handler) => {
     const listener = (_event: IpcRendererEvent, payload: AppEvent): void => handler(payload)
     ipcRenderer.on('app:event', listener)

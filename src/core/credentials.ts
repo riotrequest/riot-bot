@@ -1,6 +1,6 @@
 import type { ApiProviderId } from '../shared/types'
 
-export type CredentialKey = ApiProviderId | 'gmail-client' | 'gmail' | `logins:${string}`
+export type CredentialKey = ApiProviderId | 'gmail-client' | 'gmail' | 'research-tavily' | 'research-firecrawl' | `logins:${string}`
 
 export function credentialSecrets(values: string[]): string[] {
   const fields = new Set(['clientSecret','accessToken','refreshToken','password'])

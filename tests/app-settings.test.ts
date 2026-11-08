@@ -42,7 +42,7 @@ describe('app defaults and bot settings', () => {
     await app.close()
     const db = new Database(dbPath)
     db.migrate()
-    db.saveAppConfig({ activeBotId: botId, showToolDetails: false, maxEstimatedSpendPerDayUsd: null })
+    db.saveAppConfig({ activeBotId: botId, showToolDetails: false, maxEstimatedSpendPerDayUsd: null, webResearch: 'automatic', researchDailyCap: 20, researchTavily: false, researchFirecrawl: false })
     db.close()
     const upgraded = reopen(dbPath)
     expect(upgraded.app.getSnapshot().appSettings).toMatchObject({ provider: 'openrouter', model: 'legacy-choice' })

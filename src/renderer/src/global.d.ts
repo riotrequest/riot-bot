@@ -1,8 +1,9 @@
-import type { RiotBridge } from '../../shared/types'
+import type { NoticeBridge, RiotBridge } from '../../shared/types'
 
 declare global {
   interface Window {
     riot?: RiotBridge
+    riotNotices?: NoticeBridge
   }
 }
 

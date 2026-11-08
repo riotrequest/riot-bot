@@ -41,7 +41,7 @@ External Google apps left in **Testing** receive Gmail refresh tokens that expir
 - “Send that draft.” With sending enabled, and no matching reply rule, this opens Riot's review card.
 - “Every weekday at 9 AM, check the RLH inbox and tell me what needs attention.” Give the bot any context or sender details it needs before saving the scheduled work.
 
-Searching and reading do not mark messages as read. HTML mail is converted to plain text; remote images and scripts are not loaded. Long messages are read in sections. Conversations include the most recent eight messages and report when earlier messages were omitted. Messages beyond the supported size must be opened in Gmail.
+Searching and reading do not mark messages as read. HTML mail is converted to plain text; remote images and scripts are not loaded. When a message has both a plain-text and an HTML version, reading shows the plain text. Long messages are read in sections. Conversations include the most recent eight messages and report when earlier messages were omitted. Messages beyond the supported size must be opened in Gmail.
 
 Replies use the original message's reply headers and conversation. Drafts are visible in Gmail. Riot can update and send only drafts created by the same bot for its bound account. If a draft changes in Gmail, Riot pauses instead of silently sending the changed content. Ask the bot to update the draft and review it again, or finish it in Gmail.
 
@@ -67,16 +67,16 @@ Thanks, the morning report is ready.
 
 The mailbox has to be the one connected for this bot, and **Read, draft & send** has to be on. **Save paused** stores the edits and turns the rule off, including when you change the recipients or the reply on a rule that was already on. **Turn on** is the only action that enables it. A saved rule can send only when all of these are true:
 
-- It is an existing conversation, not a new email. Riot reads the original message again immediately before sending.
-- Every To address is one you listed, and each of those addresses was already in that conversation. A newly introduced or redirected recipient waits for review. Display names are not enough.
+- It is an existing conversation, not a new email. Riot reads the original message again immediately before sending, including every plain-text and HTML version it can read, then checks the current rule, mailbox access, and daily limit before it claims the send.
+- Every To address is one you listed, and each of those addresses was already a mailbox in that conversation. A newly introduced or redirected recipient waits for review. An address only in a display name or comment does not count. A recipient header Riot cannot parse also waits for review.
 - The body is exactly one saved reply, aside from harmless whitespace.
-- There is no Cc, Bcc, or attachment on the reply. An original message that is missing, changed, clipped, or has an attachment also waits for review.
-- Neither the reply nor the original subject and message matches the money-word check (refund, payment, and the other words Riot looks for). This is a word check, not an understanding of what the message means.
-- No saved exclusion on this bot covers a recipient, a phrase in the reply, or the same words in the original subject or message. Phrases must be 2 to 200 characters, with at most 10. A phrase that is too short, too long, or beyond that count is rejected; Riot does not drop it and turn on a broader rule. An exclusion wins even when another rule would have allowed the send.
-- The rule is still on, for this bot and this mailbox, at the moment of sending.
+- There is no Cc, Bcc, or attachment on the reply. An original message that is missing, changed, clipped, has an attachment, or whose text is not fully loaded and supported also waits for review. Text stored separately by Gmail, and message parts Riot does not decode, are not treated as an empty message. A saved reply that does not record the plain-text and HTML versions, or a version that changes before the send, waits for review.
+- Neither the reply nor the original subject or any plain-text or HTML version of the message matches the money-word check (refund, payment, and the other words Riot looks for). This is a word check, not an understanding of what the message means.
+- No saved exclusion on this bot covers a recipient, a phrase in the reply, or the same words in the original subject or any plain-text or HTML version of the message. Phrases must be 2 to 200 characters, with at most 10. A phrase that is too short, too long, or beyond that count is rejected; Riot does not drop it and turn on a broader rule. An exclusion wins even when another rule would have allowed the send.
+- The rule is still on, for this bot and this mailbox, after that final read and before the send is claimed. Turning it off or lowering access during the read stops the automatic send.
 - Today’s automatic sends are still under the rule’s limit. The default is 5 and the maximum is 20. Reviewed sends do not use this limit.
 
-Anything else waits for the normal review card or stays an unsent draft. You can still approve an exception from that card. Turning a rule off, editing it, or saying **Stop sending automatically** takes effect before the next send, including work already queued. A send Google has already accepted is not recalled by Stop; if the receipt is lost, Riot keeps the draft uncertain and will not send it again automatically.
+Anything else waits for the normal review card or stays an unsent draft. You can still approve an exception from that card. Turning a rule off, editing it, or saying **Stop sending automatically** takes effect before the next send, including work already queued and a send that is still reading the original message. A send Google has already accepted is not recalled by Stop; if the receipt is lost, Riot keeps the draft uncertain and will not send it again automatically.
 
 Reply rules are checked in application code. They do not add a model call. Chat, scheduled tasks, API models, and native Codex all use this same send path.
 
