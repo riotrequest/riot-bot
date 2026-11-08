@@ -159,6 +159,28 @@ describe('persistent desktop job service',()=>{
     } finally {await app.close()}
   })
 
+  it('keeps a hard-linked outside file out of read_file results and Library',async()=>{
+    const {app,provider,dir}=setup()
+    try {
+      const a=await bot(app,'Linked files')
+      const outside=path.join(dir,'outside-secret.txt')
+      fs.writeFileSync(outside,'API_KEY=fixture-only-linked-secret')
+      provider.handler=input=>{
+        if(input.messages.at(-1)?.role==='tool') return {content:'Checked the report.',toolCalls:[]}
+        // Stands in for an earlier approved command or native tool that left a hard link behind.
+        fs.linkSync(outside,path.join(a.bot.workspacePath,'report.txt'))
+        fs.writeFileSync(path.join(a.bot.workspacePath,'result.txt'),'Public result')
+        return {content:'',toolCalls:[{id:'read-linked',name:'read_file',arguments:JSON.stringify({path:'report.txt'})}]}
+      }
+      await app.sendMessage(a.conversation.id,'Read the report')
+      const sent=provider.calls.flatMap(call=>call.messages.map(message=>message.content)).join('\n')
+      expect(sent).toMatch(/hard link/)
+      expect(sent).not.toContain('fixture-only-linked-secret')
+      expect(app.listArtifacts().map(item=>item.name)).toEqual(['result.txt'])
+      expect(fs.readFileSync(outside,'utf8')).toBe('API_KEY=fixture-only-linked-secret')
+    } finally {await app.close()}
+  })
+
   it('runs two bots independently, preserves settings and approvals, and stops only the selected bot',async()=>{
     const {app,provider}=setup()
     try {
