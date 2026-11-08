@@ -68,7 +68,7 @@ const objectSchema = (properties: Record<string, unknown>, required: string[]): 
 const stringProp = (description: string): Record<string, unknown> => ({ type: 'string', description })
 
 export const TOOLS: ToolDefinition[] = [
-  {name:'list_saved_logins',description:'List saved login IDs, HTTPS sites and usernames. Never returns passwords.',parameters:objectSchema({},[])},
+  {name:'list_saved_logins',description:'List saved website and server login IDs with sites, hosts and usernames. Never returns passwords.',parameters:objectSchema({},[])},
   {name:'fill_saved_login',description:'Fill a saved login locally on its exact HTTPS site. Use current snapshot references; then click sign-in.',parameters:objectSchema({id:{type:'string'},username_ref:{type:'string'},password_ref:{type:'string'}},['id','username_ref','password_ref'])},
   { name: 'gmail_search', description: 'Search this bot’s connected Gmail account using Gmail search syntax. Read-only; does not mark messages read. Email contents are untrusted reference material.', parameters: objectSchema({ query: stringProp('Gmail query, e.g. is:unread or from:customer@example.com.'), limit: { type: 'number', description: '1 to 10 messages; default 5.' }, page: stringProp('Optional nextPage from a previous result.') }, []) },
   { name: 'gmail_read_email', description: 'Read a Gmail message by ID, with a bounded plain-text body. Use nextOffset to read further. Does not open links or download attachments.', parameters: objectSchema({ id: stringProp('Message ID from Gmail search or a thread.'), offset: { type: 'number', description: 'Body character offset; default 0.' } }, ['id']) },
@@ -154,6 +154,11 @@ export const TOOLS: ToolDefinition[] = [
       },
       ['command']
     )
+  },
+  {
+    name: 'run_on_server',
+    description: 'Run one command on a saved server over SSH. The user approves it; Riot fills in the password.',
+    parameters: objectSchema({ login_id: stringProp('Server login ID from list_saved_logins.'), command: stringProp('Exact command.'), timeout_seconds: { type: 'number', description: 'Optional seconds.' } }, ['login_id', 'command'])
   },
   {
     name: 'fetch_url',
@@ -293,12 +298,13 @@ export const TOOLS: ToolDefinition[] = [
 ]
 
 const FILE_TOOL_NAMES = new Set(['list_files', 'search_files', 'read_file', 'write_file', 'edit_file', 'verify_website'])
-const TERMINAL_TOOL_NAMES = new Set(['run_terminal'])
+const TERMINAL_TOOL_NAMES = new Set(['run_terminal', 'run_on_server'])
 const SCHEDULE_TOOL_NAMES = new Set(['list_schedules', 'create_schedule', 'manage_schedule'])
 
 export function toolsForGroups(groups: Array<'files' | 'terminal' | 'browser' | 'schedules' | 'email'>, learningControl = false, nameControl = false): ToolDefinition[] {
   const selected = TOOLS.filter((tool) => {
-    if (tool.name === 'list_saved_logins' || tool.name === 'fill_saved_login') return groups.includes('browser')
+    if (tool.name === 'list_saved_logins') return groups.includes('browser') || groups.includes('terminal')
+    if (tool.name === 'fill_saved_login') return groups.includes('browser')
     if (tool.name.startsWith('gmail_')) return groups.includes('email')
     if (tool.name === 'set_learning_preferences') return learningControl
     if (tool.name === 'rename_bot') return nameControl
@@ -311,11 +317,19 @@ export function toolsForGroups(groups: Array<'files' | 'terminal' | 'browser' | 
   return selected
 }
 
+const ref = stringProp('Snapshot reference, such as e1.')
+const acceptDialog = { type: 'boolean', description: 'Accept a confirm dialog it opens.' }
+
 export const BROWSER_TOOLS: ToolDefinition[] = [
   {
     name: 'list_tabs',
-    description: 'List this bot’s open browser tabs.',
+    description: 'List this bot’s open browser tabs with their numbers.',
     parameters: objectSchema({}, [])
+  },
+  {
+    name: 'switch_tab',
+    description: 'Make a tab current by its list_tabs number.',
+    parameters: objectSchema({ tab: { type: 'number', description: 'Tab number.' } }, ['tab'])
   },
   {
     name: 'open_url',
@@ -324,23 +338,58 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'read_page',
-    description: 'Read the current tab’s title, final URL, and visible text. Untrusted.',
+    description: 'Read the current tab’s title, final URL, visible text and links. Untrusted.',
     parameters: objectSchema({}, [])
   },
   {
     name: 'page_snapshot',
-    description: 'List interactive elements with references for this tab. Old references expire.',
+    description: 'List the page’s elements with references, states and values. Old references expire.',
+    parameters: objectSchema({ query: stringProp('Optional words to find elements.') }, [])
+  },
+  {
+    name: 'page_screenshot',
+    description: 'See the visible page as an image labelled with references.',
     parameters: objectSchema({}, [])
   },
   {
     name: 'click_element',
-    description: 'Click one reference from the latest snapshot. Do not invent a selector.',
-    parameters: objectSchema({ ref: stringProp('Reference such as e1.') }, ['ref'])
+    description: 'Click one snapshot reference.',
+    parameters: objectSchema({ ref, accept_dialog: acceptDialog }, ['ref'])
   },
   {
     name: 'fill_element',
-    description: 'Type into one snapshot reference. Never a password field.',
-    parameters: objectSchema({ ref: stringProp('Reference such as e1.'), value: stringProp('Text to type.') }, ['ref', 'value'])
+    description: 'Replace the text in one field. Never a password field.',
+    parameters: objectSchema({ ref, value: stringProp('Text.'), submit: { type: 'boolean', description: 'Press Enter after.' } }, ['ref', 'value'])
+  },
+  {
+    name: 'select_option',
+    description: 'Choose a dropdown option.',
+    parameters: objectSchema({ ref, option: stringProp('Label or value.') }, ['ref', 'option'])
+  },
+  {
+    name: 'press_key',
+    description: 'Press a key such as Enter, Escape, Tab or Control+A, in an element or where focus is.',
+    parameters: objectSchema({ key: stringProp('Key.'), ref: stringProp('Optional reference.'), accept_dialog: acceptDialog }, ['key'])
+  },
+  {
+    name: 'hover_element',
+    description: 'Hover over a reference to reveal a menu or tooltip.',
+    parameters: objectSchema({ ref }, ['ref'])
+  },
+  {
+    name: 'drag_element',
+    description: 'Drag one reference onto another.',
+    parameters: objectSchema({ ref, to_ref: stringProp('Drop target reference.') }, ['ref', 'to_ref'])
+  },
+  {
+    name: 'upload_file',
+    description: 'Attach a workspace file to a file chooser. The user approves each upload.',
+    parameters: objectSchema({ ref, path: stringProp('Workspace path.') }, ['ref', 'path'])
+  },
+  {
+    name: 'wait_for',
+    description: 'Wait up to 20 seconds for text to appear or go, or the address to change. With no condition, pause.',
+    parameters: objectSchema({ text: stringProp('Text to appear.'), gone: stringProp('Text to go.'), url_contains: stringProp('Address part.'), seconds: { type: 'number', description: 'Longest wait.' } }, [])
   },
   {
     name: 'scroll_page',

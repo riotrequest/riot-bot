@@ -21,9 +21,19 @@ The credential file is updated atomically. If protected storage cannot be update
 
 Browser cookies and site storage remain in that bot's separate Chromium profile. Website expiry, logout, MFA and CAPTCHA can still require the website's own verification. Use **Profile & browser → Open browser / Use browser myself** to complete it, then let the bot continue.
 
+## Save a server login
+
+Paste the PuTTY, plink, pscp or psftp command you use with `-pw`, an `sshpass -p` command for ssh, scp or sftp, or an `ssh://user:password@host` address into the chat. Riot recognizes it in your own message before the message is queued, stored or sent to the model, saves the host, port, username and password for that bot in the same Windows-protected credential store, and replaces the password in your message with `[saved password]`. Quoted lines, placeholders such as `<password>` or `$PASS`, and a line Riot already masked are ignored. Pasting the same server and username again with a new password updates the login. Saved server logins are listed under **Bot settings → Files & tools → Saved server logins**, where **Remove login** deletes the stored entry. Deleting a bot removes them too.
+
+The model sees only the login ID, host, port and username. To use a login it asks for **run on server** with the ID and a command. Riot shows the exact command and the server, and runs nothing until you approve. After approval Riot checks that the same login for the same server still exists, then starts PuTTY’s `plink.exe` directly, without a shell, with the saved password. Only plink receives the password, and plink sends it only to the saved host. `-batch` mode refuses an unknown or changed server key instead of asking, so check and accept a new server’s key in PuTTY first. The password is redacted from command output, replies and activity like other stored credentials. The model cannot choose another host for a saved login, and output from the server counts as a private source for later search and site checks.
+
+While plink runs, other programs running as your Windows account can read its command line, which includes the password. That is the same exposure as running the pasted command yourself. An approved command can do anything that server account can.
+
 ## Remember website access
 
 Saving a login also grants that bot access to the exact HTTPS website. For another interactive website or a generated destination, a site card offers **Remember & allow**, **This task only**, and **Deny**. Remembered permission includes sharing information with the site, filling forms and clicking controls that can send, publish, pay or delete. Give it to sites you intend the bot to operate. Page text or button labels cannot grant it. The scheme, host and port must match; a subdomain or different port needs its own access.
+
+Remembered access never covers uploads. Each upload names the workspace file, its size and the website, and needs its own approval; the website receives the exact bytes Riot read before asking. Downloads started by a bot’s click or key press are saved into the workspace `Downloads` folder only when file editing is on, never overwrite an existing file, refuse shortcut files and carry the Windows mark of the web. Other downloads are cancelled.
 
 Inspect and remove grants under **Bot settings → Files & tools → Remembered website access**, then save settings. Removing a saved login and revoking site access are separate actions. Revoking access does not log out existing website cookies or cancel work already performed. Stop the task before changing access if you need to prevent another in-flight action.
 

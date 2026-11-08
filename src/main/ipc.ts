@@ -19,6 +19,7 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'contextTokenBudget',
   'modelContextTokens',
   'maxModelCallsPerTask',
+  'maxBrowserActionsPerTask',
   'maxOutputTokens',
   'replyMode',
   'maxToolOutputChars',
@@ -239,6 +240,7 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
     return app.saveLogin({url:requireText(input.url,'Enter an HTTPS website.'),username:requireText(input.username,'Enter the username.'),password:requireText(input.password,'Enter the password.')})
   })
   handle('logins:remove',(app,args)=>app.removeLogin(requireId(args[0])))
+  handle('server-logins:remove',(app,args)=>app.removeServerLogin(requireId(args[0])))
   handle('workspace:pick', async () => {
     const parent = getWindow()
     const options = { properties: ['openDirectory' as const], title: 'Choose a workspace folder' }

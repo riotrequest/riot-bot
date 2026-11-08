@@ -1,5 +1,5 @@
 import type { ProviderId, PublicSettings } from '../shared/types'
-import { DEFAULT_SEARCH_TEMPLATE } from './browser-policy'
+import { DEFAULT_BROWSER_ACTIONS, DEFAULT_SEARCH_TEMPLATE, MAX_BROWSER_ACTIONS, MIN_BROWSER_ACTIONS } from './browser-policy'
 import { validatePublicUrl } from './web'
 import { trustedSite } from './logins'
 
@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: Settings = {
   contextTokenBudget: 8000,
   modelContextTokens: null,
   maxModelCallsPerTask: 24,
+  maxBrowserActionsPerTask: DEFAULT_BROWSER_ACTIONS,
   maxOutputTokens: 2048,
   replyMode: 'automatic',
   maxToolOutputChars: 12_000,
@@ -97,6 +98,7 @@ export function sanitizeSettings(input: Partial<Settings>): Settings {
     contextTokenBudget: finiteNumber(input.contextTokenBudget, DEFAULT_SETTINGS.contextTokenBudget, 500, 200_000),
     modelContextTokens: optionalTokens(input.modelContextTokens),
     maxModelCallsPerTask: Math.round(finiteNumber(input.maxModelCallsPerTask, DEFAULT_SETTINGS.maxModelCallsPerTask, 1, 100)),
+    maxBrowserActionsPerTask: Math.round(finiteNumber(input.maxBrowserActionsPerTask, DEFAULT_SETTINGS.maxBrowserActionsPerTask, MIN_BROWSER_ACTIONS, MAX_BROWSER_ACTIONS)),
     maxOutputTokens: Math.round(finiteNumber(input.maxOutputTokens, DEFAULT_SETTINGS.maxOutputTokens, 16, 32_000)),
     replyMode: input.replyMode === 'manual' ? 'manual' : 'automatic',
     maxToolOutputChars: Math.round(finiteNumber(input.maxToolOutputChars, DEFAULT_SETTINGS.maxToolOutputChars, 500, 200_000)),

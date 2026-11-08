@@ -27,6 +27,8 @@ export interface PublicSettings {
   contextTokenBudget: number
   modelContextTokens: number | null
   maxModelCallsPerTask: number
+  /** Browser steps one task may take: opening, reading, clicking, typing and so on. */
+  maxBrowserActionsPerTask: number
   maxOutputTokens: number
   replyMode: 'automatic' | 'manual'
   maxToolOutputChars: number
@@ -55,6 +57,7 @@ export interface PublicSettings {
 
 export interface LoginDraft {url:string;username:string;password:string}
 export interface SavedLogin {id:string;origin:string;username:string}
+export interface SavedServerLogin {id:string;host:string;port:number;username:string}
 
 export interface Conversation {
   id: string
@@ -200,6 +203,8 @@ export interface ApprovalView {
   email?: EmailPreview
   gmailRule?: GmailRulePreview
   siteOrigin?: string
+  /** Label for the approve button when the default wording does not fit. */
+  confirmLabel?: string
 }
 
 export interface GmailStatus {
@@ -472,6 +477,7 @@ export interface Snapshot {
   runningBotIds?: string[]
   schedules: ScheduleView[]
   savedLogins?: SavedLogin[]
+  savedServerLogins?: SavedServerLogin[]
 }
 
 export type ScheduleRepeat = 'once' | 'daily' | 'weekdays' | 'weekly'
@@ -680,6 +686,7 @@ export interface RiotBridge {
   resolveApproval(id: string, approved: boolean, remember?: boolean): Promise<void>
   saveLogin(input: LoginDraft): Promise<{login:SavedLogin;persistent:boolean}>
   removeLogin(id:string): Promise<void>
+  removeServerLogin(id:string): Promise<void>
   undoEdit(id: string): Promise<{ ok: boolean; message: string }>
   copyText(text: string): Promise<void>
   listNotices(): Promise<AppNotice[]>
@@ -692,6 +699,12 @@ export const COST_DISCLAIMER =
 
 export const TERMINAL_WARNING =
   'A terminal command runs on this computer. The workspace folder does not contain it, and Riot Bot does not sandbox the shell. Every exact command asks for approval. Approving one command does not approve the next one.'
+
+export const SERVER_WARNING =
+  'Riot signs in to this server with the saved password and runs this command there. It can change or delete anything this account can. Every command asks first.'
+
+export const UPLOAD_WARNING =
+  'The website receives this file and can keep it. Riot Bot asks before every upload, even on websites you trust.'
 
 export const BROWSER_ACTION_WARNING =
   'This browser action can change something on a website. Search and ordinary reading do not ask first. Approving this action does not approve the next one.'
