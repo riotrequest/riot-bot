@@ -161,6 +161,12 @@ export class BrowserService {
     return Boolean(this.liveSession(botId))
   }
 
+  matchesPendingSearch(botId: string, query: string): boolean {
+    const pending = this.liveSession(botId)?.pendingSearch
+    const words = query.trim()
+    return Boolean(pending && words && pending.query === words)
+  }
+
   private liveSession(botId: string): Session | undefined {
     const session = this.sessions.get(botId)
     if (session?.launched.isClosed?.()) {

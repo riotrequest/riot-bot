@@ -599,6 +599,10 @@ interface AppConfig {
   activeBotId: string
   defaultProvider?: Settings['provider']
   defaultModel?: string
+  webResearch: 'automatic' | 'browser' | 'connection'
+  researchDailyCap: number
+  researchTavily: boolean
+  researchFirecrawl: boolean
 }
 
 export class Database {
@@ -691,6 +695,28 @@ export class Database {
     if (this.userVersion() < 14) this.transaction(() => {
       this.addColumn('gmail_drafts', 'reply_json', 'TEXT')
       this.db.exec('PRAGMA user_version = 14')
+    })
+    if (this.userVersion() < 15) this.transaction(() => {
+      let browser = false
+      if (this.tableExists('bots')) {
+        for (const record of rows(this.db.prepare(`SELECT settings_json FROM bots`).all())) {
+          try {
+            const settings = JSON.parse(text(record, 'settings_json')) as { searchUrlTemplate?: unknown }
+            if (typeof settings.searchUrlTemplate === 'string' && settings.searchUrlTemplate !== DEFAULT_SEARCH_TEMPLATE) browser = true
+          } catch { /* a damaged settings row keeps the new default */ }
+        }
+      }
+      const stored = this.tableExists('settings') ? row(this.db.prepare(`SELECT value FROM settings WHERE key = 'app'`).get()) : undefined
+      let explicit = false
+      if (stored) {
+        try {
+          const parsed = JSON.parse(text(stored, 'value')) as { webResearch?: unknown }
+          explicit = parsed.webResearch === 'automatic' || parsed.webResearch === 'browser' || parsed.webResearch === 'connection'
+        } catch { explicit = false }
+      }
+      if (!explicit) this.saveAppConfig({ ...this.appConfig(), webResearch: browser ? 'browser' : 'automatic' })
+      this.ensureResearchUsage()
+      this.db.exec('PRAGMA user_version = 15')
     })
   }
 
@@ -1041,7 +1067,11 @@ export class Database {
     this.saveAppConfig({
       maxEstimatedSpendPerDayUsd: legacy.maxEstimatedSpendPerDayUsd,
       showToolDetails: false,
-      activeBotId: id
+      activeBotId: id,
+      webResearch: 'automatic',
+      researchDailyCap: 20,
+      researchTavily: false,
+      researchFirecrawl: false
     })
     return id
   }
@@ -1117,21 +1147,60 @@ export class Database {
   }
 
   appConfig(): AppConfig {
-    if (!this.tableExists('settings')) return { maxEstimatedSpendPerDayUsd: null, showToolDetails: false, activeBotId: '' }
+    const blank = { maxEstimatedSpendPerDayUsd: null, showToolDetails: false, activeBotId: '', webResearch: 'automatic' as const, researchDailyCap: 20, researchTavily: false, researchFirecrawl: false }
+    if (!this.tableExists('settings')) return blank
     const stored = row(this.db.prepare(`SELECT value FROM settings WHERE key = 'app'`).get())
-    if (!stored) return { maxEstimatedSpendPerDayUsd: null, showToolDetails: false, activeBotId: '' }
+    if (!stored) return blank
     try {
       const parsed = JSON.parse(text(stored, 'value')) as Partial<AppConfig>
+      const cap = typeof parsed.researchDailyCap === 'number' && Number.isFinite(parsed.researchDailyCap) ? Math.max(1, Math.min(200, Math.round(parsed.researchDailyCap))) : 20
       return {
         maxEstimatedSpendPerDayUsd: parsed.maxEstimatedSpendPerDayUsd ?? null,
         showToolDetails: Boolean(parsed.showToolDetails),
         activeBotId: typeof parsed.activeBotId === 'string' ? parsed.activeBotId : '',
         defaultProvider: parsed.defaultProvider === 'codex' ? 'codex' : parsed.defaultProvider === 'openrouter' ? 'openrouter' : parsed.defaultProvider === 'openai' ? 'openai' : undefined,
-        defaultModel: typeof parsed.defaultModel === 'string' ? parsed.defaultModel.replace(/[\r\n]/g, '').trim().slice(0, 200) : undefined
+        defaultModel: typeof parsed.defaultModel === 'string' ? parsed.defaultModel.replace(/[\r\n]/g, '').trim().slice(0, 200) : undefined,
+        webResearch: parsed.webResearch === 'browser' || parsed.webResearch === 'connection' ? parsed.webResearch : 'automatic',
+        researchDailyCap: cap,
+        researchTavily: parsed.researchTavily === true,
+        researchFirecrawl: parsed.researchFirecrawl === true
       }
     } catch {
-      return { maxEstimatedSpendPerDayUsd: null, showToolDetails: false, activeBotId: '' }
+      return blank
     }
+  }
+
+  ensureResearchUsage(): void {
+    this.db.exec(`CREATE TABLE IF NOT EXISTS research_usage (
+      scope TEXT NOT NULL,
+      day TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      PRIMARY KEY (scope, day)
+    )`)
+  }
+
+  reserveResearchUse(scope: string, day: string, limit: number): boolean {
+    return this.reserveResearchUses([{ scope, limit }], day) === true
+  }
+
+  /** Increments every counter or none. A refused counter does not spend another. */
+  reserveResearchUses(entries: { scope: string; limit: number }[], day: string): true | 'bot' | 'account' {
+    this.ensureResearchUsage()
+    if (entries.length === 0) return true
+    return this.transaction(() => {
+      const counts = entries.map((entry) => {
+        const current = row(this.db.prepare(`SELECT count FROM research_usage WHERE scope = ? AND day = ?`).get(entry.scope, day))
+        const count = current ? Number(current.count) : 0
+        return { ...entry, count }
+      })
+      const blocked = counts.find((entry) => !Number.isFinite(entry.count) || entry.count >= entry.limit)
+      if (blocked) return blocked.scope.startsWith('bot:') ? 'bot' as const : 'account' as const
+      for (const entry of entries) {
+        this.db.prepare(`INSERT INTO research_usage (scope, day, count) VALUES (?, ?, 1)
+          ON CONFLICT(scope, day) DO UPDATE SET count = count + 1`).run(entry.scope, day)
+      }
+      return true as const
+    })
   }
 
   saveAppConfig(config: AppConfig): void {
@@ -2146,12 +2215,28 @@ function mapGmailDraft(record: Row): GmailDraftRecord {
   return { account: text(record, 'account'), draftId: text(record, 'draft_id'), botId: text(record, 'bot_id'), runId: text(record, 'run_id') || null, raw: text(record, 'raw_message'), threadId: text(record, 'thread_id') || null, preview: JSON.parse(text(record, 'preview_json')), fingerprint: text(record, 'fingerprint'), status: text(record, 'status') as GmailDraftRecord['status'], sentMessageId: text(record, 'sent_message_id') || null, reply: mapReplySource(text(record, 'reply_json')), updatedAt: num(record, 'updated_at') }
 }
 
+function boundedRepresentations(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 100) return null
+  const texts: string[] = []
+  let size = 0
+  for (const item of value) {
+    if (typeof item !== 'string' || item.length > 100_000) return null
+    size += item.length
+    if (size > 100_000) return null
+    texts.push(item)
+  }
+  return texts
+}
+
 function mapReplySource(value: string): GmailReplySource | null {
   if (!value) return null
   try {
     const parsed = JSON.parse(value) as Partial<GmailReplySource>
     if (typeof parsed.messageId !== 'string' || typeof parsed.threadId !== 'string' || !Array.isArray(parsed.participants) || !parsed.participants.every(item => typeof item === 'string') || typeof parsed.subject !== 'string' || typeof parsed.body !== 'string' || typeof parsed.complete !== 'boolean') return null
-    return { messageId: parsed.messageId, threadId: parsed.threadId, participants: parsed.participants, subject: parsed.subject, body: parsed.body, complete: parsed.complete }
+    const representations = boundedRepresentations(parsed.representations)
+    const base = { messageId: parsed.messageId, threadId: parsed.threadId, participants: parsed.participants, subject: parsed.subject, body: parsed.body, representations: representations ?? [] }
+    if (!representations) return { ...base, complete: false }
+    return { ...base, complete: parsed.complete }
   } catch { return null }
 }
 

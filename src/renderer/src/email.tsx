@@ -105,7 +105,7 @@ function RuleCard({ rule, busy, onEdit, onEnabled }: { rule: GmailRuleView; busy
     <div className="runtime-heading"><strong>{rule.title}</strong><span className={`app-access-status ${rule.appliesNow ? 'enabled' : 'paused'}`}>{status}</span></div>
     <p className="help">Mailbox {rule.account}. Replies to {rule.recipients.join(', ') || 'no one yet'}{rule.threadIds.length ? ` in ${rule.threadIds.join(', ')}` : ' in an existing conversation'}.</p>
     <p className="gmail-rule-template">{reply}{rule.templates.length > 1 ? ` and ${rule.templates.length - 1} more exact ${rule.templates.length === 2 ? 'reply' : 'replies'}` : ''}</p>
-    <p className="help">Up to {rule.dailySendLimit} sends a day{rule.sendsToday ? ` · ${rule.sendsToday} used today` : ''}. Refunds in the original message or the reply, other recipients, and anything that does not match still wait for you.</p>
+    <p className="help">Up to {rule.dailySendLimit} sends a day{rule.sendsToday ? ` · ${rule.sendsToday} used today` : ''}. Refunds in the original message or the reply, including each plain or HTML version Riot can read, other recipients, original text Riot could not read, and anything that does not match still wait for you.</p>
     {rule.blockedReason && <p className="help">{rule.blockedReason}</p>}
     {(rule.excludedRecipients.length > 0 || rule.excludedPhrases.length > 0) && <p className="help">Always review: {[...rule.excludedRecipients, ...rule.excludedPhrases].join(', ')}.</p>}
     <div className="row"><button type="button" disabled={busy} onClick={onEdit}>Edit</button><button type="button" disabled={busy} onClick={() => void onEnabled(rule.id, !rule.enabled)}>{rule.enabled ? 'Turn off' : 'Turn on'}</button></div>

@@ -152,6 +152,7 @@ describe('free web search', () => {
     page.goto = async url => { if (opens === 1) throw new Error('Target page, context or browser has been closed'); await original(url) }
     const { app, provider } = makeApp({ browserOpener: async input => { opens++; return opener(page)(input) }, lookupHost: async () => ['93.184.216.34'] })
     try {
+      app.updateAppSettings({ webResearch: 'browser' })
       provider.handler = input => input.messages.at(-1)?.role === 'tool' ? { content: 'Found.', toolCalls: [] }
         : { content: '', toolCalls: [{ id: 'search', name: 'web_search', arguments: '{"query":"angelicpedia.com"}' }] }
       const cid = app.getSnapshot().ongoingConversationId!
@@ -252,6 +253,34 @@ describe('free web search', () => {
         : { content: '', toolCalls: [{ id: 'search', name: 'web_search', arguments: '{"query":"CAPTCHA unusual traffic","engine":"google"}' }] }
       expect((await app.sendMessage(app.getSnapshot().ongoingConversationId!, 'Search on Google for CAPTCHA unusual traffic')).status).toBe('completed')
       expect(app.getSnapshot().browser.takeover).toBe(false)
+    } finally { await app.close() }
+  })
+
+  it('does not move a different Automatic query onto a pending browser search', async () => {
+    const page = new SearchPage()
+    page.challenge = true
+    const calls: string[] = []
+    const { app, provider } = makeApp({
+      browserOpener: opener(page),
+      lookupHost: async () => ['93.184.216.34'],
+      researchTransport: async (exchange) => {
+        calls.push(exchange.url)
+        return { status: 200, headers: {}, body: JSON.stringify({ results: [{ title: 'Example', url: 'https://example.com/', content: 'A public example.' }] }) }
+      }
+    })
+    try {
+      provider.handler = () => ({ content: '', toolCalls: [{ id: 'search', name: 'web_search', arguments: '{"query":"angelicpedia.com","engine":"google"}' }] })
+      const cid = app.getSnapshot().ongoingConversationId!
+      expect((await app.sendMessage(cid, 'Search Google for angelicpedia.com')).status).toBe('paused')
+      expect(page.navigations).toHaveLength(1)
+      provider.handler = (input) => input.messages.at(-1)?.role === 'tool'
+        ? { content: 'Noted.', toolCalls: [] }
+        : { content: '', toolCalls: [{ id: 'weather', name: 'web_search', arguments: '{"query":"public weather"}' }] }
+      const run = await app.sendMessage(cid, 'Find a public weather page.')
+      expect(run.status).toBe('completed')
+      expect(calls).toEqual(['https://api.tavily.com/search'])
+      expect(page.navigations).toHaveLength(1)
+      expect(app.getSnapshot().current!.messages.some((item) => item.content.includes('Web search via Tavily'))).toBe(true)
     } finally { await app.close() }
   })
 

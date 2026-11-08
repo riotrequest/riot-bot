@@ -18,7 +18,7 @@ export interface GmailAutonomyRule {
 }
 
 /** Shown on every preview. Keyword checks only force review; they never prove a reply is safe. */
-export const REPLY_RULE_LIMITS = 'Riot still asks before new emails, recipients who were not already in that conversation, Cc, Bcc, attachments, refunds and other money wording in the original message or the reply, wording that is not one of the exact saved replies, and anything a saved exclusion covers. A reply whose original message cannot be read completely waits for review. These word checks do not prove a reply is safe. One rule cannot override another rule’s exclusion. This does not allow forwarding, mailbox cleanup, terminal commands, or another bot to send.'
+export const REPLY_RULE_LIMITS = 'Riot still asks before new emails, recipients who were not already in that conversation, Cc, Bcc, attachments, refunds and other money wording in the original message or the reply, wording that is not one of the exact saved replies, and anything a saved exclusion covers. Riot checks every plain-text and HTML version of the original message it can read. A reply whose original message cannot be read completely waits for review, including text stored separately and parts Riot does not decode. An address only in a display name or comment is not a recipient. These word checks do not prove a reply is safe. One rule cannot override another rule’s exclusion. This does not allow forwarding, mailbox cleanup, terminal commands, or another bot to send.'
 
 export const GMAIL_RULE_APPLIED = 'Riot already applied this Gmail reply instruction.'
 
@@ -33,7 +33,7 @@ export interface GmailRuleDraft {
   dailySendLimit: number
 }
 
-/** Original message checked with the outgoing draft. Unverified means review, never an automatic send. */
+/** Original message checked with the outgoing draft. `body` contains every supported version. Unverified means review, never an automatic send. */
 export interface GmailReplyContext {
   verified: boolean
   participants: string[]

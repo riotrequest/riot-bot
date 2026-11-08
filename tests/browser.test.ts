@@ -128,6 +128,7 @@ describe('browser sessions', () => {
       lookupHost: publicLookup,
       browserOpener: fakeOpener(launched)
     })
+    app.updateAppSettings({ webResearch: 'browser' })
     const botA = app.getSnapshot().bot?.id ?? ''
     const workspace = app.getSnapshot().settings.workspacePath
     const opened = await app.openBrowser()

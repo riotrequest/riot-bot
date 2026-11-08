@@ -55,6 +55,11 @@ async function turn(params) {
     event('item/completed', { ...base, item: { ...item, status: result.decision === 'accept' ? 'completed' : 'declined' } })
     text = 'Command ' + result.decision
   }
+  if (config.scenario === 'research') {
+    const result = await ask('item/tool/call', { ...base, callId: 'research-' + turnCount, tool: 'riot_web_search', arguments: { query: 'fixture public topic' } })
+    log({ research: result })
+    text += ': ' + result.contentItems[0].text
+  }
   if (config.scenario === 'tools') {
     const item = { id: 'search-' + turnCount, type: 'webSearch', query: 'fixture query', status: 'inProgress' }
     event('item/started', { ...base, item })

@@ -11,7 +11,7 @@ export function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'riot-bot-'))
 }
 
-export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fetchImpl' | 'lookupHost' | 'createProvider' | 'workspaceRoot' | 'openFolder' | 'revealFile' | 'writeClipboard' | 'browserOpener' | 'now' | 'codex' | 'gmail' | 'gmailFetchImpl' | 'openLink'>> & { provider?: MockProvider; dbPath?: string; learning?: boolean; credentials?: MemoryCredentialStore }) {
+export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fetchImpl' | 'lookupHost' | 'createProvider' | 'workspaceRoot' | 'openFolder' | 'revealFile' | 'writeClipboard' | 'browserOpener' | 'now' | 'codex' | 'gmail' | 'gmailFetchImpl' | 'openLink' | 'researchTransport'>> & { provider?: MockProvider; dbPath?: string; learning?: boolean; credentials?: MemoryCredentialStore }) {
   const dir = options?.dbPath ? path.dirname(options.dbPath) : tempDir()
   const dbPath = options?.dbPath ?? path.join(dir, 'riot.sqlite')
   const provider = options?.provider ?? new MockProvider()
@@ -29,6 +29,7 @@ export function makeApp(options?: Partial<Pick<RiotAppOptions, 'terminal' | 'fet
     openLink: options?.openLink,
     fetchImpl: options?.fetchImpl,
     lookupHost: options?.lookupHost,
+    researchTransport: options?.researchTransport,
     createProvider: options?.createProvider,
     workspaceRoot: options?.workspaceRoot ?? path.join(dir, 'workspaces'),
     openFolder: options?.openFolder,
