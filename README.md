@@ -78,7 +78,7 @@ Details: [user guide: bots and chats](docs/user-guide.md#bots-and-chats) and [ch
 
 ### Files, commands and saved versions
 
-Each bot works in its own folder. Riot’s file tools stay inside that folder, check symlinks and junctions, and block common secret files like `.env` and private keys unless you grant access for that folder. Editing is off for existing folders until you turn it on, and each edit Riot makes has an Undo control. A terminal command runs only after you approve that exact command.
+Each bot works in its own folder. Riot’s file tools stay inside that folder, check symlinks and junctions, refuse hard-linked files, and block common secret files like `.env` and private keys unless you grant access for that folder. Editing is off for existing folders until you turn it on, and each edit Riot makes has an Undo control. A terminal command runs only after you approve that exact command.
 
 Every message becomes a durable job. You can queue follow-ups, switch bots while one works, and close the window to the tray while work continues. The **Files** screen keeps versioned copies of everything a job created or changed. **verify_website** checks a static HTML page at desktop and mobile sizes and saves screenshots and a report.
 
@@ -196,6 +196,7 @@ For an eventual public release, use `npm run dist:win:release`; its separate con
 - The browser is not isolated from the local network. The proxy covers connections it handles. It does not prove that every browser subrequest is blocked.
 - The secret check only catches common patterns.
 - File undo is refused if the file changed after the edit.
+- File tools refuse any file with more than one name (a hard link), so projects whose package manager hard-links dependencies, such as pnpm’s `node_modules`, will have those files refused. Approved terminal commands and native Codex tools are not covered by this check.
 - Images in model Markdown are not loaded. `http` and `https` links open externally. Avatar uploads are stored locally.
 - One task per bot runs at a time, with up to two bots working independently; overlapping workspaces take turns. Only saved schedules start work on a timer. Optional memory/skill reviews follow successful user turns; skills still require explicit approval to save.
 - Typed drafts survive a bot switch in the same session and are not written to disk. Pending file and screenshot attachments are persisted.
