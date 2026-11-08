@@ -4,6 +4,7 @@ import path from 'path'
 import { verifyWebsite } from './website-check'
 import type {
   ActivityEntry,
+  ApiProviderId,
   AppEvent,
   AppPreferences,
   AppSettings,
@@ -74,13 +75,19 @@ import { explicitSkillIntent, parseSkillMarkdown, skillRejection, skillToMarkdow
 import { nameChangeRequest } from './bot-name'
 import { cleanBotName, fallbackBotName, parseSetupReply, SETUP_PROMPT } from './slug'
 import { allocateWorkspace, defaultWorkspaceRoot, removeEmptyFolder, useExistingWorkspace } from './workspace'
-import { DEFAULT_SETTINGS, estimateCostUsd, estimateTokens, fitTokens, knownPricing, localDay, sanitizeSettings, dollarBudgetEnabled, type Settings } from './settings'
+import { DEFAULT_SETTINGS, estimateCostUsd, estimateTokens, fitTokens, knownPricing, localDay, optionalTokens, parseProviderId, sanitizeSettings, dollarBudgetEnabled, type Settings } from './settings'
+import { normalizeCustomBaseUrl } from './custom-endpoint'
 import { OsTerminal, type TerminalRunner } from './terminal'
 import { assertPublicHost, defaultLookup, fetchPublicUrl, validatePublicUrl } from './web'
 import { RESEARCH_ATTEMPT_LIMIT, directReadFailed, isVerificationPage, providerName, providerOrigin, runResearch, sensitivePublicUrl, type ResearchAccess, type ResearchDecision, type ResearchProvider, type ResearchReservation, type ResearchTransport } from './research'
 import { LoginVault, loginFromMessage } from './logins'
 import { normalizedWebUrl, publicLinks } from './web-access'
 import type { LoginDraft, SavedLogin } from '../shared/types'
+
+/** App-wide connection details that are not secrets. API keys stay in the credential store. */
+export interface ProviderConnection {
+  customBaseUrl: string
+}
 
 export interface RiotAppOptions {
   dbPath: string
@@ -94,7 +101,8 @@ export interface RiotAppOptions {
   catalogFetchImpl?: typeof fetch
   lookupHost?: (hostname: string) => Promise<string[]>
   researchTransport?: ResearchTransport
-  createProvider?: (settings: Settings) => ModelProvider
+  /** Builds the API provider for a run. `connection` carries the app-wide custom endpoint, if one is saved. */
+  createProvider?: (settings: Settings, connection: ProviderConnection) => ModelProvider
   openFolder?: (folder: string) => void
   revealFile?: (file: string) => void
   writeClipboard?: (text: string) => void
@@ -136,7 +144,7 @@ export class RiotApp {
   private readonly listeners = new Set<(event: AppEvent) => void>()
   private readonly approvalWaiters = new Map<string, Waiter>()
   private provider: ModelProvider
-  private readonly createProvider?: (settings: Settings) => ModelProvider
+  private readonly createProvider?: (settings: Settings, connection: ProviderConnection) => ModelProvider
   private readonly now: () => number
   private readonly fetchImpl?: typeof fetch
   private readonly catalogFetchImpl?: typeof fetch
@@ -409,7 +417,7 @@ export class RiotApp {
     if (purpose.length < 2 || purpose.length > 400) throw new ConfigError('Say what this bot should help with, in a sentence or two.')
     const defaults = this.getAppSettings()
     const choice = draft.provider ?? defaults.provider
-    const provider = choice === 'codex' ? 'codex' : choice === 'openrouter' ? 'openrouter' : 'openai'
+    const provider = parseProviderId(choice)
     const model = String(draft.model ?? (provider === defaults.provider ? defaults.model : '')).replace(/[\r\n]/g, '').trim().slice(0, 200)
     let name = draft.name.trim() ? cleanBotName(draft.name) : null
     if (draft.name.trim() && !name) throw new ConfigError('Use a display name of 2 to 40 characters, without a file path.')
@@ -419,7 +427,7 @@ export class RiotApp {
     if (avatar.bytes) thumbnailPng(Buffer.from(avatar.bytes))
     let setupRunId = ''
     if (!name) {
-      const configured = provider !== 'codex' && Boolean(model) && (!this.createProvider || Boolean(this.credentials.get(provider)))
+      const configured = provider !== 'codex' && Boolean(model) && (!this.createProvider || this.connectionReady(provider))
       if (configured) {
         const setup = await this.runBotSetup(purpose, provider, model)
         setupRunId = setup.runId
@@ -845,8 +853,10 @@ export class RiotApp {
     const estimatedUsd = price ? estimateCostUsd(800, maxOutputTokens, price) * maxCalls : null
     let blockedReason: string | null = null
     if (!settings.model.trim()) blockedReason = 'Enter a model ID in Settings before running a provider check.'
-    else if (this.createProvider && !this.credentials.get(settings.provider)) {
-      blockedReason = 'Add an API key in Settings before running a provider check. A ChatGPT or Cursor subscription is not an API key.'
+    else if (this.createProvider && !this.connectionReady(settings.provider)) {
+      blockedReason = settings.provider === 'custom'
+        ? 'Enter your model server address in app Settings before running a provider check.'
+        : 'Add an API key in Settings before running a provider check. A ChatGPT or Cursor subscription is not an API key.'
     } else if (dollarBudgetEnabled(settings) && !price) {
       blockedReason = 'Dollar limits are on, but this model has no price. Add both prices or turn the dollar limits off before the check.'
     }
@@ -870,7 +880,7 @@ export class RiotApp {
     if (plan.blockedReason) throw new ConfigError(plan.blockedReason)
     if (this.active || this.db.activeRun()) throw new ConfigError('Riot Bot is already working. Stop it before running a provider check.')
     const settings = this.db.getSettings()
-    if (this.createProvider) this.provider = this.createProvider(settings)
+    if (this.createProvider) this.provider = this.createProvider(settings, this.providerConnection())
     const existing = this.db.listConversations().find((conversation) => conversation.title === 'Provider check')
     const conversation = existing ?? this.db.createConversation('Provider check', this.now(), this.viewBotId())
     const run = this.db.createRun(conversation.id, this.now(), 'provider_check')
@@ -1020,6 +1030,8 @@ export class RiotApp {
     return {
       provider: config.defaultProvider ?? 'openai',
       model: config.defaultModel ?? '',
+      customBaseUrl: config.customBaseUrl ?? '',
+      customContextTokens: config.customContextTokens ?? null,
       maxEstimatedSpendPerDayUsd: config.maxEstimatedSpendPerDayUsd,
       webResearch: config.webResearch,
       researchDailyCap: config.researchDailyCap,
@@ -1034,10 +1046,17 @@ export class RiotApp {
     const webResearch = patch.webResearch === 'browser' || patch.webResearch === 'connection' || patch.webResearch === 'automatic' ? patch.webResearch : current.webResearch
     const researchDailyCap = patch.researchDailyCap === undefined ? current.researchDailyCap : patch.researchDailyCap
     if (!Number.isInteger(researchDailyCap) || researchDailyCap < 1 || researchDailyCap > 200) throw new ConfigError('Use a daily request cap from 1 to 200.')
+    const customBaseUrl = patch.customBaseUrl === undefined ? current.customBaseUrl : normalizeCustomBaseUrl(patch.customBaseUrl)
+    let customContextTokens = current.customContextTokens
+    if (patch.customContextTokens !== undefined) {
+      try { customContextTokens = optionalTokens(patch.customContextTokens) } catch { throw new ConfigError('Enter the context length as a number from 1024 to 2000000, or leave it blank.') }
+    }
     this.db.saveAppConfig({
       ...this.db.appConfig(),
       defaultProvider: next.provider,
       defaultModel: next.model,
+      customBaseUrl,
+      customContextTokens,
       maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd,
       webResearch,
       researchDailyCap,
@@ -1047,7 +1066,7 @@ export class RiotApp {
     return this.getAppSettings()
   }
 
-  setCredential(provider: 'openai' | 'openrouter', secret: string): CredentialSaveResult {
+  setCredential(provider: ApiProviderId, secret: string): CredentialSaveResult {
     const clean = secret.trim()
     if (clean.length < 8 || clean.length > 500 || /[\r\n]/.test(clean)) {
       throw new ConfigError('Paste the API key from your provider. It should be one line, without spaces added by a line break.')
@@ -1057,7 +1076,7 @@ export class RiotApp {
     return { status: this.credentialStatus(), persistent: saved.persistent, message: saved.message }
   }
 
-  clearCredential(provider: 'openai' | 'openrouter'): CredentialStatus {
+  clearCredential(provider: ApiProviderId): CredentialStatus {
     this.credentials.clear(provider)
     return this.credentialStatus()
   }
@@ -1128,8 +1147,26 @@ export class RiotApp {
   }
 
   private currentSettings(): Settings {
-    if (this.settingsOverride) return this.settingsOverride
-    return this.db.getSettings(this.scopeBot())
+    return this.withConnectionDefaults(this.settingsOverride ?? this.db.getSettings(this.scopeBot()))
+  }
+
+  /** A bot on the custom endpoint without its own capacity uses the context length saved with that connection. */
+  private withConnectionDefaults(settings: Settings): Settings {
+    if (settings.provider !== 'custom' || settings.modelContextTokens != null) return settings
+    const tokens = this.db.appConfig().customContextTokens ?? null
+    return tokens == null ? settings : { ...settings, modelContextTokens: tokens }
+  }
+
+  /** The app-wide connection details a provider needs besides its saved key. */
+  protected providerConnection(): ProviderConnection {
+    return { customBaseUrl: this.db.appConfig().customBaseUrl ?? '' }
+  }
+
+  /** Whether a saved connection exists. A custom endpoint needs an address; its key is optional. */
+  protected connectionReady(provider: Settings['provider']): boolean {
+    if (provider === 'codex') return false
+    if (provider === 'custom') return Boolean(this.db.appConfig().customBaseUrl)
+    return Boolean(this.credentials.get(provider))
   }
 
   private avatarDirectory(): string {
@@ -1164,7 +1201,7 @@ export class RiotApp {
     this.settingsOverride = { ...base, botId: '' }
     const controller = this.activateRun(run.id, '')
     try {
-      if (this.createProvider) this.provider = this.createProvider(base)
+      if (this.createProvider) this.provider = this.createProvider(base, this.providerConnection())
       const response = await this.gateway.request({
         runId: run.id,
         purpose: 'bot_setup',
@@ -1290,7 +1327,7 @@ export class RiotApp {
     if (this.active || this.db.activeRun(this.executionBotId)) throw new ConfigError('Riot Bot is already working. Stop it before sending another message.')
     const settings = this.db.getSettings(this.viewBotId())
     if (!settings.model.trim()) throw new ConfigError('Enter a model ID in Settings. Riot Bot does not choose one for you.')
-    if (settings.provider !== 'codex' && this.createProvider) this.provider = this.createProvider(settings)
+    if (settings.provider !== 'codex' && this.createProvider) this.provider = this.createProvider(settings, this.providerConnection())
     const conversation = this.db.conversationForBot(this.viewBotId(), conversationId)
     if (!conversation) throw new ConfigError('That conversation is not here.')
     if(trigger==='user_message')body=this.prepareUserMessage(body,conversation.botId)
@@ -3209,6 +3246,8 @@ export class RiotApp {
       explanation: source.explanation,
       openaiConfigured: source.has('openai'),
       openrouterConfigured: source.has('openrouter'),
+      customConfigured: Boolean(this.db.appConfig().customBaseUrl),
+      customKeyConfigured: source.has('custom'),
       tavilyConfigured: Boolean(this.credentials.get('research-tavily')),
       firecrawlConfigured: Boolean(this.credentials.get('research-firecrawl'))
     }

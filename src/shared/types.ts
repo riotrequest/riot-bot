@@ -1,4 +1,4 @@
-export type ProviderId = 'openai' | 'openrouter' | 'codex'
+export type ProviderId = 'openai' | 'openrouter' | 'custom' | 'codex'
 export type ApiProviderId = Exclude<ProviderId, 'codex'>
 
 export interface CodexStatus {
@@ -101,6 +101,10 @@ export type WebResearchMode = 'automatic' | 'browser' | 'connection'
 export interface AppSettings {
   provider: ProviderId
   model: string
+  /** Base URL of the user's OpenAI-compatible endpoint, such as http://localhost:11434/v1. Blank when not set up. */
+  customBaseUrl: string
+  /** Context length the user entered for the custom endpoint. Bots can override it with their own capacity. */
+  customContextTokens: number | null
   maxEstimatedSpendPerDayUsd: number | null
   webResearch: WebResearchMode
   researchDailyCap: number
@@ -406,6 +410,9 @@ export interface CredentialStatus {
   explanation: string
   openaiConfigured: boolean
   openrouterConfigured: boolean
+  /** True when a custom endpoint address is saved. Its API key is optional. */
+  customConfigured: boolean
+  customKeyConfigured: boolean
   tavilyConfigured: boolean
   firecrawlConfigured: boolean
 }

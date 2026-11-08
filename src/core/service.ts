@@ -1,11 +1,12 @@
 import fs from 'fs'
 import path from 'path'
-import type { ApiProviderId, AppEvent, ArtifactView, CodexStatus, CredentialSaveResult, CredentialStatus, DeleteBotResult, JobView, PublicSettings, RunState, Snapshot } from '../shared/types'
+import type { ApiProviderId, AppEvent, AppSettings, ArtifactView, CodexStatus, CredentialSaveResult, CredentialStatus, DeleteBotResult, JobView, PublicSettings, RunState, Snapshot } from '../shared/types'
 import { RiotApp, type RiotAppOptions } from './app'
 import { artifactFile, artifactView, captureArtifacts, workspaceInventory } from './artifacts'
 import { MAX_ATTACHMENTS } from './attachments'
 import type { JobRecord } from './db'
 import { ConfigError } from './errors'
+import { normalizeCustomBaseUrl } from './custom-endpoint'
 import { inside } from './path-safety'
 import { publicErrorMessage } from './redact'
 import { removeBotFiles } from './bot-data'
@@ -325,6 +326,12 @@ export class RiotService extends RiotApp {
     return {snapshot:this.getSnapshot(),cleanupWarning:failed.length ? `The bot was removed, but these app-data paths could not be cleared: ${failed.join(', ')}. The project folder was kept.` : null}
   }
 
+  override updateAppSettings(patch: Partial<AppSettings>): AppSettings {
+    // A new endpoint address is a connection change: jobs bound to the old address must not reach the new one.
+    if (patch.customBaseUrl !== undefined && normalizeCustomBaseUrl(patch.customBaseUrl) !== this.getAppSettings().customBaseUrl) this.connectionChanging('custom')
+    return super.updateAppSettings(patch)
+  }
+
   override setCredential(provider: ApiProviderId, secret: string): CredentialSaveResult {
     this.connectionChanging(provider)
     return super.setCredential(provider,secret)
@@ -496,7 +503,7 @@ export class RiotService extends RiotApp {
   }
 
   private timestamp(): number { return this.options.now?.() ?? Date.now() }
-  private jobBinding(settings: Settings): string { return executionBinding(settings, this.db.gmailRuleFingerprint(settings.botId || '')) }
+  private jobBinding(settings: Settings): string { return executionBinding(settings, this.db.gmailRuleFingerprint(settings.botId || ''), settings.provider === 'custom' ? this.db.appConfig().customBaseUrl ?? '' : null) }
   private recheckQueuedJobBindings(): void {
     let changed = false
     for (const job of this.db.queuedJobs()) {
@@ -511,8 +518,9 @@ export class RiotService extends RiotApp {
   private broadcast(event: AppEvent): void { for (const listener of this.serviceListeners) listener(event) }
 }
 
-function executionBinding(settings: Settings, ruleFingerprint: string): string {
-  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions,settings.gmailAccount,settings.gmailAccess,settings.allowSensitiveFiles,ruleFingerprint])
+function executionBinding(settings: Settings, ruleFingerprint: string, endpoint: string | null): string {
+  // Only custom-endpoint jobs record the address, so bindings of jobs queued before this field existed still match.
+  return JSON.stringify([settings.provider,settings.model,settings.workspacePath,settings.workspaceEditing,settings.toolsEnabled,settings.pinnedInstructions,settings.gmailAccount,settings.gmailAccess,settings.allowSensitiveFiles,ruleFingerprint,...(endpoint === null ? [] : [endpoint])])
 }
 
 function workspacesOverlap(first: string, second: string): boolean {

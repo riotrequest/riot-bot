@@ -6,7 +6,8 @@ import { DEFAULT_SEARCH_TEMPLATE, DUCKDUCKGO_SEARCH_TEMPLATE } from './browser-p
 import { assignBuiltin } from './avatar'
 import { newId } from './ids'
 import { snippetAround, toFtsOrQuery, toFtsQuery } from './search'
-import { DEFAULT_SETTINGS, localDay, sanitizeSettings, type Settings } from './settings'
+import { DEFAULT_SETTINGS, localDay, optionalTokens, sanitizeSettings, type Settings } from './settings'
+import { normalizeCustomBaseUrl } from './custom-endpoint'
 import { openDatabase, type SqlDatabase } from './sqlite'
 import { SCHEDULE_SCHEMA } from './schedules'
 import type { GmailAutonomyRule } from './gmail-autonomy'
@@ -599,6 +600,8 @@ interface AppConfig {
   activeBotId: string
   defaultProvider?: Settings['provider']
   defaultModel?: string
+  customBaseUrl?: string
+  customContextTokens?: number | null
   webResearch: 'automatic' | 'browser' | 'connection'
   researchDailyCap: number
   researchTavily: boolean
@@ -1158,7 +1161,9 @@ export class Database {
         maxEstimatedSpendPerDayUsd: parsed.maxEstimatedSpendPerDayUsd ?? null,
         showToolDetails: Boolean(parsed.showToolDetails),
         activeBotId: typeof parsed.activeBotId === 'string' ? parsed.activeBotId : '',
-        defaultProvider: parsed.defaultProvider === 'codex' ? 'codex' : parsed.defaultProvider === 'openrouter' ? 'openrouter' : parsed.defaultProvider === 'openai' ? 'openai' : undefined,
+        defaultProvider: parsed.defaultProvider === 'codex' || parsed.defaultProvider === 'openrouter' || parsed.defaultProvider === 'openai' || parsed.defaultProvider === 'custom' ? parsed.defaultProvider : undefined,
+        customBaseUrl: storedCustomBaseUrl(parsed.customBaseUrl),
+        customContextTokens: storedContextTokens(parsed.customContextTokens),
         defaultModel: typeof parsed.defaultModel === 'string' ? parsed.defaultModel.replace(/[\r\n]/g, '').trim().slice(0, 200) : undefined,
         webResearch: parsed.webResearch === 'browser' || parsed.webResearch === 'connection' ? parsed.webResearch : 'automatic',
         researchDailyCap: cap,
@@ -2521,4 +2526,13 @@ function mapSchedule(record: Row): ScheduleView {
     lastRunAt: nullableNum(record, 'last_run_at'), lastStatus: text(record, 'last_status'), lastNote: text(record, 'last_note'), lastJobId: record.last_job_id == null ? null : text(record, 'last_job_id'),
     createdAt: num(record, 'created_at'), updatedAt: num(record, 'updated_at')
   }
+}
+
+/** A stored endpoint that no longer passes validation is treated as not set up, never repaired into another address. */
+function storedCustomBaseUrl(value: unknown): string {
+  try { return normalizeCustomBaseUrl(value) } catch { return '' }
+}
+
+function storedContextTokens(value: unknown): number | null {
+  try { return optionalTokens(value) } catch { return null }
 }

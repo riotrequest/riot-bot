@@ -193,15 +193,26 @@ function toolIndex(state: StreamState, item: Record<string, unknown>): number {
   return state.tools.length === 0 ? 0 : state.tools.length - 1
 }
 
-export function createOpenAICompatibleProvider(options: {
-  name: 'openai' | 'openrouter'
-  apiKey: string
-  fetchImpl?: typeof fetch
-  logger?: Logger
-}): ModelProvider {
+export type OpenAICompatibleProviderOptions =
+  | { name: 'openai' | 'openrouter'; apiKey: string; fetchImpl?: typeof fetch; logger?: Logger }
+  /** A user-configured endpoint. `baseUrl` must already be validated; `fetchImpl` should be the guarded endpoint fetch. */
+  | { name: 'custom'; baseUrl: string; apiKey?: string | null; fetchImpl: typeof fetch; logger?: Logger }
+
+export function createOpenAICompatibleProvider(options: OpenAICompatibleProviderOptions): ModelProvider {
   const fetchImpl = options.fetchImpl ?? fetch
   const logger = options.logger ?? silentLogger
-  const url = options.name === 'openai' ? 'https://api.openai.com/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions'
+  const apiKey = options.apiKey ?? ''
+  const secrets = apiKey ? [apiKey] : []
+  const url = options.name === 'custom'
+    ? `${options.baseUrl.replace(/\/+$/, '')}/chat/completions`
+    : options.name === 'openai' ? 'https://api.openai.com/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions'
+  // A custom endpoint's own cost field is not trusted for budgets; Riot estimates from the prices you enter.
+  const trustReportedCost = options.name !== 'custom'
+  const settle = (response: ModelResponse): ModelResponse => {
+    if (trustReportedCost || !response.usage || response.usage.reportedCostUsd === undefined) return response
+    const { reportedCostUsd: _ignored, ...usage } = response.usage
+    return { ...response, usage }
+  }
   return {
     name: options.name,
     async complete(input: ModelCompleteInput): Promise<ModelResponse> {
@@ -228,35 +239,41 @@ export function createOpenAICompatibleProvider(options: {
         response = await fetchImpl(url, {
           method: 'POST',
           signal: input.signal,
-          headers: headers(options.name, options.apiKey),
-          body: JSON.stringify(body)
+          headers: headers(options.name, apiKey),
+          body: JSON.stringify(body),
+          // The guarded custom-endpoint fetch never follows redirects; say so explicitly for that connection.
+          ...(options.name === 'custom' ? { redirect: 'manual' as const } : {})
         })
       } catch (error) {
         if (input.signal.aborted) throw new ProviderError('cancelled', 'Stopped.')
+        if (error instanceof ProviderError) throw new ProviderError(error.kind, redact(error.message, secrets), error.status)
         const message = error instanceof Error ? error.message : 'network error'
-        throw new ProviderError('transient', redact(message, [options.apiKey]))
+        throw new ProviderError('transient', redact(message, secrets))
+      }
+      if (response.status >= 300 && response.status < 400) {
+        await response.body?.cancel().catch(() => undefined)
+        throw new ProviderError('unknown', 'The model server answered with a redirect. Riot Bot does not follow redirects for model requests, so nothing else was sent. Check the endpoint address.', response.status)
       }
       if (!response.ok) {
         const text = await response.text()
-        throw classifyProviderFailure(response.status, redact(text, [options.apiKey]))
+        throw classifyProviderFailure(response.status, redact(text, secrets))
       }
       if (!input.stream) {
         const json = await response.json()
         if (input.signal.aborted) throw new ProviderError('cancelled', 'Stopped.')
         const failure = streamError(json)
-        if (failure) throw new ProviderError('unknown', redact(failure, [options.apiKey]))
-        return responseFromJson(json)
+        if (failure) throw new ProviderError('unknown', redact(failure, secrets))
+        return settle(responseFromJson(json))
       }
-      return readStream(response, input, [options.apiKey])
+      return settle(await readStream(response, input, secrets))
     }
   }
 }
 
-function headers(name: 'openai' | 'openrouter', apiKey: string): Record<string, string> {
-  const result: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json'
-  }
+function headers(name: OpenAICompatibleProviderOptions['name'], apiKey: string): Record<string, string> {
+  const result: Record<string, string> = { 'Content-Type': 'application/json' }
+  // A custom endpoint without a saved key receives no Authorization header at all.
+  if (apiKey || name !== 'custom') result.Authorization = `Bearer ${apiKey}`
   if (name === 'openrouter') {
     result['HTTP-Referer'] = 'http://localhost'
     result['X-Title'] = 'Riot Bot'
