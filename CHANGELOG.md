@@ -14,6 +14,8 @@ Entries describe the app as it was on that date, and later entries can supersede
 - **Uploads and downloads:** a bot can upload a workspace file after you approve that upload, on every website. A download started by the bot’s click or key press is saved into the workspace `Downloads` folder without overwriting anything; other downloads are cancelled.
 - **Browser step limit:** the old fixed limit of 12 browser actions per task is now a per-bot setting, 50 by default, from 5 to 200.
 - **Server logins:** paste a PuTTY, plink or sshpass command with its password and Riot saves the login encrypted for that bot and removes the password from the message before it is stored or sent. The new **run on server** tool runs one approved command at a time through PuTTY’s plink, which alone receives the password. See [saved logins and permissions](docs/security.md#save-a-server-login).
+- **Cleaner chat after saving a login or reply rule:** your message now shows only what you wrote, followed by a short notice such as “Saved your server login for …”. The login ID and instructions for the model no longer appear in your message bubble or the Tasks list; they go to the model only.
+- **Screenshots in longer chats:** a screenshot is no longer left out just because the chat has earlier messages. It is left out only when it would push earlier messages out of the request.
 
 ### November 8, 2026 — Hard-linked files refused
 
