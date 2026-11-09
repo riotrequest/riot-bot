@@ -91,12 +91,14 @@ export function recallMemories(search: MemorySearch, context: RecallContext, lim
     support: evidence.reduce((sum, item) => sum + (matching(index, item.term) ? item.weight * rarity.get(item.term.text)! : 0), 0)
   }))
 
-  // With subject words ("the same setup"), only memories about that subject compete. Without them ("do it again"), any match can.
-  const competing = focus.length ? scored.filter(item => item.anchor > 0) : scored
-  if (!competing.length) return { memories: [], reference: 'missing', ids: [] }
-  competing.sort((a, b) => b.support - a.support || b.anchor - a.anchor)
+  // With subject words ("the same shop setup"), only memories about that subject qualify. Without them ("do it again"), any match can.
+  const subject = focus.length ? scored.filter(item => item.anchor > 0) : scored
+  if (!subject.length) return { memories: [], reference: 'missing', ids: [] }
+  // The user's own words come first: only the memories that fit the latest message best compete, and earlier context only breaks their tie.
+  const best = Math.max(...subject.map(item => item.anchor))
+  const competing = subject.filter(item => item.anchor >= best - 1e-9).sort((a, b) => b.support - a.support)
   const [top, next] = competing
-  const others = scored.filter(item => !competing.includes(item)).sort((a, b) => b.anchor * 3 + b.support - (a.anchor * 3 + a.support))
+  const others = scored.filter(item => !subject.includes(item)).sort((a, b) => b.support - a.support)
   const unpinned = (items: typeof scored): MemoryRecord[] => items.map(item => item.memory).filter(memory => !memory.pinned).slice(0, limit)
 
   if (!next || (top.support > 0 && top.support >= 2 * next.support)) {

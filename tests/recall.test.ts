@@ -93,6 +93,15 @@ describe('memory recall', () => {
     expect(sent.all).not.toContain('OTHER-BOT-PRIVATE-STEPS')
   })
 
+  it('follows the subject the user names over a different one in the recent conversation', async () => {
+    const { app, provider, conversationId, ids } = await seeded({ history: [['user', 'We finished publishing the blog.']] })
+    await app.sendMessage(conversationId, 'Use the same shop setup as last time.')
+    const sent = request(provider.calls.at(-1)?.messages)
+    expect(sent.retrieved).toContain(SHOP)
+    expect(sent.retrieved).not.toContain(BLOG)
+    expect(sent.instructions).toContain(`Memory ${ids.shop} best matches`)
+  })
+
   it('uses the active project when the chat gives no clue', async () => {
     const { app, provider, conversationId, ids } = await seeded({ workspace: 'shop-site' })
     await app.sendMessage(conversationId, 'Deploy it the same way as last time.')
