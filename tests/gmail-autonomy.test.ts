@@ -609,7 +609,7 @@ describe('enforced Gmail reply delegation', () => {
     expect(card).toContain('Turn off')
     expect(card).toContain('Refunds in the original message')
     expect(card).toContain('HTML version')
-    expect(card).toContain('original text Riot could not read')
+    expect(card).toContain('original text Riot Bot could not read')
     expect(REPLY_RULE_LIMITS).toContain('display name or comment')
     expect(REPLY_RULE_LIMITS).toContain('stored separately')
     expect(REPLY_RULE_LIMITS).toContain('every plain-text and HTML version')

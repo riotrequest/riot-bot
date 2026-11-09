@@ -701,7 +701,7 @@ export const TERMINAL_WARNING =
   'A terminal command runs on this computer. The workspace folder does not contain it, and Riot Bot does not sandbox the shell. Every exact command asks for approval. Approving one command does not approve the next one.'
 
 export const SERVER_WARNING =
-  'Riot signs in to this server with the saved password and runs this command there. It can change or delete anything this account can. Every command asks first.'
+  'Riot Bot signs in to this server with the saved password and runs this command there. It can change or delete anything this account can. Every command asks first.'
 
 export const UPLOAD_WARNING =
   'The website receives this file and can keep it. Riot Bot asks before every upload, even on websites you trust.'

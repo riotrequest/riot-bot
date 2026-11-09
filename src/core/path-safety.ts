@@ -52,7 +52,7 @@ export function sensitivePath(requested:string):boolean{
 
 export function requireFileAccess(workspace:string,requested:string,allowSensitive=false):string{
   const full=resolveWorkspacePath(workspace,requested)
-  if(!allowSensitive&&(sensitivePath(requested)||sensitivePath(path.relative(fs.realpathSync(workspace),full))))throw new Error('This file can contain credentials. Enable “Allow project secrets” once in Bot settings → Files & tools if you want its contents shared with this bot’s AI connection. Saved website logins stay in Riot’s encrypted login store.')
+  if(!allowSensitive&&(sensitivePath(requested)||sensitivePath(path.relative(fs.realpathSync(workspace),full))))throw new Error('This file can contain credentials. Enable “Allow project secrets” once in Bot settings → Files & tools if you want its contents shared with this bot’s AI connection. Saved website logins stay in Riot Bot’s encrypted login store.')
   return full
 }
 

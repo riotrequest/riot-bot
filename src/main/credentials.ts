@@ -53,7 +53,7 @@ export class ElectronCredentialStore implements CredentialStore {
     this.session.set(provider, secret)
     return {
       persistent: false,
-      message: 'Saved for this session only. Riot could not update protected storage, so this value will be forgotten when you quit.'
+      message: 'Saved for this session only. Riot Bot could not update protected storage, so this value will be forgotten when you quit.'
     }
   }
 
@@ -104,7 +104,7 @@ export class ElectronCredentialStore implements CredentialStore {
       fs.renameSync(temporary,this.file)
     } catch {
       try { fs.unlinkSync(temporary) } catch { /* Keep the original credential file. */ }
-      throw new Error('The saved credential file could not be updated. Retry after checking access to Riot’s app-data folder.')
+      throw new Error('The saved credential file could not be updated. Retry after checking access to Riot Bot’s app-data folder.')
     }
   }
 }

@@ -22,13 +22,13 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preload" href="/fonts/unbounded.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/style.css?v=1">
-<script src="/app.js?v=2" defer></script>
+<link rel="stylesheet" href="/style.css?v=2">
+<script src="/app.js?v=3" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
-<header class="nav" id="top">
+<header class="nav">
   <div class="wrap nav-in">
     <a class="brand" href="#top" aria-label="Riot Bot home">
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M15 9.5V6.8c0-1.2.6-2.3 1.7-2.9l2.4-1.4" fill="none" stroke="#3B3D42" stroke-width="2.6" stroke-linecap="round"/><circle cx="20.6" cy="2.9" r="2.6" fill="#00E6B6"/><rect x="3" y="9" width="26" height="21" rx="10" fill="#3B3D42"/><rect x="6.5" y="12.2" width="19" height="14.4" rx="6" fill="#0b0c0e"/><path d="M10.4 18.4h4.2a2.1 2.1 0 0 1-4.2 0Zm7 0h4.2a2.1 2.1 0 0 1-4.2 0Z" fill="#00E6B6"/></svg>
@@ -51,7 +51,7 @@
   <div class="hero-glow" aria-hidden="true"></div>
   <div class="wrap hero-in">
     <div class="hero-bot">
-      <button class="bot-btn" id="bot" type="button" aria-label="Riot, the Riot Bot mascot. Tap to change its mood.">
+      <button class="bot-btn" id="bot" type="button" aria-label="The Riot Bot mascot. Tap to change its mood.">
         <svg class="bot" id="botSvg" data-mood="cheeky" viewBox="0 0 340 330" aria-hidden="true" focusable="false">
           <defs>
             <radialGradient id="gHead" cx="38%" cy="26%" r="82%">
@@ -213,46 +213,46 @@
 
 <section class="section" id="moods">
   <div class="wrap">
-    <p class="kicker">Meet Riot</p>
+    <p class="kicker">Meet Riot Bot</p>
     <h2>Every mood means&nbsp;something.</h2>
-    <p class="sub">Riot's face isn't just cute. Each look maps to what your bots are actually doing.</p>
+    <p class="sub">Riot Bot's face isn't just cute. Each look maps to what your bots are actually doing.</p>
   </div>
   <div class="moods" role="list">
     <article class="mood-card" role="listitem">
-      <img src="/img/happy.webp" width="256" height="251" alt="Riot smiling with happy, closed eyes" loading="lazy" decoding="async">
+      <img src="/img/happy.webp" width="256" height="251" alt="Riot Bot smiling with happy, closed eyes" loading="lazy" decoding="async">
       <p class="mood-label">Happy</p>
       <h3>Done. For real.</h3>
       <p>Every message becomes a durable job with a clear result: completed, failed, paused or interrupted. Every file edit gets an Undo.</p>
     </article>
     <article class="mood-card" role="listitem">
-      <img src="/img/thinking.webp" width="250" height="251" alt="Riot thinking, one eyebrow raised" loading="lazy" decoding="async">
+      <img src="/img/thinking.webp" width="250" height="251" alt="Riot Bot thinking, one eyebrow raised" loading="lazy" decoding="async">
       <p class="mood-label">Thinking</p>
       <h3>On it in the background.</h3>
       <p>Queue follow-ups, switch bots, close the window to the tray. Work keeps going, and two bots can run at once.</p>
     </article>
     <article class="mood-card" role="listitem">
-      <img src="/img/focused.webp" width="250" height="251" alt="Riot with determined, focused eyes" loading="lazy" decoding="async">
+      <img src="/img/focused.webp" width="250" height="251" alt="Riot Bot with determined, focused eyes" loading="lazy" decoding="async">
       <p class="mood-label">Focused</p>
       <h3>Clicking so you don't have to.</h3>
       <p>A real, visible browser with its own profile per bot. It reads whole pages, clicks, types, drags and switches tabs. Take over anytime.</p>
     </article>
     <article class="mood-card" role="listitem">
-      <img src="/img/surprised.webp" width="251" height="251" alt="Riot surprised, with wide round eyes" loading="lazy" decoding="async">
+      <img src="/img/surprised.webp" width="251" height="251" alt="Riot Bot surprised, with wide round eyes" loading="lazy" decoding="async">
       <p class="mood-label">Surprised</p>
       <h3>Asks before it acts.</h3>
       <p>New site, terminal command or outgoing email? You get a card. Remember &amp; allow, this task only, or deny. Revoke anytime.</p>
     </article>
     <article class="mood-card" role="listitem">
-      <img src="/img/sleeping.webp" width="253" height="250" alt="Riot asleep with a little Z Z Z" loading="lazy" decoding="async">
+      <img src="/img/sleeping.webp" width="253" height="250" alt="Riot Bot asleep with a little Z Z Z" loading="lazy" decoding="async">
       <p class="mood-label">Sleeping</p>
       <h3>Zero idle model calls.</h3>
-      <p>Riot never calls a model while it's idle, opened or restarted. No mystery charges from a bot that was "just thinking."</p>
+      <p>Riot Bot never calls a model while it's idle, opened or restarted. No mystery charges from a bot that was "just thinking."</p>
     </article>
     <article class="mood-card" role="listitem">
-      <img src="/img/cheeky.webp" width="254" height="251" alt="Riot with a cheeky, smug grin" loading="lazy" decoding="async">
+      <img src="/img/cheeky.webp" width="254" height="251" alt="Riot Bot with a cheeky, smug grin" loading="lazy" decoding="async">
       <p class="mood-label">Cheeky</p>
       <h3>Remembers your logins. Never sees them.</h3>
-      <p>Passwords go into the Windows credential store. The model only ever gets an ID, and Riot fills the password itself on the exact saved site.</p>
+      <p>Passwords go into the Windows credential store. The model only ever gets an ID, and Riot Bot fills the password itself on the exact saved site.</p>
     </article>
   </div>
 </section>
@@ -262,7 +262,7 @@
     <div class="safety-copy reveal">
       <p class="kicker">Safety</p>
       <h2>Permissions live in code. Not in&nbsp;prompts.</h2>
-      <p>Most AI agents are one sneaky web page away from doing something dumb. Riot checks every file, terminal, browser, Gmail and spending decision in the app itself.</p>
+      <p>Most AI agents are one sneaky web page away from doing something dumb. Riot Bot checks every file, terminal, browser, Gmail and spending decision in the app itself.</p>
       <p>Web pages, emails, tool output, even the model's own replies can't approve an action, raise a budget, or unlock another bot's stuff.</p>
       <ul class="checks">
         <li>Files stay in each bot's folder</li>
@@ -341,7 +341,7 @@
       <article class="feat reveal">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 17a8.5 8.5 0 1 1 15 0"/><path d="m12 13 3.5-4"/><circle cx="12" cy="13" r="1.3"/></svg>
         <h3>Limits that hold</h3>
-        <p>Call, time and dollar caps. Riot never quietly switches your model, account or billing.</p>
+        <p>Call, time and dollar caps. Riot Bot never quietly switches your model, account or billing.</p>
       </article>
     </div>
   </div>
@@ -351,7 +351,7 @@
   <div class="wrap">
     <p class="kicker">Models</p>
     <h2>Bring your own&nbsp;brain.</h2>
-    <p class="sub">Use an API key, your ChatGPT account, or a model running on your own PC. Riot never picks or swaps a model for you.</p>
+    <p class="sub">Use an API key, your ChatGPT account, or a model running on your own PC. Riot Bot never picks or swaps a model for you.</p>
     <ul class="chips">
       <li>OpenAI API</li>
       <li>OpenRouter</li>
@@ -387,7 +387,7 @@
 <span class="p">cd</span> riot-bot
 <span class="p">npm</span> ci
 <span class="p">npm</span> run dev</code></pre>
-      <p class="term-note">Riot makes no model call until you send it a message.</p>
+      <p class="term-note">Riot Bot makes no model call until you send it a message.</p>
     </div>
   </div>
 </section>
@@ -402,7 +402,7 @@
     </details>
     <details>
       <summary>Does it phone home?</summary>
-      <p>No. There's no Riot account, server, sync or telemetry. Data only goes to services you choose to use: your model provider, the sites a bot visits, Google for Gmail, and the research service for web search.</p>
+      <p>No. There's no Riot Bot account, server, sync or telemetry. Data only goes to services you choose to use: your model provider, the sites a bot visits, Google for Gmail, and the research service for web search.</p>
     </details>
     <details>
       <summary>Mac or Linux?</summary>
@@ -425,5 +425,6 @@
     <p class="foot-small">© 2026 Riot Bot contributors · <a href="https://github.com/riotrequest/riot-bot/blob/main/LICENSE" rel="noopener">MIT License</a> · <a href="https://github.com/riotrequest/riot-bot" rel="noopener">GitHub</a> · <a href="https://github.com/riotrequest/riot-bot/blob/main/SECURITY.md" rel="noopener">Security</a> · <a href="#top">Back to top ↑</a></p>
   </div>
 </footer>
+<a class="to-top" id="toTop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
 </body>
 </html>

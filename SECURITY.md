@@ -17,4 +17,4 @@ Riot Bot is an early preview (version 0.1.0) with no published releases yet. Sec
 
 The current boundaries, implementation follow-up and remaining limitations are documented in [docs/security-review.md](docs/security-review.md). Saved logins and remembered website permissions are explained in [docs/security.md](docs/security.md). Contributor instructions are in [AGENTS.md](AGENTS.md).
 
-CI checks code, dependency advisories and secrets. Passing these checks is not a guarantee against prompt injection or compromise. The app is a local assistant with access the owner grants, and approved terminal commands and native Codex tools have broader access than Riot's scoped file tools.
+CI checks code, dependency advisories and secrets. Passing these checks is not a guarantee against prompt injection or compromise. The app is a local assistant with access the owner grants, and approved terminal commands and native Codex tools have broader access than Riot Bot's scoped file tools.

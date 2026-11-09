@@ -52,7 +52,7 @@ describe('saved website logins and site authority',()=>{
       expect(service.getSnapshot().settings.trustedSites).toEqual(['https://account.example'])
       expect(service.listMemories()).toHaveLength(0)
       const messages=service.openConversation(service.getSnapshot().current!.conversation.id).messages
-      expect(messages.find(message=>message.role==='user')?.content).not.toContain('Riot saved login')
+      expect(messages.find(message=>message.role==='user')?.content).not.toContain('Riot Bot saved login')
       expect(messages.find(message=>message.role==='notice')?.content).toBe('Saved your login for https://account.example (alice), encrypted on this computer. Manage saved logins in Bot settings → Files & tools.')
     }finally{await service.close()}
   })

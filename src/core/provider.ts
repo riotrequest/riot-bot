@@ -206,7 +206,7 @@ export function createOpenAICompatibleProvider(options: OpenAICompatibleProvider
   const url = options.name === 'custom'
     ? `${options.baseUrl.replace(/\/+$/, '')}/chat/completions`
     : options.name === 'openai' ? 'https://api.openai.com/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions'
-  // A custom endpoint's own cost field is not trusted for budgets; Riot estimates from the prices you enter.
+  // A custom endpoint's own cost field is not trusted for budgets; Riot Bot estimates from the prices you enter.
   const trustReportedCost = options.name !== 'custom'
   const settle = (response: ModelResponse): ModelResponse => {
     if (trustReportedCost || !response.usage || response.usage.reportedCostUsd === undefined) return response

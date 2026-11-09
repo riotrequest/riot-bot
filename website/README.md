@@ -1,6 +1,6 @@
 # Riot Bot website
 
-The source of the project site at **https://bot.riotrequest.com**. It is a static page, dark-only and designed mobile-first, with no build step, no framework and no third-party requests. It is not part of the desktop app: the installer packs only `out/**`, and nothing here is bundled with Riot.
+The source of the project site at **https://bot.riotrequest.com**. It is a static page, dark-only and designed mobile-first, with no build step, no framework and no third-party requests. It is not part of the desktop app: the installer packs only `out/**`, and nothing here is bundled with Riot Bot.
 
 ## Files
 
@@ -8,7 +8,7 @@ The source of the project site at **https://bot.riotrequest.com**. It is a stati
 | --- | --- |
 | `index.html` | The whole page. The hero mascot is an inline SVG, so it stays sharp at any size. |
 | `style.css` | All styles. They start at phone width, with breakpoints at 640px (tablet) and 960px (desktop). |
-| `app.js` | The live mascot (eye tracking, blinking, moods, dozing when idle), scroll reveals, the site-access demo, the copy button and the GitHub switch. |
+| `app.js` | The live mascot (eye tracking, blinking, moods, dozing when idle), scroll reveals, the back-to-top button, the site-access demo, the copy button and the GitHub links. |
 | `img/` | The six mood renders from the mascot concept sheet, as transparent WebP. |
 | `fonts/` | Self-hosted Unbounded (headings) and Inter (body), Latin subset, with their licenses. |
 | `og.png`, `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png` | The social preview image and icons. |
@@ -33,7 +33,7 @@ The repository is public at https://github.com/riotrequest/riot-bot. `index.html
 
 - **Keep scripts and styles in their files.** The server's Content-Security-Policy allows only same-origin `script-src` and `style-src`, so inline `<script>`, `<style>` and `style="…"` attributes in the HTML are blocked. Setting styles from JavaScript is fine.
 - **Bump the version query** on `style.css?v=` and `app.js?v=` in `index.html` whenever either file changes. Browsers cache CSS and JS for a day; the HTML itself is always revalidated.
-- **Keep claims accurate.** Feature copy should match the README and `docs/`. Riot is an early preview, Windows-only, built from source with no signed installer yet.
+- **Keep claims accurate.** Feature copy should match the README and `docs/`. Riot Bot is an early preview, Windows-only, built from source with no signed installer yet.
 - **Respect reduced motion.** Animations switch off under `prefers-reduced-motion`; keep new ones inside that rule.
 
 ## Deploy

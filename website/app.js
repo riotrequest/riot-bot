@@ -10,13 +10,28 @@
   const $ = (selector, scope = document) => scope.querySelector(selector)
   const $$ = (selector, scope = document) => [...scope.querySelectorAll(selector)]
 
-  /* Sticky nav gets a hairline once the page scrolls */
+  /* Sticky nav gets a hairline once the page scrolls; the back-to-top button shows after about a screen */
   const nav = $('.nav')
-  const onScroll = () => nav.classList.toggle('stuck', scrollY > 8)
+  const toTop = $('#toTop')
+  const onScroll = () => {
+    nav.classList.toggle('stuck', scrollY > 8)
+    toTop.classList.toggle('show', scrollY > innerHeight)
+  }
   addEventListener('scroll', onScroll, { passive: true })
   onScroll()
 
-  /* Riot, the live mascot */
+  // "#top" links scroll to the very top without leaving #top in the address,
+  // then move focus to the logo so keyboard users start from the top too.
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[href="#top"]')
+    if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' })
+    $('.brand').focus({ preventScroll: true })
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search)
+  })
+
+  /* Riot Bot, the live mascot */
   const button = $('#bot')
   const svg = $('#botSvg')
   const moodName = $('#moodName')
@@ -51,7 +66,7 @@
     setTimeout(blink, 2400 + Math.random() * 3600)
   }
 
-  // Eyes follow the pointer; on touch screens Riot glances around on its own
+  // Eyes follow the pointer; on touch screens Riot Bot glances around on its own
   let lastPointer = 0
   let frame = 0
   function look (x, y, tilt) {

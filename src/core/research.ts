@@ -331,7 +331,7 @@ function interpret(input: ResearchRunInput, provider: ResearchProvider, response
   try {
     parsed = JSON.parse(response.body)
   } catch {
-    return { kind: 'retry', message: `${providerName(provider)} returned a response Riot could not read.`, retryAfterMs: DEFAULT_COOLDOWN_MS }
+    return { kind: 'retry', message: `${providerName(provider)} returned a response Riot Bot could not read.`, retryAfterMs: DEFAULT_COOLDOWN_MS }
   }
   if (input.kind === 'search') return readSearch(provider, input.query, parsed)
   return readExtract(provider, input.url ?? '', parsed)
@@ -360,7 +360,7 @@ interface SourceHit {
 
 function readSearch(provider: ResearchProvider, query: string, parsed: unknown): AttemptResult {
   const hits = provider === 'tavily' ? tavilyHits(parsed) : firecrawlHits(parsed)
-  if (hits === null) return { kind: 'retry', message: `${providerName(provider)} returned a response Riot could not read.`, retryAfterMs: DEFAULT_COOLDOWN_MS }
+  if (hits === null) return { kind: 'retry', message: `${providerName(provider)} returned a response Riot Bot could not read.`, retryAfterMs: DEFAULT_COOLDOWN_MS }
   const safe = hits.flatMap(normalizeHit).slice(0, RESULT_LIMIT)
   if (safe.length === 0) {
     return {
@@ -422,7 +422,7 @@ interface PageEntry {
 
 function readExtract(provider: ResearchProvider, requested: string, parsed: unknown): AttemptResult {
   const entries = provider === 'tavily' ? tavilyEntries(parsed) : firecrawlEntries(parsed)
-  if (entries === null) return { kind: 'retry', message: `${providerName(provider)} returned a response Riot could not read.`, retryAfterMs: DEFAULT_COOLDOWN_MS }
+  if (entries === null) return { kind: 'retry', message: `${providerName(provider)} returned a response Riot Bot could not read.`, retryAfterMs: DEFAULT_COOLDOWN_MS }
   const accepted: { text: string; note: string }[] = []
   let rejectedAddress = false
   for (const entry of entries) {
@@ -436,7 +436,7 @@ function readExtract(provider: ResearchProvider, requested: string, parsed: unkn
   }
   if (accepted.length === 0) {
     const message = rejectedAddress
-      ? `${providerName(provider)} returned text for an address Riot cannot use. Nothing from that response was kept.`
+      ? `${providerName(provider)} returned text for an address Riot Bot cannot use. Nothing from that response was kept.`
       : `${providerName(provider)} did not return readable page text.`
     return { kind: 'retry', message, retryAfterMs: DEFAULT_COOLDOWN_MS }
   }
@@ -466,11 +466,11 @@ function sourceNote(provider: ResearchProvider, requested: string, entry: PageEn
   const finalUrl = entry.finalUrl === null ? null : normalizeReported(entry.finalUrl)
   const sourceUrl = entry.sourceUrl === null ? null : normalizeReported(entry.sourceUrl)
   if (provider === 'firecrawl') {
-    if (finalUrl) return `Firecrawl reported the final address as ${finalUrl}. Riot did not follow Firecrawl's redirects.`
+    if (finalUrl) return `Firecrawl reported the final address as ${finalUrl}. Riot Bot did not follow Firecrawl's redirects.`
     if (sourceUrl) return `Firecrawl did not report a final address. It reported the requested address as ${sourceUrl}.`
     return `Firecrawl did not report a source or final address. The request asked for ${requested}. That request is not a confirmed source address.`
   }
-  if (finalUrl) return `Tavily reported this text was extracted from ${finalUrl}. Riot did not fetch the service's own redirects.`
+  if (finalUrl) return `Tavily reported this text was extracted from ${finalUrl}. Riot Bot did not fetch the service's own redirects.`
   return `Tavily did not report which URL this text was extracted from. The request asked for ${requested}. That request is not a confirmed source address.`
 }
 

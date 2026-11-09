@@ -112,7 +112,7 @@ export async function runBrowserCli(browsersPath: string,args:string[],onLine: (
     const electron=require('electron') as typeof import('electron')
     // Utility processes keep installation working with the RunAsNode fuse disabled.
     const child=electron.utilityProcess
-      ?electron.utilityProcess.fork(path.join(electron.app.getAppPath(),'out/main/browser-installer.js'),[cli,...args],{env,stdio:'pipe',serviceName:'Riot browser setup'})
+      ?electron.utilityProcess.fork(path.join(electron.app.getAppPath(),'out/main/browser-installer.js'),[cli,...args],{env,stdio:'pipe',serviceName:'Riot Bot browser setup'})
       :!process.versions.electron?spawn(process.execPath,[cli,...args],{env,windowsHide:true}):null
     if(!child){reject(new Error('The secure browser installer is unavailable. Update Riot Bot.'));return}
     const report = (chunk: Buffer): void => {

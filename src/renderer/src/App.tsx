@@ -393,7 +393,7 @@ function Shell({ api }: { api: RiotBridge }) {
           <div className="title-lockup">
             {bot && (screen === 'chat' || menuOpen) && <BotAvatar avatar={bot.avatar} label={bot.name} size={36} />}
             <div>
-              <h1>{menuOpen ? 'Bot settings' : screen === 'chat' ? (viewingEarlier ? detail?.conversation.title : bot?.name) ?? 'Welcome to Riot' : screenTitle(screen)}</h1>
+              <h1>{menuOpen ? 'Bot settings' : screen === 'chat' ? (viewingEarlier ? detail?.conversation.title : bot?.name) ?? 'Welcome to Riot Bot' : screenTitle(screen)}</h1>
               {screen === 'chat' && !menuOpen && settings ? <ModelBadge provider={settings.provider} model={settings.model} models={codex?.models} onClick={() => showScreen('bot-settings')} /> : <p className="status">
                 {menuOpen ? 'A name, a personality, and a space of its own.' : screen === 'chat' ? running ? 'Working on it. You can add your next message.' : queued ? 'Your request is in line. You can add another message.' : configured ? 'Your ongoing conversation. Pick up anywhere.' : 'Let’s get your assistant ready.' : screenDescription(screen)}
               </p>}
@@ -757,7 +757,7 @@ function SavedLogins({api,onError,onSite}:{api:RiotBridge;onError:(message:strin
   async function save():Promise<void>{
     if(busy)return
     setBusy(true);setNote('')
-    try{const saved=await api.saveLogin({url,username,password});setEntries(current=>[...current.filter(item=>item.id!==saved.login.id),saved.login]);onSite(saved.login.origin);setPassword('');setNote(saved.persistent?'Login saved with Windows encryption. Your bot can use it on this website.':'Saved for this session only. Protected storage could not be updated; the password will be forgotten when Riot closes.')}
+    try{const saved=await api.saveLogin({url,username,password});setEntries(current=>[...current.filter(item=>item.id!==saved.login.id),saved.login]);onSite(saved.login.origin);setPassword('');setNote(saved.persistent?'Login saved with Windows encryption. Your bot can use it on this website.':'Saved for this session only. Protected storage could not be updated; the password will be forgotten when Riot Bot closes.')}
     catch(error){onError(messageOf(error))}finally{setBusy(false)}
   }
   async function remove(id:string):Promise<void>{if(busy)return;setBusy(true);try{await api.removeLogin(id);setEntries(current=>current.filter(item=>item.id!==id))}catch(error){onError(messageOf(error))}finally{setBusy(false)}}
@@ -769,7 +769,7 @@ function SavedLogins({api,onError,onSite}:{api:RiotBridge;onError:(message:strin
     <label>Password<input type="password" autoComplete="new-password" value={password} disabled={busy} onChange={event=>setPassword(event.target.value)}/></label>
     <button type="button" disabled={busy||!url||!username||!password} onClick={()=>void save()}>{busy?'Saving…':'Save login'}</button>{note&&<p role="status" className="help">{note}</p>}
   </section>
-  <section className="settings-section"><h3>Saved server logins</h3><p className="help">Paste a PuTTY, plink or sshpass command that includes a password into the chat and Riot saves the login here, encrypted, and removes the password from the message. Your bot can then run commands on that server. Each command asks you first.</p>
+  <section className="settings-section"><h3>Saved server logins</h3><p className="help">Paste a PuTTY, plink or sshpass command that includes a password into the chat and Riot Bot saves the login here, encrypted, and removes the password from the message. Your bot can then run commands on that server. Each command asks you first.</p>
     {servers.map(server=><div className="row" key={server.id}><span><strong>{server.username}@{server.host}</strong><small> · port {server.port}</small></span><button type="button" disabled={busy} onClick={()=>void removeServer(server.id)}>Remove login</button></div>)}
   </section></>
 }
@@ -1020,9 +1020,9 @@ function AppSettingsPane(props: {
             <p className="help">Use a model server on this computer, such as Ollama or LM Studio, or any OpenAI-compatible endpoint at a public https:// address. Plain http:// works only for localhost, 127.0.0.1 and [::1]. Servers elsewhere on your home or office network are not supported yet.</p>
             <label>Endpoint address<input inputMode="url" autoComplete="off" spellCheck={false} value={draft.customBaseUrl} placeholder="http://localhost:11434/v1" onChange={event => update({ customBaseUrl: event.target.value })} /></label>
             <div className="row"><button type="button" onClick={() => update({ customBaseUrl: 'http://localhost:11434/v1' })}>Use Ollama’s address</button><button type="button" onClick={() => update({ customBaseUrl: 'http://localhost:1234/v1' })}>Use LM Studio’s address</button></div>
-            <p className="help">Riot adds /chat/completions to this address. It does not follow redirects and never switches to another connection if this one fails.</p>
+            <p className="help">Riot Bot adds /chat/completions to this address. It does not follow redirects and never switches to another connection if this one fails.</p>
             <label>Context length (tokens)<input type="number" min={1024} step={1} value={draft.customContextTokens ?? ''} placeholder="For example 8192" onChange={event => update({ customContextTokens: event.target.value === '' ? null : Number(event.target.value) })} /></label>
-            <p className="help">Enter the context your server actually runs the model with. Riot fits each request to it; a blank value uses a conservative 32,768-token fallback. A bot can set its own capacity in Bot settings → Advanced.</p>
+            <p className="help">Enter the context your server actually runs the model with. Riot Bot fits each request to it; a blank value uses a conservative 32,768-token fallback. A bot can set its own capacity in Bot settings → Advanced.</p>
             <label>API key (optional)<input type="password" autoComplete="off" spellCheck={false} value={key} placeholder={keySaved ? 'A key is saved. Paste here only to replace it.' : 'Leave blank if your server does not need a key'} onChange={event => { setKey(event.target.value); setNote('') }} /></label>
             <p className="help">{props.credentials.explanation} A saved key is sent only to this endpoint address. Local servers usually need no key.</p>
             {keySaved && <details className="subtle-details"><summary>Manage saved key</summary><p className="help">Removing this key stops sending it to your endpoint. The address stays saved.</p><button type="button" className="danger" onClick={() => { void props.api.clearCredential('custom').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove saved key</button></details>}
@@ -1040,8 +1040,8 @@ function AppSettingsPane(props: {
         <p className="help">Gmail connection and access changes save immediately.</p>
       </> : tab === 'web' ? <>
         <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Search without setting anything up.</h2><p>Ordinary research can run before a browser, account, or key is added. Each bot still needs its own tool and website permission.</p></div>
-        <section className="settings-section"><h3>How Riot searches</h3>
-          <label className="check permission-option"><input type="radio" name="web-research" checked={draft.webResearch === 'automatic'} onChange={() => update({ webResearch: 'automatic' })} /><span><strong>Automatic — free, limited</strong><small>Search queries go to Tavily. If Tavily is unavailable, Riot tries Firecrawl once. When a public page cannot be read directly, its address can be sent to the same service for text. No key is sent, even if one is saved.</small></span></label>
+        <section className="settings-section"><h3>How Riot Bot searches</h3>
+          <label className="check permission-option"><input type="radio" name="web-research" checked={draft.webResearch === 'automatic'} onChange={() => update({ webResearch: 'automatic' })} /><span><strong>Automatic — free, limited</strong><small>Search queries go to Tavily. If Tavily is unavailable, Riot Bot tries Firecrawl once. When a public page cannot be read directly, its address can be sent to the same service for text. No key is sent, even if one is saved.</small></span></label>
           <label className="check permission-option"><input type="radio" name="web-research" checked={draft.webResearch === 'connection'} onChange={() => update({ webResearch: 'connection', researchTavily: draft.researchTavily || !draft.researchFirecrawl })} /><span><strong>Use my own connection</strong><small>Use a saved Tavily or Firecrawl key. Requests count toward that account and toward each bot’s 40-request day. Provider charges are separate from model spending.</small></span></label>
           <label className="check permission-option"><input type="radio" name="web-research" checked={draft.webResearch === 'browser'} onChange={() => update({ webResearch: 'browser' })} /><span><strong>Use the browser</strong><small>Search stays in the bot’s browser. A custom search address in Bot settings is kept and used there. Queries are not sent to Tavily or Firecrawl.</small></span></label>
         </section>
@@ -1063,13 +1063,13 @@ function AppSettingsPane(props: {
             {props.credentials.tavilyConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('tavily').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Tavily key</button>}
             {props.credentials.firecrawlConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('firecrawl').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Firecrawl key</button>}
           </div>}
-        </section> : <p className="help">Each bot can make 40 Tavily and Firecrawl requests a day, including one fallback. The services can also limit free use. A saved key is not sent until you choose Use my own connection.{(props.credentials.tavilyConfigured || props.credentials.firecrawlConfigured) ? '' : ' Riot does not show a signup prompt during chat.'}</p>}
+        </section> : <p className="help">Each bot can make 40 Tavily and Firecrawl requests a day, including one fallback. The services can also limit free use. A saved key is not sent until you choose Use my own connection.{(props.credentials.tavilyConfigured || props.credentials.firecrawlConfigured) ? '' : ' Riot Bot does not show a signup prompt during chat.'}</p>}
         {draft.webResearch !== 'connection' && (props.credentials.tavilyConfigured || props.credentials.firecrawlConfigured) && <details className="subtle-details"><summary>Saved research keys</summary><p className="help">These keys stay unused until you choose Use my own connection.</p><div className="row">
           {props.credentials.tavilyConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('tavily').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Tavily key</button>}
           {props.credentials.firecrawlConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('firecrawl').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Firecrawl key</button>}
         </div></details>}
       </> : <>
-        <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Make Riot work your way.</h2><p>These preferences apply across your bots.</p></div>
+        <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Make Riot Bot work your way.</h2><p>These preferences apply across your bots.</p></div>
         <section className="settings-section"><h3>Conversation display</h3><label className="check permission-option"><input type="checkbox" checked={props.preferences.showToolDetails} onChange={event => void props.api.updatePreferences({ showToolDetails: event.target.checked }).then(props.onPreferences).catch(reason => props.onError(messageOf(reason)))} /><span><strong>Show completed actions in Chat</strong><small>Add expandable action history to every bot’s chat. Off by default. Errors and approval requests still appear. This preference saves immediately.</small></span></label><p className="help">Full action history is always available in Usage & activity.</p></section>
         <section className="settings-section"><h3>App-wide spending ceiling</h3><OptionalMoney label="All bots, per day (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={maxEstimatedSpendPerDayUsd => update({ maxEstimatedSpendPerDayUsd })} /><p className="help">Leave blank to turn this ceiling off. It covers API spending across all bots. Each API bot needs its model’s input and output prices in Bot settings → Limits for spending estimates. Codex account usage is managed separately.</p></section>
       </>}
@@ -1163,11 +1163,11 @@ function SettingsPane(props: {
           <label>Folder location<input value={draft.workspacePath} onChange={event => update({ workspacePath: event.target.value, workspaceEditing: false,allowSensitiveFiles:false })} /></label>
           <div className="row"><button type="button" onClick={() => void props.api.pickWorkspace().then(folder => { if (folder) update({ workspacePath: folder, workspaceEditing: false,allowSensitiveFiles:false }) }).catch(reason => props.onError(messageOf(reason)))}>Choose folder…</button><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}>Open saved folder</button></div>
           <label className="check permission-option"><input type="checkbox" checked={draft.workspaceEditing} onChange={event => update({ workspaceEditing: event.target.checked })} /><span><strong>Allow creating and editing files</strong><small>Enable this only for a folder you want this bot to work in. Changing folders turns this off until you enable it again.</small></span></label>
-          <label className="check permission-option"><input type="checkbox" checked={draft.allowSensitiveFiles} onChange={event=>update({allowSensitiveFiles:event.target.checked})}/><span><strong>Allow project secrets</strong><small>Riot file tools can read and edit credential files such as .env in this working folder. Their contents may be sent to your AI connection. Leave this off for normal work; saved website logins have their own encrypted store.</small></span></label>
+          <label className="check permission-option"><input type="checkbox" checked={draft.allowSensitiveFiles} onChange={event=>update({allowSensitiveFiles:event.target.checked})}/><span><strong>Allow project secrets</strong><small>Riot Bot file tools can read and edit credential files such as .env in this working folder. Their contents may be sent to your AI connection. Leave this off for normal work; saved website logins have their own encrypted store.</small></span></label>
         </section>
         <section className="settings-section"><h3>Help beyond the conversation</h3>
-          <label className="check permission-option"><input type="checkbox" checked={draft.toolsEnabled} onChange={event => update({ toolsEnabled: event.target.checked })} /><span><strong>Allow tools</strong><small>{draft.provider === 'codex' ? 'Use Codex’s shell and web search, plus Riot’s memory and file tools.' : 'Let your bot use available tools to search, work with files, and remember useful details.'}</small></span></label>
-          <div className="callout"><strong>You stay in control</strong><p>{draft.provider === 'codex' ? 'Codex uses its own sandbox and approval rules. Safe reads can run automatically; requests needing approval appear in chat. Native reads can extend beyond this folder, and native edits do not have Riot’s Undo button.' : TERMINAL_WARNING}</p></div>
+          <label className="check permission-option"><input type="checkbox" checked={draft.toolsEnabled} onChange={event => update({ toolsEnabled: event.target.checked })} /><span><strong>Allow tools</strong><small>{draft.provider === 'codex' ? 'Use Codex’s shell and web search, plus Riot Bot’s memory and file tools.' : 'Let your bot use available tools to search, work with files, and remember useful details.'}</small></span></label>
+          <div className="callout"><strong>You stay in control</strong><p>{draft.provider === 'codex' ? 'Codex uses its own sandbox and approval rules. Safe reads can run automatically; requests needing approval appear in chat. Native reads can extend beyond this folder, and native edits do not have Riot Bot’s Undo button.' : TERMINAL_WARNING}</p></div>
         </section>
       </>}
       {tab === 'workspace' && <section className="settings-section"><h3>Connected apps</h3><p className="help">Choose the apps {props.bot.name} can use and manage its access in Workspace → Apps.</p><div className="row"><button type="button" onClick={props.onApps}><Icon name="apps" />Open Apps</button></div></section>}
@@ -1180,10 +1180,10 @@ function SettingsPane(props: {
         <div className="page-intro"><h2>Set a comfortable pace.</h2><p>Limit how long a task can run. You can stop your bot at any time.</p></div>
         <section className="settings-section"><h3>Time per task</h3><NumberField label="Maximum minutes" value={Math.round(draft.maxTaskDurationMs / 60000)} onChange={value => update({ maxTaskDurationMs: value * 60 * 1000 })} /><p className="help">When time runs out, work pauses and partial results are kept.</p></section>
         <section className="settings-section"><h3>Browser steps per task</h3><NumberField label="Most browser steps" value={draft.maxBrowserActionsPerTask} onChange={value => update({ maxBrowserActionsPerTask: value })} /><p className="help">Each page opened, read, clicked or typed into is one step. Long forms and multi-page jobs need more. Between 5 and 200.</p></section>
-        {draft.provider === 'codex' ? <div className="callout"><strong>Uses your ChatGPT account limits</strong><p>Codex manages its own usage and context. Riot’s API dollar and token limits do not apply. The task timer and Stop still work.</p></div> : <section className="settings-section"><h3>Optional spending limits</h3><p className="help">Leave these blank to use time and call limits only. To estimate spending, Riot needs both token prices from your provider.</p>
+        {draft.provider === 'codex' ? <div className="callout"><strong>Uses your ChatGPT account limits</strong><p>Codex manages its own usage and context. Riot Bot’s API dollar and token limits do not apply. The task timer and Stop still work.</p></div> : <section className="settings-section"><h3>Optional spending limits</h3><p className="help">Leave these blank to use time and call limits only. To estimate spending, Riot Bot needs both token prices from your provider.</p>
           <div className="grid"><OptionalMoney label="Per task (USD)" value={draft.maxEstimatedSpendPerTaskUsd} onChange={value => update({ maxEstimatedSpendPerTaskUsd: value })} /><OptionalMoney label="This bot, per day (USD)" value={draft.botSpendPerDayUsd} onChange={value => update({ botSpendPerDayUsd: value })} /></div>
           <p className="help">The app-wide spending ceiling is managed in app Settings. This bot’s limit can make it tighter.</p>
-          <h4>Model prices, per million tokens</h4><div className="grid"><OptionalMoney label="Input price (USD)" value={draft.inputUsdPerMillion} onChange={value => update({ inputUsdPerMillion: value })} /><OptionalMoney label="Output price (USD)" value={draft.outputUsdPerMillion} onChange={value => update({ outputUsdPerMillion: value })} /></div><p className="help">These are estimates. Your provider’s bill may differ.{draft.provider === 'custom' ? ' Riot does not assume a local model is free: with no prices, dollar limits stay blocked. Enter 0 for both prices only if this endpoint really costs nothing.' : ''}</p>
+          <h4>Model prices, per million tokens</h4><div className="grid"><OptionalMoney label="Input price (USD)" value={draft.inputUsdPerMillion} onChange={value => update({ inputUsdPerMillion: value })} /><OptionalMoney label="Output price (USD)" value={draft.outputUsdPerMillion} onChange={value => update({ outputUsdPerMillion: value })} /></div><p className="help">These are estimates. Your provider’s bill may differ.{draft.provider === 'custom' ? ' Riot Bot does not assume a local model is free: with no prices, dollar limits stay blocked. Enter 0 for both prices only if this endpoint really costs nothing.' : ''}</p>
         </section>}
       </>}
       {tab === 'advanced' && <>
@@ -1228,7 +1228,7 @@ function CodexConnection({ api, status, onChange, onError }: { api: RiotBridge; 
       {status?.loginPending && <button type="button" disabled={busy} onClick={() => void action(() => api.cancelCodexLogin())}>Cancel sign-in</button>}
       <button type="button" disabled={busy} onClick={() => void action(() => api.getCodexStatus())}>{busy ? 'Checking…' : 'Refresh connection'}</button>
     </div>
-    <details className="subtle-details"><summary>About this connection</summary><p className="help">Sign-in and status checks do not start an AI task. Your account’s Codex usage limits apply when you send a message. Sign-in is shared by your Riot bots and kept separate from other apps. Listed models can still have account restrictions.</p>{status?.connected && <button type="button" disabled={busy} onClick={() => void action(() => api.disconnectCodex())}>Disconnect Codex</button>}</details>
+    <details className="subtle-details"><summary>About this connection</summary><p className="help">Sign-in and status checks do not start an AI task. Your account’s Codex usage limits apply when you send a message. Sign-in is shared by your Riot Bot bots and kept separate from other apps. Listed models can still have account restrictions.</p>{status?.connected && <button type="button" disabled={busy} onClick={() => void action(() => api.disconnectCodex())}>Disconnect Codex</button>}</details>
   </div>
 }
 
@@ -1725,7 +1725,7 @@ function screenDescription(screen: Screen): string {
   if (screen === 'new-bot') return 'A few details now. A helpful sidekick from here on.'
   if (screen === 'earlier') return 'Pick up a saved conversation from the past.'
   if (screen === 'bot-settings') return 'Model, personality, files, and tools for this bot.'
-  return 'Shared connections, defaults, and preferences for Riot.'
+  return 'Shared connections, defaults, and preferences for Riot Bot.'
 }
 
 function BotMenu(props: {
@@ -1808,7 +1808,7 @@ export function DeleteBotDialog(props: {bot: Bot;onCancel: () => void;onDelete: 
   return <dialog ref={dialog} className="delete-bot-dialog" aria-labelledby="delete-bot-title" onCancel={(event)=>{event.preventDefault();if(!busy)props.onCancel()}}>
     <form onSubmit={(event)=>{event.preventDefault();if(busy)return;setBusy(true);setError('');void props.onDelete(props.bot.name).catch((reason:unknown)=>{setError(messageOf(reason));setBusy(false)})}}>
       <h2 id="delete-bot-title">Delete {props.bot.name}?</h2>
-      <p>This permanently removes this bot’s chats, memories, skills, schedules, queued tasks, saved file copies and browser profile from Riot.</p>
+      <p>This permanently removes this bot’s chats, memories, skills, schedules, queued tasks, saved file copies and browser profile from Riot Bot.</p>
       <p>Your working folder and shared AI connections will be kept. Usage totals and Codex’s managed session history remain.</p>
       {props.bot.workspacePath && <p className="help folder-path">Working folder kept: {props.bot.workspacePath}</p>}
       {error && <p className="delete-error" role="alert">{error}</p>}
