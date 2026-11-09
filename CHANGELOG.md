@@ -6,6 +6,13 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 9, 2026 — Follow-up recall, steady bot voices and a clean quit
+
+- **Follow-ups:** a message such as “use the same setup as last time” or “deploy it like before” is now matched against the bot’s memories using the recent messages, the summary’s objective and the working folder name. When one memory clearly fits, the bot reuses it and says which. When two fit about equally, it asks which you mean instead of guessing. This uses SQLite search only, with no extra model call, and never reads another bot’s memories.
+- **Better memory matching:** retrieved memories no longer need to contain every word of your message, so “What is my tea preference?” finds “Prefers tea after lunch.” Pinned memories and instructions are unchanged.
+- **Bot voices:** each bot has a voice that fits its role (engineer, editor, operator, chief of staff and others, or a practical teammate), shown under **What it helps with** in its profile. It is sent with every API and Codex request, so it survives restarts and summaries. Your extra instructions still win, and a voice cannot grant permissions or change budgets. New bots named by the setup request also get a short voice in their instructions. Changing a Codex bot’s name, purpose or instructions now starts a fresh native thread.
+- **Quit:** quitting no longer logs `database is not open` from `jobs:list` and `app:getSnapshot`. The window now closes before the database, and requests that arrive during shutdown are refused. Queued jobs are still paused, running ones interrupted, and **Restart and install** still starts the installer only after a clean shutdown.
+
 ### November 9, 2026 — Built-in Windows updater
 
 - In official Windows builds, Riot Bot checks GitHub Releases at startup. Open **Settings → Updates** to check again, download a signed update, and choose when to restart and install it.

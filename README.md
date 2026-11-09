@@ -159,7 +159,7 @@ The Electron main process is the trusted side. It owns SQLite (`node:sqlite`), c
 
 Every model call goes through one gateway with a run id. A call starts only from a message you send, a bot-setup request you start by creating a bot without a name, or the provider check you start. Status lines, avatar choices, and browser installation do not call a model. The gateway reserves a conservative cost before the call and settles it afterward, including after a crash. Compaction, retries (at most two transient retries), browser follow-ups, and tool follow-ups share the same task budget. The mock provider is used by tests and is never called on launch.
 
-Each request is built from the bot profile, pinned instructions, pinned memories, the rolling summary, the current task, a few retrieved memories, a short skill catalog, and recent messages that fit the input budget. The full skill text is loaded only when a tool asks for it. Older text stays in SQLite and can be searched, including the messages around a match. There is no embeddings index.
+Each request is built from the bot profile and its voice, pinned instructions, pinned memories, the rolling summary, the current task, a few retrieved memories, a short skill catalog, and recent messages that fit the input budget. A follow-up such as “the same setup as last time” is matched against this bot’s memories using the recent messages and the active project; when two memories fit equally, the bot is told to ask. The full skill text is loaded only when a tool asks for it. Older text stays in SQLite and can be searched, including the messages around a match. There is no embeddings index.
 
 Web fetches resolve the host, refuse the request if any address is local or private, and connect to a resolved address while keeping the original Host header and the normal HTTPS certificate check. A custom model endpoint uses the same checks before every request, except that plain `http://` is allowed for exactly `localhost`, `127.0.0.1`, and `[::1]`; it accepts only its saved origin and path and never follows redirects. Each redirect is checked again. TLS verification is not turned off. The browser’s local proxy does the same kind of check for connections it handles. That does not make the browser isolated from the local network.
 
@@ -182,7 +182,7 @@ Public installers use `npm run dist:win:release`, which requires a Windows publi
 ## Known limitations
 
 - Riot Bot currently runs only on Windows, as a desktop app on your own computer. macOS, Linux and an always-on server are planned, not shipped; see the [roadmap](#roadmap).
-- Recall is summary plus search, not a full replay of every past message. If the saved messages do not establish an answer, the assistant is instructed to say so.
+- Recall is summary plus search, not a full replay of every past message. Memory matching uses words, not meaning: a follow-up whose clues share no words with the saved memory is not resolved. If the saved messages do not establish an answer, the assistant is instructed to say so.
 - A deleted memory or disabled skill leaves later requests, but older messages that mention it remain in the transcript.
 - Dollar figures can differ from the provider bill. A missing price blocks dollar-budget mode; it does not invent a price.
 - An API terminal command is not sandboxed. Approval is per exact command. Codex uses its own sandbox and approval rules; its legacy Windows policy permits broader filesystem reads.

@@ -1605,21 +1605,19 @@ export class Database {
     return rows(this.db.prepare(`SELECT * FROM memories WHERE deleted_at IS NULL AND bot_id = ? ORDER BY pinned DESC, updated_at DESC`).all(botId)).map(mapMemory)
   }
 
+  /** Memories containing every word of the query, as in the Memory screen's search. */
   searchMemories(query: string, limit = 5, botId = this.activeBotId()): MemoryRecord[] {
-    const match = toFtsQuery(query)
+    return this.matchMemories(toFtsQuery(query) ?? '', limit, botId)
+  }
+
+  /** This bot's memories matching an FTS5 expression, best first. The bot filter applies before the limit. */
+  matchMemories(match: string, limit: number, botId = this.activeBotId()): MemoryRecord[] {
     if (!match || !botId) return []
     try {
-      const hits = rows(this.db.prepare(`SELECT memories_fts.memory_id FROM memories_fts
+      return rows(this.db.prepare(`SELECT memories.* FROM memories_fts
         JOIN memories ON memories.id = memories_fts.memory_id
         WHERE memories_fts MATCH ? AND memories.bot_id = ? AND memories.deleted_at IS NULL
-        ORDER BY bm25(memories_fts) LIMIT ?`).all(match, botId, Math.max(limit, 1)))
-      const results: MemoryRecord[] = []
-      for (const hit of hits) {
-        const memory = this.getMemory(text(hit, 'memory_id'), botId)
-        if (memory) results.push(memory)
-        if (results.length >= limit) break
-      }
-      return results
+        ORDER BY bm25(memories_fts) LIMIT ?`).all(match, botId, Math.max(limit, 1))).map(mapMemory)
     } catch {
       return []
     }
