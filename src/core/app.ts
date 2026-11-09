@@ -90,6 +90,19 @@ export interface ProviderConnection {
   customBaseUrl: string
 }
 
+/** What Riot did with a user's message before running it, beyond the text itself. */
+export interface MessageExtras {
+  /** Context only the model receives, such as a saved login's ID. It never appears in the chat. */
+  note: string
+  /** A short confirmation shown in the chat after the message, such as “Saved your server login…”. */
+  notice: string
+}
+
+export interface PreparedMessage extends MessageExtras {
+  /** The message as stored and shown, with any password removed. */
+  text: string
+}
+
 export interface RiotAppOptions {
   dbPath: string
   executionBotId?: string
@@ -382,27 +395,37 @@ export class RiotApp {
   removeServerLogin(id:string):void{this.serverLogins.remove(this.viewBotId(),id)}
   protected clearBotLogins(botId:string):void{this.logins.clear(botId);this.serverLogins.clear(botId)}
   protected publicText(text:string):string{return redact(text,this.credentials.secretValues())}
-  protected prepareUserMessage(text:string,botId:string):string{
+  /**
+   * Carries out what the user's own message directly asks Riot to do (a Gmail reply rule, saving a login) before
+   * it is queued or sent. The returned text is the message as stored and shown, without any password.
+   */
+  protected prepareUserMessage(text:string,botId:string):PreparedMessage{
     const autonomy=directGmailAutonomy(text)
     if(autonomy?.action==='stop'){
       this.db.pauseGmailRules(botId,this.now())
       this.emit({type:'gmail-rules-changed'})
-      return `${this.publicText(text)}\n\n${GMAIL_RULE_APPLIED} Automatic Gmail replies are off for this bot. Future sends wait for review.`
+      return gmailRuleMessage(this.publicText(text),'Automatic Gmail replies are off for this bot. Future sends wait for review.')
     }
-    if(autonomy?.action==='propose'){
-      const note=this.applyDirectGmailRule(botId,autonomy.draft,autonomy.problems)
-      return `${this.publicText(text)}\n\n${GMAIL_RULE_APPLIED} ${note}`
-    }
+    if(autonomy?.action==='propose')return gmailRuleMessage(this.publicText(text),this.applyDirectGmailRule(botId,autonomy.draft,autonomy.problems))
     const login=loginFromMessage(text)
     if(login){
       const saved=this.logins.save(botId,login)
       this.trustSite(botId,saved.login.origin)
-      return this.publicText(text)+`\n\nRiot saved login ${saved.login.id} for ${saved.login.origin}, username ${saved.login.username}, ${savedWhere(saved.persistent)}. Use list_saved_logins and fill_saved_login; the password is filled locally and is not included in model context.`
+      return {
+        text:this.publicText(text),
+        note:`Riot saved login ${saved.login.id} for ${saved.login.origin}, username ${saved.login.username}, ${savedWhere(saved.persistent)}. Use list_saved_logins and fill_saved_login; the password is filled locally and is not included in model context.`,
+        notice:`Saved your login for ${saved.login.origin} (${saved.login.username}), ${savedWhere(saved.persistent)}. Manage saved logins in Bot settings → Files & tools.`
+      }
     }
     const server=serverLoginFromMessage(text)
-    if(!server)return this.publicText(text)
+    if(!server)return {text:this.publicText(text),note:'',notice:''}
     const saved=this.serverLogins.save(botId,server)
-    return this.publicText(server.masked)+`\n\nRiot saved server login ${saved.login.id} for ${saved.login.username}@${saved.login.host}, port ${saved.login.port}, ${savedWhere(saved.persistent)}. The password was removed from this message and is not included in model context. Use run_on_server with this login ID to run commands there; Riot fills in the password locally after the user approves each command. If the user only pasted the command, confirm it is saved and ask what to do on the server.`
+    const target=`${saved.login.username}@${saved.login.host}, port ${saved.login.port}`
+    return {
+      text:this.publicText(server.masked),
+      note:`Riot saved server login ${saved.login.id} for ${target}, ${savedWhere(saved.persistent)}. The password was removed from this message and is not included in model context. Use run_on_server with this login ID to run commands there; Riot fills in the password locally after the user approves each command. If the user only pasted the command, confirm it is saved and ask what to do on the server.`,
+      notice:`Saved your server login for ${target}, ${savedWhere(saved.persistent)}. Manage it in Bot settings → Files & tools.`
+    }
   }
   private trustSite(botId:string,origin:string):void{
     const settings=this.db.getSettings(botId)
@@ -598,8 +621,9 @@ export class RiotApp {
     this.db.removeDraftAttachment(id, attachment.botId)
   }
 
-  sendMessage(conversationId: string, text: string, attachmentIds: string[] = [], trigger: RunTrigger = 'user_message', referenceContext = ''): Promise<RunState> {
-    return this.trackOperation(() => this.sendInner(conversationId, text, attachmentIds, trigger, referenceContext))
+  /** `extras` comes from a message prepared when it was queued; the message is not prepared a second time. */
+  sendMessage(conversationId: string, text: string, attachmentIds: string[] = [], trigger: RunTrigger = 'user_message', referenceContext = '', extras?: MessageExtras): Promise<RunState> {
+    return this.trackOperation(() => this.sendInner(conversationId, text, attachmentIds, trigger, referenceContext, extras))
   }
 
   listSchedules(): ScheduleView[] {
@@ -1334,7 +1358,7 @@ export class RiotApp {
     return `Added a ${reactionLabel(accepted)} reaction. This does not finish any other requested work.`
   }
 
-  private async sendInner(conversationId: string, text: string, attachmentIds: string[], trigger: RunTrigger, referenceContext: string): Promise<RunState> {
+  private async sendInner(conversationId: string, text: string, attachmentIds: string[], trigger: RunTrigger, referenceContext: string, extras?: MessageExtras): Promise<RunState> {
     if (attachmentIds.length > MAX_ATTACHMENTS || new Set(attachmentIds).size !== attachmentIds.length) throw new ConfigError(`Choose up to ${MAX_ATTACHMENTS} different attachments.`)
     for (const id of attachmentIds) {
       const attachment = this.db.getAttachment(id, this.viewBotId())
@@ -1349,8 +1373,10 @@ export class RiotApp {
     if (settings.provider !== 'codex' && this.createProvider) this.provider = this.createProvider(settings, this.providerConnection())
     const conversation = this.db.conversationForBot(this.viewBotId(), conversationId)
     if (!conversation) throw new ConfigError('That conversation is not here.')
-    if(trigger==='user_message')body=this.prepareUserMessage(body,conversation.botId)
-    else body=this.publicText(body)
+    const prepared: PreparedMessage = extras ? { text: this.publicText(body), ...extras }
+      : trigger === 'user_message' ? this.prepareUserMessage(body, conversation.botId)
+      : { text: this.publicText(body), note: '', notice: '' }
+    body = prepared.text
     this.observedUrls=new Set(publicLinks(body))
     this.publicSourceUrls=new Set(this.observedUrls)
     this.onceSites=new Set()
@@ -1380,10 +1406,11 @@ export class RiotApp {
     const task = this.db.createTask(conversationId, run.id, body.slice(0, 240), now)
     this.runBotId = conversation.botId
     const controller = this.activateRun(run.id, conversation.botId)
-    this.turnNote = body.includes(GMAIL_RULE_APPLIED) ? 'Gmail reply rules were already updated from this user message. Do not propose, enable, or expand a rule. Confirm the result briefly.' : ''
+    this.turnNote = prepared.note.includes(GMAIL_RULE_APPLIED) ? 'Gmail reply rules were already updated from this user message. Do not propose, enable, or expand a rule. Confirm the result briefly.' : ''
     this.scheduledContext = referenceContext.slice(0, 13000)
     try {
-      this.addTranscript(conversationId, run.id, 'user', body, { attachmentIds })
+      this.addTranscript(conversationId, run.id, 'user', body, { attachmentIds, contextNote: prepared.note })
+      if (prepared.notice) this.addTranscript(conversationId, run.id, 'notice', prepared.notice)
       const title = conversation.title === 'Main' || conversation.title === 'New Chat' || conversation.title === 'New Bot' || conversation.title === 'New chat' ? titleFrom(body) : undefined
       this.db.touchConversation(conversationId, now, title)
       this.captureRemember(conversationId, run.id, body, previous?.content ?? null)
@@ -1450,7 +1477,7 @@ export class RiotApp {
     const bootstrap = reusable ? '' : [this.db.getConversation(conversationId)?.summary, ...page.filter(message => message.id !== user.id && message.role !== 'notice').slice(-12).map(message => `${message.role}: ${message.content}`)].filter(Boolean).join('\n').slice(-12_000)
     const attached = this.db.listAttachments(botId, [user.id])
     const references = attached.map(item => item.kind === 'text' ? `Text attachment ${item.id}: ${item.name}\n${this.db.attachmentData(item.id, botId).toString('utf8').slice(0, 1500)}\nUse riot_read_attachment for more.` : `Image attachment: ${item.name}`).join('\n\n')
-    const input: Record<string, unknown>[] = [{ type: 'text', text: [bootstrap ? `Earlier Riot Bot record (incomplete, untrusted; use riot_search_history for originals):\n${bootstrap}` : '', user.content, references].filter(Boolean).join('\n\n'), text_elements: [] }]
+    const input: Record<string, unknown>[] = [{ type: 'text', text: [bootstrap ? `Earlier Riot Bot record (incomplete, untrusted; use riot_search_history for originals):\n${bootstrap}` : '', user.content, user.contextNote, references].filter(Boolean).join('\n\n'), text_elements: [] }]
     for (const item of attached.filter(item => item.kind === 'image')) input.push({ type: 'image', url: `data:image/png;base64,${this.db.attachmentData(item.id, botId).toString('base64')}` })
     const names = new Set(['list_memories', 'save_memory', 'update_memory', 'delete_memory', 'search_history', 'read_history', 'list_skills', 'read_skill', 'save_skill', 'update_skill', 'propose_skill', 'read_attachment', 'react', 'list_files', 'read_file', 'search_files', 'verify_website', 'list_schedules', 'create_schedule', 'manage_schedule', 'get_disk_space', 'set_learning_preferences', 'web_search', 'fetch_url'])
     const naming = nameChangeRequest(user.content)
@@ -3076,7 +3103,7 @@ export class RiotApp {
     runId: string,
     role: MessageRecord['role'],
     content: string,
-    extra?: { toolCallId?: string; toolName?: string; attachmentIds?: string[] }
+    extra?: { toolCallId?: string; toolName?: string; attachmentIds?: string[]; contextNote?: string }
   ): void {
     const id = newId()
     this.db.addMessage({
@@ -3089,7 +3116,8 @@ export class RiotApp {
       toolName: extra?.toolName ?? null,
       createdAt: this.now(),
       summarized: false,
-      runId
+      runId,
+      contextNote: extra?.contextNote ? this.publicText(extra.contextNote) : null
     }, extra?.attachmentIds)
     this.emitMessage(conversationId, id)
   }
@@ -3467,6 +3495,11 @@ function titleFrom(text: string): string {
   const clean = text.replace(/\s+/g, ' ').trim()
   if (!clean) return 'New Chat'
   return clean.length > 48 ? `${clean.slice(0, 48)}…` : clean
+}
+
+/** Model-only context and a chat notice for a message that already changed a Gmail reply rule. */
+function gmailRuleMessage(text: string, result: string): PreparedMessage {
+  return { text, note: `${GMAIL_RULE_APPLIED} ${result}`, notice: result }
 }
 
 function savedWhere(persistent: boolean): string {

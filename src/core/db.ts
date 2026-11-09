@@ -84,6 +84,10 @@ export interface JobRecord extends JobView {
   attachmentIds: string[]
   binding: string
   resume: boolean
+  /** Model-only context prepared with the message when it was queued. */
+  contextNote: string
+  /** A short confirmation shown in the chat after the message, such as a saved login. */
+  notice: string
 }
 
 export interface ArtifactRecord extends ArtifactView {
@@ -182,6 +186,8 @@ export interface MessageRecord {
   summarized: boolean
   runId: string | null
   attachments?: MessageAttachment[]
+  /** Context Riot adds to a user message for the model only, such as a saved login's ID. Never shown in the chat. */
+  contextNote?: string | null
 }
 
 export interface AttachmentRecord extends AttachmentView {
@@ -630,6 +636,7 @@ export class Database {
       this.db.exec(GMAIL_AUTONOMY_SCHEMA)
       this.db.exec('PRAGMA user_version = 14')
       this.ensureModelCatalog()
+      this.ensureContextNotes()
       return
     }
     if (version < 2) {
@@ -721,6 +728,14 @@ export class Database {
       this.ensureResearchUsage()
       this.db.exec('PRAGMA user_version = 15')
     })
+    this.ensureContextNotes()
+  }
+
+  /** Model-only context beside a user message and its queued job. Runs after every step, so it also reaches tables created late. */
+  private ensureContextNotes(): void {
+    this.addColumn('messages', 'context_note', 'TEXT')
+    this.addColumn('jobs', 'context_note', `TEXT NOT NULL DEFAULT ''`)
+    this.addColumn('jobs', 'notice', `TEXT NOT NULL DEFAULT ''`)
   }
 
   recoverGmailSends(now: number): void {
@@ -908,9 +923,9 @@ export class Database {
     return Boolean(this.db.prepare(`SELECT 1 FROM jobs, json_each(jobs.attachment_ids_json) WHERE json_each.value = ? AND jobs.status IN ('queued','running','paused','interrupted') LIMIT 1`).get(id))
   }
 
-  createJob(input: { botId: string; conversationId: string; text: string; attachmentIds: string[]; binding: string; now: number }): JobRecord {
+  createJob(input: { botId: string; conversationId: string; text: string; attachmentIds: string[]; binding: string; now: number; contextNote?: string; notice?: string }): JobRecord {
     const id = newId()
-    this.db.prepare(`INSERT INTO jobs (id,bot_id,conversation_id,text,attachment_ids_json,binding,created_at) VALUES (?,?,?,?,?,?,?)`).run(id,input.botId,input.conversationId,input.text,JSON.stringify(input.attachmentIds),input.binding,input.now)
+    this.db.prepare(`INSERT INTO jobs (id,bot_id,conversation_id,text,attachment_ids_json,binding,created_at,context_note,notice) VALUES (?,?,?,?,?,?,?,?,?)`).run(id,input.botId,input.conversationId,input.text,JSON.stringify(input.attachmentIds),input.binding,input.now,input.contextNote ?? '',input.notice ?? '')
     return this.getJob(id)!
   }
 
@@ -1405,8 +1420,8 @@ export class Database {
     this.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO messages (id, conversation_id, role, content, tool_calls_json, tool_call_id, tool_name, created_at, summarized, run_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO messages (id, conversation_id, role, content, tool_calls_json, tool_call_id, tool_name, created_at, summarized, run_id, context_note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           message.id,
@@ -1418,7 +1433,8 @@ export class Database {
           message.toolName,
           message.createdAt,
           message.summarized ? 1 : 0,
-          message.runId
+          message.runId,
+          message.contextNote ?? null
         )
       if (attachmentIds.length) {
         const conversation = this.getConversation(message.conversationId)
@@ -2278,7 +2294,8 @@ function mapMessage(record: Row): MessageRecord {
     toolName: record.tool_name == null ? null : text(record, 'tool_name'),
     createdAt: num(record, 'created_at'),
     summarized: bool(record, 'summarized'),
-    runId: record.run_id == null ? null : text(record, 'run_id')
+    runId: record.run_id == null ? null : text(record, 'run_id'),
+    contextNote: record.context_note == null ? null : text(record, 'context_note')
   }
 }
 
@@ -2380,7 +2397,8 @@ function mapJob(record: Row): JobRecord {
     text:text(record,'text'),attachmentIds,attachmentCount:attachmentIds.length,binding:text(record,'binding'),
     status:text(record,'status') as JobRecord['status'],runId:record.run_id == null ? null : text(record,'run_id'),
     createdAt:num(record,'created_at'),startedAt:nullableNum(record,'started_at'),endedAt:nullableNum(record,'ended_at'),
-    note:text(record,'note'),attempt:num(record,'attempt'),resume:bool(record,'resume'),awaitingApproval:bool(record,'awaiting_approval')
+    note:text(record,'note'),attempt:num(record,'attempt'),resume:bool(record,'resume'),awaitingApproval:bool(record,'awaiting_approval'),
+    contextNote:record.context_note == null ? '' : text(record,'context_note'),notice:record.notice == null ? '' : text(record,'notice')
   }
 }
 

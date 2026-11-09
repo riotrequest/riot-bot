@@ -75,9 +75,12 @@ describe('saving a server login from chat', () => {
     provider.handler = () => ({ content: 'Saved. What should I run there?', toolCalls: [] })
     expect((await app.sendMessage(conversationId, PUTTY)).status).toBe('completed')
 
-    const user = app.openConversation(conversationId).messages.find((message) => message.role === 'user')!
-    expect(user.content).toContain('root@192.168.10.20 -pw [saved password]')
-    expect(user.content).toMatch(/Riot saved server login [0-9a-f-]{36} for root@192\.168\.10\.20, port 22, encrypted on this computer/)
+    const messages = app.openConversation(conversationId).messages
+    const user = messages.find((message) => message.role === 'user')!
+    // The chat shows what the user wrote and a short notice. The login ID and instructions go to the model only.
+    expect(user.content).toBe('"C:\\Program Files\\PuTTY\\putty.exe" root@192.168.10.20 -pw [saved password]')
+    expect(messages.find((message) => message.role === 'notice')?.content).toBe('Saved your server login for root@192.168.10.20, port 22, encrypted on this computer. Manage it in Bot settings → Files & tools.')
+    expect(provider.calls[0].messages.at(-1)!.content).toMatch(/\[saved password\]\n\nRiot saved server login [0-9a-f-]{36} for root@192\.168\.10\.20, port 22, encrypted on this computer/)
     expect(JSON.stringify(provider.calls)).not.toContain(PASSWORD)
     expect(JSON.stringify(app.getSnapshot())).not.toContain(PASSWORD)
     const [login] = app.getSnapshot().savedServerLogins!
@@ -106,9 +109,15 @@ describe('saving a server login from chat', () => {
       app.updateSettings({ autoMemory: false, autoSkillSuggestions: false })
       provider.handler = () => ({ content: 'Saved.', toolCalls: [] })
       const job = app.queueMessage(conversation.id, PUTTY)
-      expect(job.text).toContain('-pw [saved password]')
+      expect(job.text).toBe('"C:\\Program Files\\PuTTY\\putty.exe" root@192.168.10.20 -pw [saved password]')
       expect(JSON.stringify(app.listJobs())).not.toContain(PASSWORD)
+      expect(JSON.stringify(app.listJobs())).not.toContain('Riot saved server login')
       await waitFor(() => app.listJobs().every((item) => item.status !== 'queued' && item.status !== 'running'))
+      // The note prepared at queue time still reaches the model when the job runs, and the notice is in the chat.
+      expect(provider.calls.find((call) => call.tools?.length)!.messages.at(-1)!.content).toMatch(/Riot saved server login [0-9a-f-]{36} for root@/)
+      const messages = app.openConversation(conversation.id).messages
+      expect(messages.find((message) => message.role === 'user')?.content).not.toContain('Riot saved')
+      expect(messages.some((message) => message.role === 'notice' && message.content.startsWith('Saved your server login for root@192.168.10.20'))).toBe(true)
       expect(credentials.get(`server-logins:${bot.id}`)).toContain(PASSWORD)
       await app.deleteBot(bot.id, bot.name)
       expect(credentials.get(`server-logins:${bot.id}`)).toBeNull()
