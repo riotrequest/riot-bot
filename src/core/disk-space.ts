@@ -11,10 +11,15 @@ const STOPPED='Stopped. Disk space was not read.'
 let volumes: {at:number;roots:Promise<string[]>}|null=null
 async function localWindowsVolumes():Promise<string[]>{
   if(volumes&&Date.now()-volumes.at<10_000)return volumes.roots
+  // Language constructs only: a cmdlet such as ConvertTo-Json makes a cold PowerShell search every installed module first.
   const roots=promisify(execFile)(path.join(process.env.SystemRoot??'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe'),[
-    '-NoProfile','-NonInteractive','-Command',
-    '[IO.DriveInfo]::GetDrives() | Where-Object { [int]$_.DriveType -in @(2,3,5,6) } | ForEach-Object { $_.Name } | ConvertTo-Json -Compress'
-  ],{windowsHide:true,timeout:DRIVE_LOOKUP_TIMEOUT_MS,maxBuffer:10000}).then(({stdout})=>{const result=JSON.parse(stdout);return (Array.isArray(result)?result:[result]).map((root:string)=>root.toUpperCase())}).catch(()=>{volumes=null;throw new ConfigError('Windows could not identify local drives. No filesystem query was sent to that location.')})
+    '-NoLogo','-NoProfile','-NonInteractive','-Command',
+    'foreach($drive in [IO.DriveInfo]::GetDrives()){if([int]$drive.DriveType -in 2,3,5,6){$drive.Name}}'
+  ],{windowsHide:true,timeout:DRIVE_LOOKUP_TIMEOUT_MS,maxBuffer:10000}).then(({stdout})=>{
+    const roots=stdout.split(/\r?\n/).map(line=>line.trim()).filter(Boolean)
+    if(!roots.every(root=>/^[A-Za-z]:\\$/.test(root)))throw new Error('Unexpected drive list.')
+    return roots.map(root=>root.toUpperCase())
+  }).catch(()=>{volumes=null;throw new ConfigError('Windows could not identify local drives. No filesystem query was sent to that location.')})
   volumes={at:Date.now(),roots}
   return roots
 }
