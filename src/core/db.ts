@@ -1417,36 +1417,45 @@ export class Database {
   }
 
   addMessage(message: MessageRecord, attachmentIds: string[] = []): void {
+    this.transaction(() => this.insertMessage(message, attachmentIds))
+  }
+
+  /** Adds messages without attachments in one transaction. */
+  addMessages(messages: MessageRecord[]): void {
     this.transaction(() => {
-      this.db
-        .prepare(
-          `INSERT INTO messages (id, conversation_id, role, content, tool_calls_json, tool_call_id, tool_name, created_at, summarized, run_id, context_note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          message.id,
-          message.conversationId,
-          message.role,
-          message.content,
-          message.toolCallsJson,
-          message.toolCallId,
-          message.toolName,
-          message.createdAt,
-          message.summarized ? 1 : 0,
-          message.runId,
-          message.contextNote ?? null
-        )
-      if (attachmentIds.length) {
-        const conversation = this.getConversation(message.conversationId)
-        if (!conversation) throw new Error('That conversation is not here.')
-        this.attachToMessage(attachmentIds, message.id, conversation.botId)
-      }
-      if (message.role !== 'notice' && message.content.trim()) {
-        this.db
-          .prepare(`INSERT INTO messages_fts (message_id, conversation_id, content) VALUES (?, ?, ?)`)
-          .run(message.id, message.conversationId, message.content)
-      }
+      for (const message of messages) this.insertMessage(message, [])
     })
+  }
+
+  private insertMessage(message: MessageRecord, attachmentIds: string[]): void {
+    this.db
+      .prepare(
+        `INSERT INTO messages (id, conversation_id, role, content, tool_calls_json, tool_call_id, tool_name, created_at, summarized, run_id, context_note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        message.id,
+        message.conversationId,
+        message.role,
+        message.content,
+        message.toolCallsJson,
+        message.toolCallId,
+        message.toolName,
+        message.createdAt,
+        message.summarized ? 1 : 0,
+        message.runId,
+        message.contextNote ?? null
+      )
+    if (attachmentIds.length) {
+      const conversation = this.getConversation(message.conversationId)
+      if (!conversation) throw new Error('That conversation is not here.')
+      this.attachToMessage(attachmentIds, message.id, conversation.botId)
+    }
+    if (message.role !== 'notice' && message.content.trim()) {
+      this.db
+        .prepare(`INSERT INTO messages_fts (message_id, conversation_id, content) VALUES (?, ?, ?)`)
+        .run(message.id, message.conversationId, message.content)
+    }
   }
 
   updateMessageContent(id: string, content: string, toolCallsJson: string | null): void {

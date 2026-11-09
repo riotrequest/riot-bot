@@ -1,10 +1,12 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { getDiskSpace,localDiskPath } from '../src/core/disk-space'
+import { DRIVE_LOOKUP_TIMEOUT_MS,getDiskSpace,localDiskPath } from '../src/core/disk-space'
+import { StopError } from '../src/core/errors'
 import { FakeTerminal, makeApp, tempDir } from './helpers'
 
-describe('built-in disk-space check', () => {
+// Most of these run the real Windows drive lookup, which allows a cold PowerShell start its full time.
+describe('built-in disk-space check', { timeout: DRIVE_LOOKUP_TIMEOUT_MS + 10_000 }, () => {
   it('rejects UNC, device paths, mapped drives and remote link targets before statfs',async()=>{
     const statfs=vi.spyOn(fs,'statfs')
     try{
@@ -37,6 +39,23 @@ describe('built-in disk-space check', () => {
       stat.mockResolvedValue({ bsize: 0, blocks: 0, bfree: 0, bavail: 0 } as never)
       await expect(getDiskSpace(tempDir())).rejects.toThrow('did not return reliable disk-space values')
     } finally { stat.mockRestore() }
+  })
+
+  it('stops waiting for a slow drive lookup when the run is stopped, and starts none once stopped', async () => {
+    const statfs = vi.spyOn(fs, 'statfs')
+    try {
+      let lookups = 0
+      const slow = () => { lookups++; return new Promise<string[]>(() => {}) }
+      const controller = new AbortController()
+      const pending = getDiskSpace(tempDir(), controller.signal, slow)
+      setTimeout(() => controller.abort(), 50)
+      const started = Date.now()
+      await expect(pending).rejects.toBeInstanceOf(StopError)
+      expect(Date.now() - started).toBeLessThan(2000)
+      await expect(getDiskSpace(tempDir(), controller.signal, slow)).rejects.toThrow('Stopped. Disk space was not read.')
+      expect(lookups).toBe(1)
+      expect(statfs).not.toHaveBeenCalled()
+    } finally { statfs.mockRestore() }
   })
 
   it('reports a missing or unavailable location clearly', async () => {

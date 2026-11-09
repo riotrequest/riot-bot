@@ -3,6 +3,7 @@ import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexService, type CodexTurnInput } from '../src/core/codex'
 import { Database } from '../src/core/db'
+import { DRIVE_LOOKUP_TIMEOUT_MS } from '../src/core/disk-space'
 import { RESEARCH_ATTEMPT_LIMIT } from '../src/core/research'
 import { redact } from '../src/core/redact'
 import { localDay } from '../src/core/settings'
@@ -88,7 +89,7 @@ describe('native Codex connection', () => {
     expect(app.openConversation(id).messages.filter(message => message.toolError)).toHaveLength(1)
     expect(approvals).toBe(0)
     expect(provider.calls).toHaveLength(0)
-  })
+  }, DRIVE_LOOKUP_TIMEOUT_MS + 10_000) // runs the real Windows drive lookup
 
   it('exposes built-in schedules and carries scheduled context without allowing recursive schedules', async () => {
     const { app, id, requests, provider } = nativeApp({ scenario: 'schedule', schedule: { kind: 'reminder', title: 'Fixture reminder', instructions: 'Review the fixture.', start_at: new Date(Date.now() + 86400000).toISOString(), repeat: 'once', timezone: 'UTC' } })
@@ -307,7 +308,7 @@ describe('native Codex connection', () => {
       expect(test.provider.calls).toHaveLength(0)
       expect(test.app.getUsage().unsettledUsd).toBe(0)
     }
-  }, 10_000)
+  }, 30_000) // Stop waits 2.5s for the turn and close up to 3s more, plus four fixture servers starting
 
   it('redacts OAuth token fields before persistence or error display', () => {
     expect(redact('{"access_token":"test-access","refresh_token":"test-refresh","id_token":"test-id"}')).not.toMatch(/test-(access|refresh|id)/)

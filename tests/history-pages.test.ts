@@ -13,11 +13,9 @@ describe('paged conversation history', () => {
     db.finishRun(failed.id, 'failed', 11, 'fixture failure')
     const completed = db.createRun(conversationId, 12)
     db.finishRun(completed.id, 'completed', 13, '')
-    for (let index = 0; index < 2081; index++) {
-      const id = newId()
-      ids.push(id)
-      db.addMessage(message(id, conversationId, index < 100 ? failed.id : completed.id, `Saved message ${index}`))
-    }
+    for (let index = 0; index < 2081; index++) ids.push(newId())
+    // One commit for the whole fixture: a commit per row takes most of 30 seconds on CI disks.
+    db.addMessages(ids.map((id, index) => message(id, conversationId, index < 100 ? failed.id : completed.id, `Saved message ${index}`)))
     const first = app.openConversation(conversationId)
     expect(first.messages).toHaveLength(80)
     expect(first.messages.map((item) => item.id)).toEqual(ids.slice(-80))

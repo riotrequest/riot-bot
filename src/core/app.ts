@@ -2197,7 +2197,7 @@ export class RiotApp {
         case 'rename_bot':
           return this.renameFromChat(conversationId, runId, str(args.name))
         case 'get_disk_space':
-          return JSON.stringify(await getDiskSpace(str(args.path) || settings.workspacePath || os.homedir()), null, 2)
+          return JSON.stringify(await getDiskSpace(str(args.path) || settings.workspacePath || os.homedir(), signal), null, 2)
         case 'list_schedules':
           return this.listSchedules().map(scheduleText).join('\n\n') || 'No reminders or scheduled tasks for this bot.'
         case 'create_schedule': {
