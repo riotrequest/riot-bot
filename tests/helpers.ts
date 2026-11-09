@@ -62,7 +62,8 @@ export function reopen(dbPath: string, provider = new MockProvider()) {
   return { app, provider, credentials, logger }
 }
 
-export async function waitFor(check: () => boolean, timeoutMs = 4000): Promise<void> {
+// GitHub's Windows runner is about eight times slower than a desktop PC (see vitest.config.ts).
+export async function waitFor(check: () => boolean, timeoutMs = process.env.CI ? 30_000 : 4000): Promise<void> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     if (check()) return
