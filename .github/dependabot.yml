@@ -5,6 +5,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # electron-vite and the React plugin declare which vite versions they support, so these move together.
+      vite:
+        patterns:
+          - "vite"
+          - "electron-vite"
+          - "@vitejs/*"
+    ignore:
+      # Node type definitions follow the oldest Node release in package.json engines, not the newest one.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
