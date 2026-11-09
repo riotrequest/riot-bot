@@ -6,6 +6,10 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 8, 2026 — MIT License
+
+- Riot Bot is now released under the [MIT License](LICENSE). Contributions are accepted under the same terms.
+
 ### November 8, 2026 — Fuller browser control and saved server logins
 
 - **Page snapshots:** a snapshot now covers the whole page instead of the first 40 elements, lists on-screen elements first, reaches into frames and open shadow DOM, shows element states and current values, and accepts a search word. Secret fields show only whether they are filled. An element in a frame from another site needs that site’s access.

@@ -249,5 +249,4 @@ Please don't report vulnerabilities in public issues. [SECURITY.md](SECURITY.md)
 
 ## License
 
-<!-- TODO(owner): choose a license, add a LICENSE file, and replace this section. -->
-> **TODO (owner):** no license has been chosen yet, and the repository has no LICENSE file. Until the owner adds one, no open-source license is granted.
+Riot Bot is released under the [MIT License](LICENSE). You can use, change and share it, including commercially, as long as you keep the copyright and license notice.

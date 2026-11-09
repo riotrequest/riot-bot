@@ -149,5 +149,5 @@ The original delivered `security-probes.cjs` / results describe the pre-fix defe
 
 1. Preserve these negative regression tests and [AGENTS.md](../AGENTS.md) as features are added. Document each new tool's data sources, destinations, permission checks, ownership, side effects, cancellation and retry behavior.
 2. Keep the remaining native-read and private-data-sharing limitations visible; do not market per-bot confidentiality under the current native runtime.
-3. Before public distribution, choose a license, enable and test private vulnerability reporting, configure the owner's signing identity, and rebuild from the exact reviewed release commit. Validate signatures, fresh install/uninstall and artifact tampering on that release. Existing installers in `release/` predate this work.
+3. Before public distribution, enable and test private vulnerability reporting, configure the owner's signing identity, and rebuild from the exact reviewed release commit. Validate signatures, fresh install/uninstall and artifact tampering on that release. Existing installers in `release/` predate this work. The owner chose the MIT License on November 8, 2026.
 4. Recheck the 15 moderate packaging advisories when a compatible upstream fix is published. Keep dependency/scanner pins and the embedded browser runtime current.
