@@ -76,7 +76,7 @@ export class RiotService extends RiotApp {
             if (record.nextRunAt !== item.nextRunAt || record.state !== 'active') return
             this.advanceSchedule(record, now)
             record.lastRunAt = item.nextRunAt
-            record.lastStatus = 'missed'; record.lastNote = 'Missed while Riot was closed or this computer was asleep. Choose Run now to catch up.'
+            record.lastStatus = 'missed'; record.lastNote = 'Missed while Riot Bot was closed or this computer was asleep. Choose Run now to catch up.'
             if (record.repeat === 'once') record.state = 'paused'
             this.db.saveSchedule(record)
           })

@@ -18,9 +18,9 @@ export interface GmailAutonomyRule {
 }
 
 /** Shown on every preview. Keyword checks only force review; they never prove a reply is safe. */
-export const REPLY_RULE_LIMITS = 'Riot still asks before new emails, recipients who were not already in that conversation, Cc, Bcc, attachments, refunds and other money wording in the original message or the reply, wording that is not one of the exact saved replies, and anything a saved exclusion covers. Riot checks every plain-text and HTML version of the original message it can read. A reply whose original message cannot be read completely waits for review, including text stored separately and parts Riot does not decode. An address only in a display name or comment is not a recipient. These word checks do not prove a reply is safe. One rule cannot override another rule’s exclusion. This does not allow forwarding, mailbox cleanup, terminal commands, or another bot to send.'
+export const REPLY_RULE_LIMITS = 'Riot Bot still asks before new emails, recipients who were not already in that conversation, Cc, Bcc, attachments, refunds and other money wording in the original message or the reply, wording that is not one of the exact saved replies, and anything a saved exclusion covers. Riot Bot checks every plain-text and HTML version of the original message it can read. A reply whose original message cannot be read completely waits for review, including text stored separately and parts Riot Bot does not decode. An address only in a display name or comment is not a recipient. These word checks do not prove a reply is safe. One rule cannot override another rule’s exclusion. This does not allow forwarding, mailbox cleanup, terminal commands, or another bot to send.'
 
-export const GMAIL_RULE_APPLIED = 'Riot already applied this Gmail reply instruction.'
+export const GMAIL_RULE_APPLIED = 'Riot Bot already applied this Gmail reply instruction.'
 
 export interface GmailRuleDraft {
   title: string
@@ -78,10 +78,10 @@ export function parseGmailRuleInput(value: unknown, fallbackAccount = ''): { dra
   if (title.length < 2) problems.push('Name this reply rule.')
   let account = ''
   const statedAccount = typeof input.account === 'string' && input.account.trim() ? input.account : fallbackAccount
-  if (!statedAccount.trim()) problems.push('Name the connected mailbox. Riot will not guess it.')
+  if (!statedAccount.trim()) problems.push('Name the connected mailbox. Riot Bot will not guess it.')
   else {
     try { account = mailAddresses(statedAccount)[0] ?? '' } catch { problems.push('The mailbox must be one plain email address.') }
-    if (!account) problems.push('Name the connected mailbox. Riot will not guess it.')
+    if (!account) problems.push('Name the connected mailbox. Riot Bot will not guess it.')
   }
   const recipients = addressList(input.recipients ?? input.to, 'Recipients', problems)
   const excludedRecipients = addressList(input.excludedRecipients ?? input.excluded_recipients ?? input.exclude, 'Excluded recipients', problems)
@@ -103,8 +103,8 @@ export function parseGmailRuleInput(value: unknown, fallbackAccount = ''): { dra
 
 export function enablementProblems(draft: GmailRuleDraft): string[] {
   const problems: string[] = []
-  if (!draft.account) problems.push('Name the connected mailbox. Riot will not guess it.')
-  if (!draft.recipients.length) problems.push('Add the exact recipient addresses. Riot will not guess names such as RLH.')
+  if (!draft.account) problems.push('Name the connected mailbox. Riot Bot will not guess it.')
+  if (!draft.recipients.length) problems.push('Add the exact recipient addresses. Riot Bot will not guess names such as RLH.')
   if (!draft.templates.length) problems.push('Add the exact reply text. Free-form replies are not sent on their own.')
   if (draft.templates.some(financialCommitment)) problems.push('A reply that promises a refund or payment cannot be sent on its own.')
   if (draft.recipients.some(address => draft.excludedRecipients.includes(address))) problems.push('A recipient cannot also be excluded.')
@@ -264,12 +264,12 @@ function reviewPhrases(value: unknown, problems: string[]): string[] {
   const list = Array.isArray(value) ? value : typeof value === 'string' ? value.split('|') : []
   const raw = list.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean)
   if (raw.some(item => item.length < 2 || item.length > 200)) {
-    problems.push('Review phrases must be 2 to 200 characters. Riot will not drop a phrase and save a broader rule.')
+    problems.push('Review phrases must be 2 to 200 characters. Riot Bot will not drop a phrase and save a broader rule.')
     return []
   }
   const phrases = [...new Set(raw)]
   if (phrases.length > 10) {
-    problems.push('Use at most 10 extra review phrases. Riot will not drop the extras and save a broader rule.')
+    problems.push('Use at most 10 extra review phrases. Riot Bot will not drop the extras and save a broader rule.')
     return []
   }
   return phrases

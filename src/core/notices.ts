@@ -95,7 +95,7 @@ export function reconcileAttention(current: readonly AppNotice[], jobs: readonly
 }
 
 /**
- * Marks every job state that already exists when Riot starts as seen. Without it, the first
+ * Marks every job state that already exists when Riot Bot starts as seen. Without it, the first
  * job event after a restart would turn earlier sessions' results into new cards.
  */
 export function seedAttention(jobs: readonly AttentionJob[]): Set<string> {
@@ -109,12 +109,12 @@ export interface MainWindowPresence {
   focused: boolean
 }
 
-/** True when the user is looking at Riot: the window is on screen, restored, and focused. */
+/** True when the user is looking at Riot Bot: the window is on screen, restored, and focused. */
 export function mainWindowIsFocused(window: MainWindowPresence | null): boolean {
   return Boolean(window && !window.destroyed && window.visible && !window.minimized && window.focused)
 }
 
-/** Desktop cards stay up only after startup, outside quit, and while Riot is not the focused window. */
+/** Desktop cards stay up only after startup, outside quit, and while Riot Bot is not the focused window. */
 export function noticesMaySurface(input: { windowShown: boolean; quitting: boolean; focused: boolean; count: number }): boolean {
   return input.windowShown && !input.quitting && input.count > 0 && !input.focused
 }

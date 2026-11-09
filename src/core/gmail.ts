@@ -51,14 +51,14 @@ export class GmailService {
     this.generation++
     if (this.login) this.cancelLogin()
     this.options.credentials.clear('gmail')
-    return this.publish('Gmail disconnected from Riot. You can also revoke this Google app in your Google Account permissions.')
+    return this.publish('Gmail disconnected from Riot Bot. You can also revoke this Google app in your Google Account permissions.')
   }
 
   async connect(): Promise<GmailStatus> {
     if (this.login) throw new ConfigError('Google sign-in is already open. Finish or cancel it first.')
     const client = this.read<GoogleClient>('gmail-client')
     if (!client) throw new ConfigError('Add your Google Desktop app setup file first.')
-    if (!this.options.openLink) throw new ConfigError('This copy of Riot cannot open the Google sign-in page.')
+    if (!this.options.openLink) throw new ConfigError('This copy of Riot Bot cannot open the Google sign-in page.')
     const generation = this.generation, state = randomBytes(32).toString('base64url'), verifier = randomBytes(48).toString('base64url')
     const controller = new AbortController()
     let settle!: (result: { code?: string; cancelled?: boolean }) => void
@@ -173,14 +173,14 @@ export class GmailService {
         const part = await reader.read()
         if (part.done) break
         total += part.value.byteLength
-        if (total > 2_000_000) { await reader.cancel(); throw new ConfigError('This email response is too large to read in Riot. Open the original message in Gmail.') }
+        if (total > 2_000_000) { await reader.cancel(); throw new ConfigError('This email response is too large to read in Riot Bot. Open the original message in Gmail.') }
         chunks.push(part.value)
       }
       return JSON.parse(Buffer.concat(chunks).toString('utf8'))
     } catch (error) {
       if (error instanceof ConfigError) throw error
       if (init.signal?.aborted) throw new StopError('Email work stopped. A request already accepted by Google may have completed.')
-      throw new ConfigError('Riot could not reach Gmail or read its response. No automatic retry was made.')
+      throw new ConfigError('Riot Bot could not reach Gmail or read its response. No automatic retry was made.')
     }
   }
 

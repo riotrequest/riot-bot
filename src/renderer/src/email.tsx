@@ -12,7 +12,7 @@ export function GmailConnection({ api, status, onStatus, onError, showIntro = tr
     {showIntro && <div className="page-intro"><h2>Your inbox, connected.</h2><p>Let your bots work with your existing Gmail or Google Workspace mailbox. The connection runs directly from this computer.</p></div>}
     <section className="settings-section">
       <h3>{status?.connected ? status.email : status?.connecting ? 'Finish signing in with Google' : 'Connect Gmail'}</h3>
-      <p className="help">{status?.connected ? 'Connected to Riot. Choose each bot’s access in Workspace → Apps → Gmail.' : status?.configured ? 'Your Google setup is ready. Sign in to choose the Gmail account you want to connect.' : 'For a self-hosted copy of Riot, Google needs a one-time app setup that you own. Choose its downloaded setup file, then sign in.'}</p>
+      <p className="help">{status?.connected ? 'Connected to Riot Bot. Choose each bot’s access in Workspace → Apps → Gmail.' : status?.configured ? 'Your Google setup is ready. Sign in to choose the Gmail account you want to connect.' : 'For a self-hosted copy of Riot Bot, Google needs a one-time app setup that you own. Choose its downloaded setup file, then sign in.'}</p>
       {status?.note && <p role="status">{status.note}</p>}
       {!status?.persistent && <p className="help">Windows credential protection is unavailable. This connection will last for this session only.</p>}
       <div className="row">
@@ -34,7 +34,7 @@ export function GmailConnection({ api, status, onStatus, onError, showIntro = tr
         <button type="button" onClick={() => void api.openExternal('https://developers.google.com/identity/protocols/oauth2/native-app').catch(error => onError(messageOf(error)))}>Google’s desktop sign-in guide</button>
       </details>
     </section>
-    <div className="callout"><strong>One connection, access chosen per bot</strong><p>Google sign-in stays outside the chat. Credentials are protected locally when Windows protection is available. Email your bot reads is shared with that bot’s chosen AI provider. Riot does not host your mailbox.</p></div>
+    <div className="callout"><strong>One connection, access chosen per bot</strong><p>Google sign-in stays outside the chat. Credentials are protected locally when Windows protection is available. Email your bot reads is shared with that bot’s chosen AI provider. Riot Bot does not host your mailbox.</p></div>
   </>
 }
 
@@ -56,7 +56,7 @@ export function GmailAccess({ status, settings, botName, onChange, onError, onBu
       <option value="drafts" disabled={!status?.connected}>Read email & save drafts</option>
       <option value="send" disabled={!status?.connected}>Read, draft & send</option>
     </select></label>
-    <p className="help">Riot asks before every send unless you turn on a reply rule for this bot. A reply rule can send only the exact replies you approve. Attachments and mailbox cleanup stay in Gmail.</p>
+    <p className="help">Riot Bot asks before every send unless you turn on a reply rule for this bot. A reply rule can send only the exact replies you approve. Attachments and mailbox cleanup stay in Gmail.</p>
     {!settings.toolsEnabled && <p className="help">Tools are currently off for this bot. Enable Allow tools in Bot settings → Files & tools to use email.</p>}
     {note && <p className="help" role="status">{note}</p>}
   </section>
@@ -105,7 +105,7 @@ function RuleCard({ rule, busy, onEdit, onEnabled }: { rule: GmailRuleView; busy
     <div className="runtime-heading"><strong>{rule.title}</strong><span className={`app-access-status ${rule.appliesNow ? 'enabled' : 'paused'}`}>{status}</span></div>
     <p className="help">Mailbox {rule.account}. Replies to {rule.recipients.join(', ') || 'no one yet'}{rule.threadIds.length ? ` in ${rule.threadIds.join(', ')}` : ' in an existing conversation'}.</p>
     <p className="gmail-rule-template">{reply}{rule.templates.length > 1 ? ` and ${rule.templates.length - 1} more exact ${rule.templates.length === 2 ? 'reply' : 'replies'}` : ''}</p>
-    <p className="help">Up to {rule.dailySendLimit} sends a day{rule.sendsToday ? ` · ${rule.sendsToday} used today` : ''}. Refunds in the original message or the reply, including each plain or HTML version Riot can read, other recipients, original text Riot could not read, and anything that does not match still wait for you.</p>
+    <p className="help">Up to {rule.dailySendLimit} sends a day{rule.sendsToday ? ` · ${rule.sendsToday} used today` : ''}. Refunds in the original message or the reply, including each plain or HTML version Riot Bot can read, other recipients, original text Riot Bot could not read, and anything that does not match still wait for you.</p>
     {rule.blockedReason && <p className="help">{rule.blockedReason}</p>}
     {(rule.excludedRecipients.length > 0 || rule.excludedPhrases.length > 0) && <p className="help">Always review: {[...rule.excludedRecipients, ...rule.excludedPhrases].join(', ')}.</p>}
     <div className="row"><button type="button" disabled={busy} onClick={onEdit}>Edit</button><button type="button" disabled={busy} onClick={() => void onEnabled(rule.id, !rule.enabled)}>{rule.enabled ? 'Turn off' : 'Turn on'}</button></div>
@@ -152,7 +152,7 @@ export function GmailRuleApproval({ rule, onResolve }: { rule: GmailRulePreview;
       <p>Can send on its own: {rule.templates.length ? 'these exact replies' : 'nothing yet'} to {rule.recipients.join(', ') || 'no recipients yet'}{rule.threadIds.length ? `, only in ${rule.threadIds.join(', ')}` : ', in an existing conversation'}.</p>
       {rule.templates.map(template => <pre key={template} className="email-review-body gmail-rule-template">{template}</pre>)}
       {(rule.excludedRecipients.length > 0 || rule.excludedPhrases.length > 0) && <p>Always review: {[...rule.excludedRecipients, ...rule.excludedPhrases].join(', ')}.</p>}
-      <p>Limit: {rule.dailySendLimit} sends a day. After that, Riot asks again.</p>
+      <p>Limit: {rule.dailySendLimit} sends a day. After that, Riot Bot asks again.</p>
       <p className="help">{rule.limits}</p>
     </div>
     <div className="row approval-actions"><button type="button" onClick={() => onResolve(false)}>Not now</button><button type="button" className="send" onClick={() => onResolve(true)}>Turn on</button></div>

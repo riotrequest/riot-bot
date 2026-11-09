@@ -16,7 +16,7 @@ if (!isMainThread) {
   const cli=path.resolve(process.argv[2])
   const expected=path.join(path.dirname(cli),'lib','entry','oopBrowserDownload.js')
   childProcess.fork=((file:string)=>{
-    if(path.resolve(file)!==expected)throw new Error('Refusing an unexpected browser-installer subprocess. Update Riot’s Playwright integration.')
+    if(path.resolve(file)!==expected)throw new Error('Refusing an unexpected browser-installer subprocess. Update Riot Bot’s Playwright integration.')
     const worker=new Worker(__filename,{workerData:{entry:expected}})
     return Object.assign(worker,{
       send:(message:unknown)=>{worker.postMessage(message);return true},

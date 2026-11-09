@@ -80,7 +80,7 @@ describe('saving a server login from chat', () => {
     // The chat shows what the user wrote and a short notice. The login ID and instructions go to the model only.
     expect(user.content).toBe('"C:\\Program Files\\PuTTY\\putty.exe" root@192.168.10.20 -pw [saved password]')
     expect(messages.find((message) => message.role === 'notice')?.content).toBe('Saved your server login for root@192.168.10.20, port 22, encrypted on this computer. Manage it in Bot settings → Files & tools.')
-    expect(provider.calls[0].messages.at(-1)!.content).toMatch(/\[saved password\]\n\nRiot saved server login [0-9a-f-]{36} for root@192\.168\.10\.20, port 22, encrypted on this computer/)
+    expect(provider.calls[0].messages.at(-1)!.content).toMatch(/\[saved password\]\n\nRiot Bot saved server login [0-9a-f-]{36} for root@192\.168\.10\.20, port 22, encrypted on this computer/)
     expect(JSON.stringify(provider.calls)).not.toContain(PASSWORD)
     expect(JSON.stringify(app.getSnapshot())).not.toContain(PASSWORD)
     const [login] = app.getSnapshot().savedServerLogins!
@@ -111,12 +111,12 @@ describe('saving a server login from chat', () => {
       const job = app.queueMessage(conversation.id, PUTTY)
       expect(job.text).toBe('"C:\\Program Files\\PuTTY\\putty.exe" root@192.168.10.20 -pw [saved password]')
       expect(JSON.stringify(app.listJobs())).not.toContain(PASSWORD)
-      expect(JSON.stringify(app.listJobs())).not.toContain('Riot saved server login')
+      expect(JSON.stringify(app.listJobs())).not.toContain('Riot Bot saved server login')
       await waitFor(() => app.listJobs().every((item) => item.status !== 'queued' && item.status !== 'running'))
       // The note prepared at queue time still reaches the model when the job runs, and the notice is in the chat.
-      expect(provider.calls.find((call) => call.tools?.length)!.messages.at(-1)!.content).toMatch(/Riot saved server login [0-9a-f-]{36} for root@/)
+      expect(provider.calls.find((call) => call.tools?.length)!.messages.at(-1)!.content).toMatch(/Riot Bot saved server login [0-9a-f-]{36} for root@/)
       const messages = app.openConversation(conversation.id).messages
-      expect(messages.find((message) => message.role === 'user')?.content).not.toContain('Riot saved')
+      expect(messages.find((message) => message.role === 'user')?.content).not.toContain('Riot Bot saved')
       expect(messages.some((message) => message.role === 'notice' && message.content.startsWith('Saved your server login for root@192.168.10.20'))).toBe(true)
       expect(credentials.get(`server-logins:${bot.id}`)).toContain(PASSWORD)
       await app.deleteBot(bot.id, bot.name)

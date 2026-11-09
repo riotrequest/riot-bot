@@ -41,7 +41,7 @@ interface Found { host: string; port: number; username: string; password: Token 
 export function serverLoginFromMessage(text: string): CapturedServerLogin | null {
   let offset = 0
   for (const line of text.split('\n')) {
-    // A quoted line may be someone else's, and a line Riot already masked must not overwrite the saved password.
+    // A quoted line may be someone else's, and a line Riot Bot already masked must not overwrite the saved password.
     const found = /^\s*>/.test(line) || line.includes(SAVED_PASSWORD) ? null : fromCommand(split(line)) ?? fromAddress(line)
     if (found) {
       const start = offset + found.password.start
@@ -86,7 +86,7 @@ export function plinkArgs(login: ServerLoginDraft, command: string): string[] {
 
 /** A next step for the user when plink stops before running the command. */
 export function plinkHint(output: string): string {
-  if (/host key is not cached|not in the cache/i.test(output)) return 'Riot does not accept a new server key on its own. Open this server once in PuTTY, check the key and accept it, then ask again.'
+  if (/host key is not cached|not in the cache/i.test(output)) return 'Riot Bot does not accept a new server key on its own. Open this server once in PuTTY, check the key and accept it, then ask again.'
   if (/host key does not match|POTENTIAL SECURITY BREACH/i.test(output)) return 'The server’s key has changed. That happens after a reinstall, but it can also mean someone is intercepting the connection. Check it in PuTTY before trying again.'
   if (/access denied|authentication failed|password.*(?:incorrect|refused)/i.test(output)) return 'The server refused the saved password. Paste the command again with the current password to update it.'
   return ''

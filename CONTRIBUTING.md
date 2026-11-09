@@ -32,7 +32,7 @@ npm run dev
 
 Use `npm ci` rather than `npm install` in a clean checkout, so you get exactly the locked dependency versions. Starting the app makes no model call. Nothing calls a model until you send a message.
 
-Development runs use your normal app-data folder (`%APPDATA%\riot-bot\`). If you have a personal Riot setup with real chats, logins or connections, keep it out of your experiments. Never use it as a test fixture.
+Development runs use your normal app-data folder (`%APPDATA%\riot-bot\`). If you have a personal Riot Bot setup with real chats, logins or connections, keep it out of your experiments. Never use it as a test fixture.
 
 ## Project layout
 
@@ -41,7 +41,7 @@ Development runs use your normal app-data folder (`%APPDATA%\riot-bot\`). If you
 | `src/main/` | Electron windows, IPC, OS credential protection and native dialogs |
 | `src/preload/` | The narrow bridge exposed to the renderer |
 | `src/core/service.ts` | Queues, schedules, per-bot executors and workspace coordination |
-| `src/core/app.ts` | The API agent loop and Riot tool dispatch |
+| `src/core/app.ts` | The API agent loop and Riot Bot tool dispatch |
 | `src/core/codex.ts` | The native Codex app-server connection (read [docs/codex.md](docs/codex.md) first) |
 | `src/core/custom-endpoint.ts` | The local and custom model endpoint provider, with its address checks and pinned transport ([docs/custom-endpoints.md](docs/custom-endpoints.md)) |
 | `src/core/db.ts` | SQLite persistence and migrations |
@@ -97,7 +97,7 @@ A security fix needs a test of observable behavior at the boundary, and that inc
 - Website passwords live only in the login vault. They never go into memories, chat or model input.
 - Every lookup keeps its ownership filter (bot, account or run), and applies it before any limit.
 - Gmail sending keeps its review, claim and uncertain-send protections.
-- Spending limits, cancellation and recovery stay real. Riot never silently switches provider, account, model or billing.
+- Spending limits, cancellation and recovery stay real. Riot Bot never silently switches provider, account, model or billing.
 - Runtime data, keys, profiles, databases and logs stay out of Git.
 
 If your change touches any of these areas, say so in your pull request and explain how the rule still holds.

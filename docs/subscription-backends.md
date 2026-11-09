@@ -1,6 +1,6 @@
 **Subscription backend design — checked November 2, 2026**
 
-Codex has now been implemented as a preview backend after authorization. The OpenAI and OpenRouter API-key backends remain available, and an OpenAI-compatible [local or custom endpoint](custom-endpoints.md) uses the same Riot agent loop. [Codex setup and current limits](codex.md) describes the implemented managed-login route; Claude remains a saved design.
+Codex has now been implemented as a preview backend after authorization. The OpenAI and OpenRouter API-key backends remain available, and an OpenAI-compatible [local or custom endpoint](custom-endpoints.md) uses the same Riot Bot agent loop. [Codex setup and current limits](codex.md) describes the implemented managed-login route; Claude remains a saved design.
 
 The requirement is to preserve the provider's agent capabilities. An API model uses Riot Bot's existing tool loop and free browser search. A native agent backend should use its own agent loop, tools, search, sessions, and permission protocol when available. Riot Bot supplies the bot identity, scoped memories, task intent, UI, and consent. Native search results still do not establish an observed Google organic position; an exact ranking request needs the browser evidence for that engine.
 
@@ -11,7 +11,7 @@ The requirement is to preserve the provider's agent capabilities. An API model u
 | Codex native agent | Official Codex app-server; keep supported native search, file, execution, and MCP capabilities | Documented ChatGPT/Codex authentication or registered ChatGPT-plan integration, subject to eligibility |
 | Claude native agent | Unmodified Claude Code; keep its available native tools and permissions | Each user's own authentication through Anthropic's flow, subject to the embedding conditions |
 
-**Codex route.** The official app-server supports managed ChatGPT login and emits native tool/turn events. A Codex integration should stream those events, preserve thread IDs per Riot bot/conversation, forward approvals, and interrupt the native turn on Stop. Rate-limit information is available through its account protocol; a model catalog is not an entitlement check. [Codex App Server](https://learn.chatgpt.com/docs/app-server)
+**Codex route.** The official app-server supports managed ChatGPT login and emits native tool/turn events. A Codex integration should stream those events, preserve thread IDs per Riot Bot bot/conversation, forward approvals, and interrupt the native turn on Stop. Rate-limit information is available through its account protocol; a model catalog is not an entitlement check. [Codex App Server](https://learn.chatgpt.com/docs/app-server)
 
 OpenAI also documents a registered Sign in with ChatGPT route for eligible clients and accounts. Sign-in identity alone does not grant inference permission; the registration, token scope, refresh, and account checks must complete. Do not assume this private project is automatically an approved commercial or private client. [Quickstart and eligibility](https://developers.openai.com/siwc/quickstart), [Registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
 
@@ -21,7 +21,7 @@ That registered route can drive app-server through a documented Responses provid
 
 The Agent SDK carries built-in tools, sessions, hooks, and permissions, including web search. Its overview separately says third-party products cannot offer Claude.ai login or plan limits through the SDK without prior approval. SDK availability is not blanket permission for subscription authentication. Confirm the applicable route before implementing it. [Claude Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview)
 
-**Runner boundary.** The ModelProvider.complete contract returns one model response to Riot Bot's gateway. The implemented Codex runner sits alongside that API path and forwards native turn/tool events directly. It does not run a second Riot tool loop around the native agent.
+**Runner boundary.** The ModelProvider.complete contract returns one model response to Riot Bot's gateway. The implemented Codex runner sits alongside that API path and forwards native turn/tool events directly. It does not run a second Riot Bot tool loop around the native agent.
 
 The runner must map native events into persisted chat, activity, and run outcomes. It should advertise actual available capabilities and use native search by default, with Riot Bot tools exposed only when needed through a controlled integration. Avoid duplicate searches, overlapping compaction, and replaying the whole transcript into an already resumed native session. Keep provider/thread mappings and configuration scoped by bot and conversation.
 

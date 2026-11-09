@@ -186,7 +186,7 @@ export interface MessageRecord {
   summarized: boolean
   runId: string | null
   attachments?: MessageAttachment[]
-  /** Context Riot adds to a user message for the model only, such as a saved login's ID. Never shown in the chat. */
+  /** Context Riot Bot adds to a user message for the model only, such as a saved login's ID. Never shown in the chat. */
   contextNote?: string | null
 }
 

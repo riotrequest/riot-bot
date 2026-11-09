@@ -24,7 +24,7 @@ export function JobsPane(props: {
   return <section className="runtime-pane">
     <div className="runtime-intro"><div><h2>A clear view of what’s getting done.</h2><p>Follow your requests, review anything that needs you, or resume a paused task.</p></div>
       <label>Show <select aria-label="Task scope" value={scope} onChange={(event) => setScope(event.target.value as 'bot' | 'app')}><option value="bot">This bot</option><option value="app">All bots</option></select></label></div>
-    <details className="subtle-details"><summary>Can I close the window while it works?</summary><p className="help">Yes. Riot stays in the system tray while this computer is on and awake. Choosing Quit pauses unfinished work; resume it here after reopening. Up to two bots can work at once. Requests for the same bot or working folder take turns.</p></details>
+    <details className="subtle-details"><summary>Can I close the window while it works?</summary><p className="help">Yes. Riot Bot stays in the system tray while this computer is on and awake. Choosing Quit pauses unfinished work; resume it here after reopening. Up to two bots can work at once. Requests for the same bot or working folder take turns.</p></details>
     {!jobs.length && <EmptyState icon="tasks" title="Your next task starts with a message">Ask your bot to do something in Chat. You’ll see its progress and finished work here.</EmptyState>}
     <div className="runtime-list">{jobs.map((job) => {
       const resumable = ['paused', 'interrupted', 'failed', 'cancelled'].includes(job.status)

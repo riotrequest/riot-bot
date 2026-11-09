@@ -11,11 +11,11 @@ Both checks share one short request after a successful user chat turn. They do n
 
 ## Cost and lifecycle
 
-Reviews use the bot's selected model and connection. Riot does not choose a different paid model or fall back from native Codex to an API. They appear as **Memory & skill check** in Usage & activity.
+Reviews use the bot's selected model and connection. Riot Bot does not choose a different paid model or fall back from native Codex to an API. They appear as **Memory & skill check** in Usage & activity.
 
 API reviews have no tools, no streaming, no continuations, and one attempt. The input excerpt fits within 3,000 conservatively estimated tokens (or the bot's smaller input budget), and output reserves at most 1,000 tokens, also respecting a smaller manual reply cap. Reviews share the originating task's model-call, time, per-task spend, bot daily spend, and app daily spend limits. If a review does not fit, it is skipped. Optional context is removed locally rather than compacted with another call. Incomplete output is discarded, without repair calls.
 
-Native Codex reviews use a fresh ephemeral thread with shell/search/dynamic tools disabled, read-only/network-disabled policy, project instruction-file loading disabled, low reasoning effort, and a JSON output schema. The main native conversation/session mapping is preserved. This consumes one additional native turn and the account's Codex allowance. Codex manages its own tokens; Riot's API dollar/token caps do not apply. The native review has no approved commands, file edits, permission escalation, or API fallback. Protocol fields follow the [official Codex App Server documentation](https://learn.chatgpt.com/docs/app-server).
+Native Codex reviews use a fresh ephemeral thread with shell/search/dynamic tools disabled, read-only/network-disabled policy, project instruction-file loading disabled, low reasoning effort, and a JSON output schema. The main native conversation/session mapping is preserved. This consumes one additional native turn and the account's Codex allowance. Codex manages its own tokens; Riot Bot's API dollar/token caps do not apply. The native review has no approved commands, file edits, permission escalation, or API fallback. Protocol fields follow the [official Codex App Server documentation](https://learn.chatgpt.com/docs/app-server).
 
 Reviews have a 20-second timeout and share the parent's cancellation signal. Stop and shutdown prevent late results from being saved. A review failure is recorded when a request was sent, but does not turn an otherwise successful reply into an error. The worker remains occupied briefly while the review finishes, so it cannot race the same bot's next queued task.
 

@@ -74,7 +74,7 @@ export function normalizeCustomBaseUrl(value: unknown): string {
   if (!loopback && isBlockedHostname(url.hostname)) {
     throw new ConfigError('That endpoint is on a local or private network. Riot Bot connects only to a model server on this computer or to a public https:// address.')
   }
-  // A pasted full chat URL is reduced to its base; Riot adds /chat/completions itself.
+  // A pasted full chat URL is reduced to its base; Riot Bot adds /chat/completions itself.
   const path = url.pathname.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '').replace(/\/+$/, '')
   return `${url.protocol}//${url.host}${path}`
 }

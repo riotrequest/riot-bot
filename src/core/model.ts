@@ -75,7 +75,7 @@ export const TOOLS: ToolDefinition[] = [
   { name: 'gmail_read_thread', description: 'Read the latest eight messages in one Gmail thread. Use gmail_read_email for more text from an individual message.', parameters: objectSchema({ id: stringProp('Gmail thread ID.') }, ['id']) },
   { name: 'gmail_save_draft', description: 'Create or update this bot’s plain-text Gmail draft when the user requests an email or reply. It does not send. For replies, use reply_to_message_id; recipient and subject can come from the original. No attachments in this version.', parameters: objectSchema({ id: stringProp('Optional existing draft ID created by this bot.'), to: stringProp('Plain recipient email addresses, comma separated. Optional for a reply.'), cc: stringProp('Optional CC addresses, comma separated.'), bcc: stringProp('Optional BCC addresses, comma separated.'), subject: stringProp('One-line subject. Replies retain the original topic.'), body: stringProp('Complete plain-text email body, under 40000 characters.'), reply_to_message_id: stringProp('Original Gmail message ID when replying.') }, ['body']) },
   { name: 'gmail_read_draft', description: 'Review a draft created by this bot. Reports whether it is unsent, sent, or has an uncertain send result.', parameters: objectSchema({ id: stringProp('Draft ID created by this bot.') }, ['id']) },
-  { name: 'gmail_send_draft', description: 'Send one draft created by this bot. Riot asks the user to review the complete message unless a reply rule they already turned on covers this exact reply. Do not pass approved, safe, or trusted flags; they are ignored. Never retry an uncertain send or create a replacement to bypass it.', parameters: objectSchema({ id: stringProp('Saved draft ID from gmail_save_draft.') }, ['id']) },
+  { name: 'gmail_send_draft', description: 'Send one draft created by this bot. Riot Bot asks the user to review the complete message unless a reply rule they already turned on covers this exact reply. Do not pass approved, safe, or trusted flags; they are ignored. Never retry an uncertain send or create a replacement to bypass it.', parameters: objectSchema({ id: stringProp('Saved draft ID from gmail_save_draft.') }, ['id']) },
   { name: 'gmail_list_rules', description: 'List this bot’s saved Gmail reply rules, including exact reply text. Read-only. This cannot turn a rule on or approve a send.', parameters: objectSchema({}, []) },
   { name: 'gmail_propose_rule', description: 'Propose a Gmail reply rule for the user to confirm. This never turns the rule on. Do not invent mailbox addresses, recipient addresses, or reply text; leave unknown fields empty. Refunds, payments, and free-form replies cannot be delegated. Only a direct user request may propose a rule.', parameters: objectSchema({ title: stringProp('Short name, such as RLH routine replies.'), recipients: stringProp('Exact recipient emails, comma separated. Empty if the user has not given them.'), threads: stringProp('Optional Gmail thread IDs, comma separated. Empty means any existing conversation with those recipients.'), template: stringProp('Exact plain-text reply the user supplied. Empty if they have not supplied it.'), excluded_recipients: stringProp('Optional emails that must always be reviewed, comma separated.'), excluded_phrases: stringProp('Optional extra review phrases, separated by |.'), daily_send_limit: { type: 'number', description: 'Automatic sends per day, from 1 to 20. Default 5.' } }, ['title']) },
   {
@@ -83,7 +83,7 @@ export const TOOLS: ToolDefinition[] = [
     parameters: objectSchema({ auto_memory: { type: 'boolean' }, skill_suggestions: { type: 'boolean' } }, [])
   },
   {
-    name: 'rename_bot', description: 'Save this bot’s display name in Riot when the user asks you to choose or change it. Use a short name, 2 to 40 characters. If the user already named one, use that name. This does not change another bot.',
+    name: 'rename_bot', description: 'Save this bot’s display name in Riot Bot when the user asks you to choose or change it. Use a short name, 2 to 40 characters. If the user already named one, use that name. This does not change another bot.',
     parameters: objectSchema({ name: stringProp('The display name to save.') }, ['name'])
   },
   {
@@ -157,7 +157,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'run_on_server',
-    description: 'Run one command on a saved server over SSH. The user approves it; Riot fills in the password.',
+    description: 'Run one command on a saved server over SSH. The user approves it; Riot Bot fills in the password.',
     parameters: objectSchema({ login_id: stringProp('Server login ID from list_saved_logins.'), command: stringProp('Exact command.'), timeout_seconds: { type: 'number', description: 'Optional seconds.' } }, ['login_id', 'command'])
   },
   {
