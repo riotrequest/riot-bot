@@ -214,6 +214,11 @@ export class RiotService extends RiotApp {
     return this.db.listJobs(scope==='app' ? undefined : this.currentBotId()).map(jobView)
   }
 
+  hasUpdateBlockingWork(): boolean {
+    return this.serviceClosing || this.activeJobs.size > 0 || this.pendingDeletions.size > 0 ||
+      this.changingNativeConnection || this.db.activeRun() !== null || this.db.queuedJobs().length > 0
+  }
+
   listArtifacts(query = ''): ArtifactView[] {
     if (!this.db.activeBotId()) return []
     const search = query.trim().toLowerCase()

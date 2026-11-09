@@ -580,7 +580,16 @@ export interface NoticeBridge {
   resize(height: number): void
 }
 
+export type AppUpdateStatus =
+  | { status: 'unavailable' | 'idle' | 'checking' | 'current' }
+  | { status: 'available' | 'ready' | 'installing'; version: string }
+  | { status: 'downloading'; version: string; progress: number }
+  | { status: 'error'; message: string }
+
+export type AppUpdateState = AppUpdateStatus & { currentVersion: string }
+
 export type AppEvent =
+  | { type: 'update-state'; update: AppUpdateState }
   | { type: 'gmail-status'; status: GmailStatus }
   | { type: 'notices-changed'; notices: AppNotice[] }
   | { type: 'gmail-rules-changed' }
@@ -606,6 +615,10 @@ export type AppEvent =
 
 export interface RiotBridge {
   getSnapshot(): Promise<Snapshot>
+  getUpdateState(): Promise<AppUpdateState>
+  checkForUpdates(): Promise<void>
+  downloadUpdate(): Promise<void>
+  installUpdate(): Promise<void>
   getGmailStatus(): Promise<GmailStatus>
   importGmailClient(): Promise<GmailStatus | null>
   connectGmail(): Promise<GmailStatus>

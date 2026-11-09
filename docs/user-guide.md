@@ -186,6 +186,10 @@ Open a call in **Activity** and expand **Context**. It shows the usable input, w
 
 Deleting a memory or disabling a skill removes it from later requests. The original chat can still contain the earlier mention.
 
+## App updates
+
+Official Windows installs check GitHub Releases when Riot Bot starts. Open **Settings → Updates** to check again, download a version, or restart to install it. Finish or pause your running and queued work before restarting. For a source checkout, update with Git and run `npm ci` again.
+
 ## Backups and removing the browser
 
 Riot Bot keeps its data in `%APPDATA%\riot-bot\`; the [README](../README.md#where-your-data-lives) lists what each file and folder holds.

@@ -16,9 +16,10 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
     "dist:win": "electron-vite build && electron-builder --win",
-    "dist:win:release": "electron-vite build && electron-builder --win --config electron-builder.release.yml"
+    "dist:win:release": "electron-vite build && electron-builder --win --config electron-builder.release.yml --publish never"
   },
   "dependencies": {
+    "electron-updater": "6.8.11",
     "playwright-core": "^1.64.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

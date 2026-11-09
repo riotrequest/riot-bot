@@ -6,6 +6,8 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+- Official Windows builds can check GitHub Releases for updates, download a signed installer, and restart to apply it from **Settings → Updates**.
+
 ### November 9, 2026 — Faster disk-space check
 
 - The disk-space check now lists local drives with Windows’ built-in `mountvol` instead of starting PowerShell. The first check after a cold start no longer fails with “Windows could not identify local drives,” and **Stop** ends a check at once.
