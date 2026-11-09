@@ -1,11 +1,19 @@
 # Security
 
-<!-- TODO(owner): replace this notice with the real reporting instructions once a private route exists. Do not publish the repository before then. -->
-> **TODO (owner): set up a private vulnerability-reporting route before the repository is public.** Enable GitHub private vulnerability reporting, or publish a private contact you control. Test that it works, then replace this notice with instructions. Also add the route as a contact link in `.github/ISSUE_TEMPLATE/config.yml`. Until then there is no private channel, so please don't post vulnerability details in public issues.
+## Reporting a vulnerability
 
-Riot Bot is in private development. A public vulnerability-reporting channel and supported-release policy have not been established yet. Before making the repository public, the owner must enable GitHub private vulnerability reporting (or publish a private contact) and verify that the route works. Do not invent an address or route reports into public issues containing secrets.
+Please report vulnerabilities privately. Don't post them in public issues, pull requests or discussions.
+
+- **GitHub:** [Report a vulnerability](https://github.com/riotrequest/riot-bot/security/advisories/new) (the repository's **Security** tab → **Report a vulnerability**). Only you and the maintainers can see the report, and the discussion stays private until a fix is published.
+- **Email:** [security@riotrequest.com](mailto:security@riotrequest.com), if you'd rather not use GitHub.
 
 For a report, include the affected version/commit, operating system, steps using synthetic data, expected versus observed behavior, and any relevant redacted logs. Never include real passwords, provider keys, cookies, OAuth tokens, app-data backups or private messages. Verify fixes with disposable profiles and local sentinels; avoid real accounts and paid model requests.
+
+## Supported versions
+
+Riot Bot is an early preview (version 0.1.0) with no published releases yet. Security fixes land on the `main` branch.
+
+## Scope and limitations
 
 The current boundaries, implementation follow-up and remaining limitations are documented in [docs/security-review.md](docs/security-review.md). Saved logins and remembered website permissions are explained in [docs/security.md](docs/security.md). Contributor instructions are in [AGENTS.md](AGENTS.md).
 

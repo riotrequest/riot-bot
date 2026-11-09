@@ -1,10 +1,7 @@
 # Blank issues are off so that every report goes through a template that asks
 # for synthetic data and no secrets.
 blank_issues_enabled: false
-# TODO(owner): after enabling GitHub private vulnerability reporting (or
-# publishing a private contact you control), add a contact link so that
-# security reports go there instead of public issues. For example:
-# contact_links:
-#   - name: Report a security vulnerability
-#     url: <the private reporting URL for this repository>
-#     about: Please report vulnerabilities privately, not in a public issue.
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/riotrequest/riot-bot/security/advisories/new
+    about: Please report vulnerabilities privately (here, or email security@riotrequest.com), not in a public issue.

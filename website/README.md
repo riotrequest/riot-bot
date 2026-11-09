@@ -12,6 +12,7 @@ The source of the project site at **https://bot.riotrequest.com**. It is a stati
 | `img/` | The six mood renders from the mascot concept sheet, as transparent WebP. |
 | `fonts/` | Self-hosted Unbounded (headings) and Inter (body), Latin subset, with their licenses. |
 | `og.png`, `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png` | The social preview image and icons. |
+| `.well-known/security.txt` | How to report a vulnerability ([RFC 9116](https://www.rfc-editor.org/rfc/rfc9116)). Renew its `Expires` date before it passes, keeping it under a year ahead. |
 | `deploy/htaccess-block.conf` | Server settings for Apache. Not served; see [Deploy](#deploy). |
 
 ## Preview locally
@@ -24,15 +25,9 @@ python -m http.server 8765 --bind 127.0.0.1 --directory website
 
 Then open http://127.0.0.1:8765/. Check it at phone width (375px) as well as desktop.
 
-## Launch switch: the GitHub link
+## The GitHub link
 
-At the top of `app.js`:
-
-```js
-const REPO_URL = ''
-```
-
-While it is empty, the GitHub button reads "GitHub repo drops soon" and does nothing, and the clone command shows `<repo-url>`. Set it to the public repository URL and every GitHub button becomes a real link and the clone command fills itself in.
+The repository is public at https://github.com/riotrequest/riot-bot. `index.html` links to it directly (nav, the Get it button, the clone command and the footer), and `app.js` holds the same address in `REPO_URL`. If the repository ever moves, update both.
 
 ## Editing
 
@@ -49,8 +44,8 @@ From the repository root, replacing the placeholders:
 
 ```bash
 cd website
-tar -cf - index.html style.css app.js favicon.svg favicon-32.png apple-touch-icon.png og.png robots.txt fonts img \
-  | ssh <ssh-host> "cd <docroot> && tar -xf - --no-same-owner && chown -R <cpanel-user>:<cpanel-user> index.html style.css app.js favicon.svg favicon-32.png apple-touch-icon.png og.png robots.txt fonts img"
+tar -cf - index.html style.css app.js favicon.svg favicon-32.png apple-touch-icon.png og.png robots.txt .well-known/security.txt fonts img \
+  | ssh <ssh-host> "cd <docroot> && tar -xf - --no-same-owner && chown -R <cpanel-user>:<cpanel-user> index.html style.css app.js favicon.svg favicon-32.png apple-touch-icon.png og.png robots.txt .well-known/security.txt fonts img"
 ```
 
 First deploy only: append `deploy/htaccess-block.conf` to the docroot's `.htaccess`, after the block cPanel manages, and back up the original first. It adds the HTTPS redirect (leaving `/.well-known/` alone so AutoSSL can validate), security headers including the CSP, cache lifetimes, compression, and disables directory listings.
