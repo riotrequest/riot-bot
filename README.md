@@ -35,7 +35,7 @@ What makes it different:
 
 ### Install
 
-Download `Riot-Bot-Setup-<version>.exe` from the [latest release](https://github.com/riotrequest/riot-bot/releases/latest) and run it.
+Download `Riot-Bot-Setup-<version>.exe` from the [Releases page](https://github.com/riotrequest/riot-bot/releases) and run it. If no release is listed there yet, [run from source](#or-run-from-source).
 
 The installer is not code-signed yet, so Windows SmartScreen shows “Windows protected your PC”. Choose **More info**, then **Run anyway**. Each release lists the installer’s SHA-256 checksum. To compare it before you run the file:
 
