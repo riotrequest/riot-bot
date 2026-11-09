@@ -37,7 +37,7 @@ What makes it different:
 ### Install and run
 
 ```powershell
-git clone <repository-url> riot-bot   # TODO(owner): replace <repository-url> with the public clone URL
+git clone https://github.com/riotrequest/riot-bot.git
 cd riot-bot
 npm ci
 npm run dev
