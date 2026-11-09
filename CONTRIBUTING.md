@@ -49,6 +49,7 @@ Development runs use your normal app-data folder (`%APPDATA%\riot-bot\`). If you
 | `src/renderer/` | The React interface. It is presentation only, never a permission gate. |
 | `tests/` | Vitest tests, shared helpers and protocol fixtures |
 | `docs/` | Feature and security documentation |
+| `website/` | The static project site at bot.riotrequest.com. It is not part of the app; see [website/README.md](website/README.md). |
 
 ## Commands
 
