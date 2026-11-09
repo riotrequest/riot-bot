@@ -138,6 +138,45 @@ describe('browser screenshots in the model context', () => {
     await app.close()
   })
 
+  it('keeps the screenshot in a conversation that already has history', async () => {
+    const page = new ToolPage()
+    const { app, provider } = browserApp(page)
+    await app.openBrowser()
+    const conversationId = app.getSnapshot().current!.conversation.id
+    provider.handler = () => ({ content: 'Hi there.', toolCalls: [] })
+    await app.sendMessage(conversationId, 'EARLIER-HELLO')
+    let request: ModelCompleteInput | null = null
+    provider.handler = (input) => {
+      const last = input.messages.at(-1)
+      if (last?.role === 'user' && last.images) { request = input; return { content: 'It shows an Apply form.', toolCalls: [] } }
+      return { content: '', toolCalls: [{ id: 'shot', name: 'page_screenshot', arguments: '{}' }] }
+    }
+    expect((await app.sendMessage(conversationId, 'What does the page look like?')).status).toBe('completed')
+    expect(request).not.toBeNull()
+    const text = request!.messages.map((message) => message.content).join('\n')
+    expect(text).toContain('EARLIER-HELLO')
+    expect(text).not.toContain('did not fit')
+    await app.close()
+  })
+
+  it('leaves the screenshot out when it would push history out of the request', async () => {
+    const page = new ToolPage()
+    const { app, provider } = browserApp(page, { modelContextTokens: 24000 })
+    await app.openBrowser()
+    const conversationId = app.getSnapshot().current!.conversation.id
+    provider.handler = () => ({ content: 'Hi there.', toolCalls: [] })
+    await app.sendMessage(conversationId, 'EARLIER-HELLO')
+    provider.handler = (input) => input.messages.some((message) => message.role === 'tool')
+      ? { content: 'I used the page text.', toolCalls: [] }
+      : { content: '', toolCalls: [{ id: 'shot', name: 'page_screenshot', arguments: '{}' }] }
+    expect((await app.sendMessage(conversationId, 'What does the page look like?')).status).toBe('completed')
+    const last = provider.calls.at(-1)!
+    expect(last.messages.some((message) => message.images?.length)).toBe(false)
+    expect(last.messages.map((message) => message.content).join('\n')).toContain('EARLIER-HELLO')
+    expect(last.messages[0].content).toContain('did not fit')
+    await app.close()
+  })
+
   it('retries without the image when the model refuses it and stops offering screenshots', async () => {
     const page = new ToolPage()
     const { app, provider } = browserApp(page)
