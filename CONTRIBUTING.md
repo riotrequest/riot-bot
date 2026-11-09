@@ -4,8 +4,7 @@ Thanks for your interest in Riot Bot. This guide covers what you need to work on
 
 Riot Bot can read your files, drive a browser that may be signed in to your accounts, and send email. Contributions are held to the security rules in [AGENTS.md](AGENTS.md#security-rules-for-changes). Please read them before changing behavior, even if you're writing the code by hand. (AGENTS.md is written for AI coding agents and people alike.)
 
-<!-- TODO(owner): once a license is chosen, state here how contributions are licensed (for example inbound = outbound) and whether a DCO sign-off or CLA is required. Do not pick one on the owner's behalf. -->
-> **TODO (owner):** the project has no license yet, so the terms for contributions are not settled. Until they are, please open an issue to discuss larger changes before you start.
+Riot Bot is released under the [MIT License](LICENSE). By contributing, you agree that your contribution is licensed under the same terms. No contributor agreement or sign-off is required. For larger changes, please open an issue to discuss the idea before you start.
 
 ## Ways to help
 
