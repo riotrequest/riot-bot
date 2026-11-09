@@ -56,7 +56,7 @@ p{margin:0}
 .nav-links{display:none}
 
 /* hero */
-.hero{position:relative;padding:18px 0 56px;overflow:hidden}
+.hero{position:relative;padding:18px 0 0;overflow:hidden}
 .hero::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:44px 44px;-webkit-mask-image:radial-gradient(ellipse 80% 60% at 50% 30%,#000 30%,transparent 75%);mask-image:radial-gradient(ellipse 80% 60% at 50% 30%,#000 30%,transparent 75%);pointer-events:none}
 .hero-glow{position:absolute;left:50%;top:150px;width:620px;height:620px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(0,230,182,.24) 0%,rgba(0,230,182,.07) 38%,transparent 66%);pointer-events:none;animation:breathe 6s ease-in-out infinite}
 .hero-in{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center}
@@ -108,15 +108,9 @@ h1 em{font-style:normal;color:var(--teal);text-shadow:0 0 34px rgba(0,230,182,.4
 .meta li{display:flex;align-items:center;gap:7px}
 .meta li::before{content:"";width:6px;height:6px;border-radius:2px;background:var(--teal);opacity:.8;transform:rotate(45deg)}
 
-/* marquee */
-.marquee{position:relative;overflow:hidden;border-block:1px solid var(--line);background:linear-gradient(90deg,var(--bg-2),#0a1210,var(--bg-2));padding:15px 0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
-.marquee-track{display:flex;width:max-content;animation:marquee 38s linear infinite}
-.marquee ul{display:flex;margin:0;padding:0;list-style:none}
-.marquee li{display:flex;align-items:center;gap:22px;padding-right:22px;white-space:nowrap;font:700 13px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--text)}
-.marquee li::after{content:"✦";color:var(--teal);font-size:12px}
-
 /* sections */
 .section{padding:84px 0;position:relative}
+.hero + .section{padding-top:60px}
 .kicker{display:inline-flex;align-items:center;gap:10px;margin-bottom:14px;color:var(--teal);font:700 12px/1 var(--display);letter-spacing:.16em;text-transform:uppercase}
 .kicker::before{content:"";width:22px;height:2px;border-radius:2px;background:var(--teal);box-shadow:0 0 12px var(--teal)}
 h2{font-size:clamp(1.75rem,6.6vw,3.25rem)}
@@ -251,14 +245,10 @@ html{scroll-behavior:smooth}
 @keyframes earglow{0%,100%{opacity:1}50%{opacity:.7}}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(0,230,182,.55)}70%{box-shadow:0 0 0 8px rgba(0,230,182,0)}100%{box-shadow:0 0 0 0 rgba(0,230,182,0)}}
 @keyframes zz{0%{opacity:0;transform:translate(0,6px)}30%{opacity:1}100%{opacity:0;transform:translate(6px,-10px)}}
-@keyframes marquee{to{transform:translateX(-50%)}}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
-  .marquee-track{flex-wrap:wrap;width:auto}
-  .marquee ul[aria-hidden]{display:none}
-  .marquee ul{flex-wrap:wrap;justify-content:center;row-gap:12px}
 }
 
 /* small phones */
@@ -283,8 +273,8 @@ html{scroll-behavior:smooth}
   .nav-links{display:flex;gap:30px}
   .nav-links a{color:var(--mute);text-decoration:none;font-size:14px;font-weight:500;transition:color .2s}
   .nav-links a:hover{color:var(--text)}
-  .hero{padding:40px 0 96px}
-  .hero-in{flex-direction:row-reverse;align-items:center;justify-content:space-between;gap:48px;text-align:left;min-height:min(78vh,720px)}
+  .hero{padding:40px 0 0}
+  .hero-in{flex-direction:row-reverse;align-items:center;justify-content:space-between;gap:48px;text-align:left;min-height:min(70vh,660px)}
   .hero-bot{width:min(34vw,400px);flex:0 0 auto}
   h1{font-size:clamp(2.6rem,4.2vw,4rem)}
   .safety-copy h2,.get-copy h2{font-size:clamp(2rem,3.4vw,2.8rem)}
@@ -296,6 +286,7 @@ html{scroll-behavior:smooth}
   .meta{justify-content:flex-start}
   .lede{font-size:1.1rem}
   .section{padding:120px 0}
+  .hero + .section{padding-top:56px}
   .moods{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:1160px;margin:44px auto 0;padding:0 var(--gut);overflow:visible}
   .mood-card{max-width:none}
   .grid{grid-template-columns:repeat(4,1fr);gap:14px}

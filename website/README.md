@@ -8,7 +8,7 @@ The source of the project site at **https://bot.riotrequest.com**. It is a stati
 | --- | --- |
 | `index.html` | The whole page. The hero mascot is an inline SVG, so it stays sharp at any size. |
 | `style.css` | All styles. They start at phone width, with breakpoints at 640px (tablet) and 960px (desktop). |
-| `app.js` | The live mascot (eye tracking, blinking, moods, dozing when idle), scroll reveals, the back-to-top button, the site-access demo, the copy button and the GitHub links. |
+| `app.js` | The live mascot (eye tracking, blinking, moods, dozing when idle), scroll reveals, the back-to-top button, the site-access demo and the copy button. |
 | `img/` | The six mood renders from the mascot concept sheet, as transparent WebP. |
 | `fonts/` | Self-hosted Unbounded (headings) and Inter (body), Latin subset, with their licenses. |
 | `og.png`, `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png` | The social preview image and icons. |
@@ -27,7 +27,7 @@ Then open http://127.0.0.1:8765/. Check it at phone width (375px) as well as des
 
 ## The GitHub link
 
-The repository is public at https://github.com/riotrequest/riot-bot. `index.html` links to it directly (nav, the Get it button, the clone command and the footer), and `app.js` holds the same address in `REPO_URL`. If the repository ever moves, update both.
+The repository is public at https://github.com/riotrequest/riot-bot. `index.html` links to it in the nav, the Get it button, the clone command and the footer. GitHub links open in a new tab (`target="_blank" rel="noopener"`). If the repository ever moves, update those links.
 
 ## Editing
 

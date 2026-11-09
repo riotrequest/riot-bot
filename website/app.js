@@ -1,9 +1,6 @@
 (() => {
   'use strict'
 
-  // The public repository. index.html carries the same links for visitors without JavaScript.
-  const REPO_URL = 'https://github.com/riotrequest/riot-bot'
-
   const root = document.documentElement
   root.classList.add('js')
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -176,22 +173,6 @@
     result.append(again)
     result.hidden = false
   })
-
-  /* GitHub links and clone command */
-  const repoLinks = $$('[data-repo]')
-  if (REPO_URL) {
-    for (const link of repoLinks) {
-      link.href = REPO_URL
-      link.removeAttribute('aria-disabled')
-      link.rel = 'noopener'
-      const label = $('[data-repo-label]', link)
-      if (label) label.textContent = 'Star it on GitHub'
-    }
-    $('#repoUrl').textContent = `${REPO_URL}.git`
-    $('#cmds .c').textContent = '# clone it'
-  } else {
-    for (const link of repoLinks) link.addEventListener('click', event => event.preventDefault())
-  }
 
   /* Copy the quick-start commands */
   const copy = $('#copy')
