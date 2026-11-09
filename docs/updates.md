@@ -2,31 +2,21 @@
 
 **Settings → Updates** shows the installed version and how that copy gets new ones.
 
-## Preview installs (not code-signed)
-
-The preview releases in [riotrequest/riot-bot](https://github.com/riotrequest/riot-bot/releases) are not code-signed, and a copy installed from one does not update itself. To update, download the newer `Riot-Bot-Setup-<version>.exe` and run it. Your bots and data stay in `%APPDATA%\riot-bot\`. Quit Riot Bot from the tray first so no work is interrupted.
-
-Windows SmartScreen shows “Windows protected your PC” for an unsigned installer. Choose **More info**, then **Run anyway**. Each release lists the installer’s SHA-256 checksum; compare it with `Get-FileHash .\Riot-Bot-Setup-<version>.exe -Algorithm SHA256` before you run the file.
-
 ## Signed installs
 
-A signed Windows install checks the public releases once at startup and again when you choose **Check for updates**. Choose **Download update** and then **Restart and install**. Riot Bot checks the installer’s Authenticode signature against the publisher of the running app. The restart closes the window, waits for the app to close its local service, and starts the installer only after a clean shutdown. It is refused while work is running or queued.
+A copy installed from a signed Windows release checks the public releases in [riotrequest/riot-bot](https://github.com/riotrequest/riot-bot/releases) once at startup and again when you choose **Check for updates**. Choose **Download update** and then **Restart and install**. Riot Bot checks the installer’s Authenticode signature against the publisher of the running app. The restart closes the window, waits for the app to close its local service, and starts the installer only after a clean shutdown. It is refused while work is running or queued.
 
-No signed release has been published yet. A copy installed from a preview release needs one manual install of the first signed version; after that it updates itself.
+No signed release has been published yet.
 
-## Source checkouts
+## Source checkouts and local builds
 
-Pull the new code, run `npm ci`, and restart the app.
+A source checkout and an installer you built yourself do not update themselves. For source, pull the new code, run `npm ci`, and restart the app.
 
-## Publish a preview release
+`npm run dist:win` writes an unsigned installer to `release\`. It is for your own computer: nothing in it proves who built it, so don’t publish it or pass it on. To update a copy installed from it, pull the new code, build again and run the new installer. Your bots and data stay in `%APPDATA%\riot-bot\`. Windows SmartScreen may warn about the file because it has no signature.
 
-1. On a reviewed release commit, set the new version in both `package.json` and `package-lock.json`. Use a higher version than the last published release.
-2. Move any older files out of `release/`, then run `npm ci` followed by `npm run dist:win` on Windows. This writes `release\Riot-Bot-Setup-<version>.exe` without a signature and without the update files.
-3. Install that file in a clean Windows account. Check first run, the optional Chromium download, and uninstall. Installing over the previous version must keep its data.
-4. Record the checksum with `Get-FileHash release\Riot-Bot-Setup-<version>.exe -Algorithm SHA256`.
-5. Create a draft GitHub Release tagged `v<version>` for that commit. Attach only the installer, and put the checksum and the SmartScreen note in the release text. Do not attach a `latest.yml`. Publish the draft once it is complete.
+## Publish a Windows update
 
-## Publish a signed release
+Every public installer is signed. Do not attach an unsigned build to a GitHub Release.
 
 1. On a reviewed release commit, set the new version in both `package.json` and `package-lock.json`. Use a higher version than the last published release.
 2. Configure the authorized Windows signing identity and run `npm ci` followed by `npm run dist:win:release` on Windows. The build signs the app and installer and writes the release files locally.

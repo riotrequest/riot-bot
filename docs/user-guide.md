@@ -192,7 +192,7 @@ Deleting a memory or disabling a skill removes it from later requests. The origi
 
 ## App updates
 
-**Settings → Updates** shows the installed version. The preview installer is not code-signed and does not update itself: download the newer installer from [GitHub Releases](https://github.com/riotrequest/riot-bot/releases) and run it. Your bots and data stay in place. A signed install, once one is published, checks for releases at startup and lets you download a version and restart to install it; finish or pause your running and queued work before restarting. For a source checkout, update with Git and run `npm ci` again. See [app updates](updates.md).
+**Settings → Updates** shows the installed version. A copy installed from a signed Windows release checks GitHub Releases when Riot Bot starts; there you can check again, download a version, or restart to install it. Finish or pause your running and queued work before restarting. No signed release has been published yet. For a source checkout, update with Git and run `npm ci` again. An installer you built yourself does not update itself: build and run a new one. See [app updates](updates.md).
 
 ## Backups and removing the browser
 

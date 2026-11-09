@@ -6,11 +6,11 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
-### November 9, 2026 — App icon and preview installer steps
+### November 9, 2026 — App icon and local unsigned builds
 
 - **App icon:** the app, its taskbar button and the installer now use Riot Bot’s “R” mark instead of the default Electron icon.
-- **Preview installer:** the first releases will be an installer that is not code-signed. The README and [app updates](docs/updates.md) now explain the Windows SmartScreen warning, how to check the installer’s SHA-256 checksum, and how to update by running a newer installer.
-- **Settings → Updates:** a copy that cannot update itself now says how to get a newer version instead of mentioning official installs.
+- **Local builds:** the README and [app updates](docs/updates.md) now say plainly that an installer built with `npm run dist:win` is unsigned and for your own computer, how to update a copy installed from it, and that every public installer is signed.
+- **Settings → Updates:** a copy that cannot update itself now says why and how to move to newer code.
 
 ### November 9, 2026 — Follow-up recall, steady bot voices and a clean quit
 

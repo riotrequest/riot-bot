@@ -3,7 +3,7 @@
 **A local-first AI assistant for Windows. Run several bots, each with its own memory, workspace and browser, and let the app itself, not a prompt, decide what they are allowed to do.**
 
 > [!NOTE]
-> Riot Bot is an early preview (version 0.1.0). Today it is a Windows desktop app. Its installer is not code-signed yet, so Windows warns before running it and the app does not update itself. Other platforms and an always-on server are on the [roadmap](#roadmap). Read the [known limitations](#known-limitations) before giving a bot access to anything important.
+> Riot Bot is an early preview (version 0.1.0). Today it is a Windows desktop app, built from source, with no signed installer yet. Other platforms and an always-on server are on the [roadmap](#roadmap). Read the [known limitations](#known-limitations) before giving a bot access to anything important.
 
 ![Riot Bot's main window: the bot list on the left, a bot named Pixel building a bakery website in Chat, and the Workspace sidebar on the right.](docs/images/hero.gif)
 
@@ -29,23 +29,13 @@ What makes it different:
 ### Requirements
 
 - Windows.
-- To run from source: Node.js 22.13 or newer in the 22.x line, 24.x, or 26 and newer. The installed app includes its own runtime.
+- Node.js 22.13 or newer in the 22.x line, 24.x, or 26 and newer, for development and tests. The packaged app includes its own runtime.
 - A model connection: an [OpenAI](https://platform.openai.com/) or [OpenRouter](https://openrouter.ai/) API key, a ChatGPT account together with the official Codex CLI, or a model server such as Ollama, LM Studio or vLLM running on this computer. Any other OpenAI-compatible endpoint at a public `https://` address also works; see [local and custom model endpoints](docs/custom-endpoints.md).
 - Optional: Google Chrome or Microsoft Edge. Bots can use either one, so you don't need to download Chromium.
 
-### Install
+### Install and run
 
-Download `Riot-Bot-Setup-<version>.exe` from the [Releases page](https://github.com/riotrequest/riot-bot/releases) and run it. If no release is listed there yet, [run from source](#or-run-from-source).
-
-The installer is not code-signed yet, so Windows SmartScreen shows “Windows protected your PC”. Choose **More info**, then **Run anyway**. Each release lists the installer’s SHA-256 checksum. To compare it before you run the file:
-
-```powershell
-Get-FileHash .\Riot-Bot-Setup-<version>.exe -Algorithm SHA256
-```
-
-To update, download the newer installer and run it. Your bots and data stay in `%APPDATA%\riot-bot\`.
-
-### Or run from source
+No installer has been published yet, because a public installer needs a publisher signature. Until then, run Riot Bot from source:
 
 ```powershell
 git clone https://github.com/riotrequest/riot-bot.git
@@ -187,7 +177,9 @@ Without a configured signing identity, this writes a local unsigned development 
 
 `release\Riot-Bot-Setup-0.1.0.exe`
 
-The preview releases on GitHub are this unsigned installer, published with its checksum. A signed release uses `npm run dist:win:release`, which requires a Windows publisher signature and builds the files that let installed copies update themselves under **Settings → Updates**. See [app updates and publishing](docs/updates.md) for both sets of release steps.
+That unsigned installer is for your own computer. Don’t publish it or pass it on: nothing in it proves who built it, and a copy installed from it does not update itself. To move to newer code, pull, rebuild and run the new installer; your bots and data stay in `%APPDATA%\riot-bot\`.
+
+Public installers use `npm run dist:win:release`, which requires a Windows publisher signature and builds the files for GitHub Releases. Copies installed from a signed release can check for new versions under **Settings → Updates**. See [app updates and publishing](docs/updates.md) for the release steps.
 
 The app and installer icon is `build/icon.ico`, drawn by `node scripts/make-icon.mjs`.
 
@@ -215,7 +207,7 @@ The app and installer icon is `build/icon.ico`, drawn by `node scripts/make-icon
 - Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one, and a custom endpoint uses the context length you enter.
 - A custom model endpoint must be on this computer or at a public `https://` address. Servers elsewhere on a home or office network are refused until the owner decides how to grant them. Custom endpoint requests do not use Windows proxy settings, and Riot Bot does not list the models on that server. The custom endpoint has not yet been checked against a real Ollama, LM Studio, or vLLM server.
 - The earlier provider check’s cancellation step did not pass. These mock tests do not rerun that live check.
-- The installer is not code-signed. Windows SmartScreen warns before it runs, and an installed copy does not update itself: you download and run each new installer.
+- No installer has been published. A public installer needs a publisher signature, which the project does not have yet. An installer you build yourself is unsigned, is meant for your own computer, and does not update itself.
 
 The [security review](docs/security-review.md) records the remaining architectural risks in more detail.
 
