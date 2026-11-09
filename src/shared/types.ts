@@ -80,6 +80,8 @@ export interface Bot {
   name: string
   purpose: string
   instructions: string
+  /** The default voice for the bot's role, from its name and purpose. Its instructions refine it. */
+  voice: { role: string; style: string }
   workspacePath: string
   avatar: AvatarView
   createdAt: number

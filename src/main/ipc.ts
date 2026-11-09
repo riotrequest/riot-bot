@@ -47,9 +47,16 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'allowSensitiveFiles'
 ]
 
-export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore, notices: { list: () => AppNotice[]; dismiss: (id: string) => AppNotice[] } = { list: () => [], dismiss: () => [] }, updates?: AppUpdates): void {
+/** Closing stops renderer requests from reaching the service, so none arrive after its database closes. */
+export interface IpcGate {
+  close(): void
+}
+
+export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore, notices: { list: () => AppNotice[]; dismiss: (id: string) => AppNotice[] } = { list: () => [], dismiss: () => [] }, updates?: AppUpdates): IpcGate {
+  let open = true
   const handle = (channel: string, fn: (app: RiotService, args: unknown[]) => unknown): void => {
     ipcMain.handle(channel, async (event, ...args) => {
+      if (!open) throw new Error('Riot Bot is closing.')
       assertSender(event, getWindow())
       try {
         return await fn(getApp(), args)
@@ -260,6 +267,7 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
     app.resolveApproval(requireId(args[0]), args[1], args[2]===true)
   })
   handle('edits:undo', (app, args) => app.undoEdit(requireId(args[0])))
+  return { close: () => { open = false } }
 }
 
 function assertSender(event: IpcMainInvokeEvent, window: BrowserWindow | null): void {

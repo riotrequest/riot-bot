@@ -1783,6 +1783,7 @@ function BotMenu(props: {
     <form className="settings-section" onSubmit={event => { event.preventDefault(); void saveProfile() }} onChange={() => setSaved(false)}>
       <label>Bot name<input disabled={saving} required minLength={2} maxLength={40} value={name} onChange={event => setName(event.target.value)} /></label>
       <label>What it helps with<input disabled={saving} maxLength={400} value={purpose} onChange={event => setPurpose(event.target.value)} /></label>
+      <p className="help">Voice ({props.bot.voice.role}): {props.bot.voice.style} Based on the name and purpose; extra instructions can change it.</p>
       <details className="subtle-details"><summary>Extra instructions <span>Optional</span></summary><p className="help">Tell your bot how you like things done. For example, “Keep answers short and ask if anything is unclear.”</p><label>Instructions<textarea disabled={saving} rows={4} maxLength={8000} value={instructions} onChange={event => setInstructions(event.target.value)} /></label></details>
       <div className="row"><button className="send" disabled={saving} type="submit">{saving ? 'Saving…' : 'Save profile'}</button>{saved && <p className="save-success" role="status">Profile saved.</p>}</div>
     </form>

@@ -11,8 +11,9 @@ import type { Logger } from '../core/logger'
 import { createOpenAICompatibleProvider, MockProvider } from '../core/provider'
 import { createCustomEndpointProvider } from '../core/custom-endpoint'
 import { ElectronCredentialStore } from './credentials'
-import { registerIpc } from './ipc'
+import { registerIpc, type IpcGate } from './ipc'
 import { contentSecurityPolicy, windowWebPreferences } from './security'
+import { shutDown } from './shutdown'
 import { AppUpdates, verifyWindowsPublisher } from './updates'
 
 protocol.registerSchemesAsPrivileged([
@@ -27,6 +28,7 @@ if (!gotLock) app.quit()
 
 let window: BrowserWindow | null = null
 let riot: RiotService | null = null
+let ipc: IpcGate | null = null
 let tray: Tray | null = null
 let quitting = false
 let quitReady = false
@@ -321,7 +323,8 @@ app.whenReady().then(async () => {
       notices = pushNotice(notices, reminderNotice(event.schedule))
       publishNotices()
     }
-    if (event.type === 'jobs-changed' && riot) {
+    // Shutdown pauses queued jobs. That needs no tray text or notice, and the database is about to close.
+    if (event.type === 'jobs-changed' && riot && !quitting) {
       const jobs = riot.listJobs('app')
       const running = jobs.filter((job) => job.status === 'running')
       tray?.setToolTip(`Riot Bot · ${running.length ? `${running.length} working` : 'Ready'}`)
@@ -345,7 +348,7 @@ app.whenReady().then(async () => {
     })
   })
   if (!devUrl) registerAppProtocol(rendererDirectory())
-  registerIpc(
+  ipc = registerIpc(
     () => {
       if (!riot) throw new Error('Riot Bot is still starting.')
       return riot
@@ -382,7 +385,7 @@ app.on('before-quit', (event) => {
   popup = null
   tray?.destroy()
   tray = null
-  void riot.close().then(() => installAfterShutdown?.()).catch(() => {
+  void shutDown({ ipc, window, service: riot, install: installAfterShutdown }).catch(() => {
     console.error('Riot Bot could not finish shutdown cleanly. Unfinished jobs will need review on restart.')
   }).finally(() => {
     quitReady = true

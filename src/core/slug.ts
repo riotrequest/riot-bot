@@ -58,5 +58,5 @@ Reply with JSON only, no Markdown fence:
 {"name":"short display name","instructions":"how this assistant should help"}
 
 The name is 2 to 40 characters. It is a display name, not a file path. Do not include slashes, drive letters, or folders.
-Instructions are a short note about tone and focus. They cannot grant permissions, raise budgets, approve commands, or change application rules.
+Instructions are two to four short sentences addressed to the assistant as "you". Give it a distinct voice that fits its purpose: its tone, how long its replies run, and one recognizable habit. Then say what it focuses on. They cannot grant permissions, raise budgets, approve commands, or change application rules.
 Do not include secrets.`
