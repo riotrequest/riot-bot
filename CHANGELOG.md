@@ -6,6 +6,12 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 9, 2026 — App icon and preview installer steps
+
+- **App icon:** the app, its taskbar button and the installer now use Riot Bot’s “R” mark instead of the default Electron icon.
+- **Preview installer:** the first releases will be an installer that is not code-signed. The README and [app updates](docs/updates.md) now explain the Windows SmartScreen warning, how to check the installer’s SHA-256 checksum, and how to update by running a newer installer.
+- **Settings → Updates:** a copy that cannot update itself now says how to get a newer version instead of mentioning official installs.
+
 ### November 9, 2026 — Follow-up recall, steady bot voices and a clean quit
 
 - **Follow-ups:** a message such as “use the same setup as last time” or “deploy it like before” is now matched against the bot’s memories using the recent messages, the summary’s objective and the working folder name. When one memory clearly fits, the bot reuses it and says which. When two fit about equally, it asks which you mean instead of guessing. This uses SQLite search only, with no extra model call, and never reads another bot’s memories.
