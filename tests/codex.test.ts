@@ -3,12 +3,19 @@ import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexService, type CodexTurnInput } from '../src/core/codex'
 import { Database } from '../src/core/db'
-import { DRIVE_LOOKUP_TIMEOUT_MS } from '../src/core/disk-space'
 import { RESEARCH_ATTEMPT_LIMIT } from '../src/core/research'
 import { redact } from '../src/core/redact'
 import { localDay } from '../src/core/settings'
 import { makeApp, tempDir, waitFor } from './helpers'
 import type { ChatMessageView } from '../src/shared/types'
+
+// These tests cover the native tool path. The real Windows drive lookup is tested in disk-space.test.ts;
+// here a fixed list keeps a slow cold PowerShell start on a busy machine out of the result.
+vi.mock('../src/core/disk-space', async importOriginal => {
+  const real = await importOriginal<typeof import('../src/core/disk-space')>()
+  const { win32 } = await import('node:path')
+  return { ...real, getDiskSpace: (location: string, signal?: AbortSignal) => real.getDiskSpace(location, signal, async () => [win32.parse(win32.resolve(location)).root.toUpperCase()]) }
+})
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0)) await close(); vi.unstubAllEnvs() })
@@ -89,7 +96,7 @@ describe('native Codex connection', () => {
     expect(app.openConversation(id).messages.filter(message => message.toolError)).toHaveLength(1)
     expect(approvals).toBe(0)
     expect(provider.calls).toHaveLength(0)
-  }, DRIVE_LOOKUP_TIMEOUT_MS + 10_000) // runs the real Windows drive lookup
+  })
 
   it('exposes built-in schedules and carries scheduled context without allowing recursive schedules', async () => {
     const { app, id, requests, provider } = nativeApp({ scenario: 'schedule', schedule: { kind: 'reminder', title: 'Fixture reminder', instructions: 'Review the fixture.', start_at: new Date(Date.now() + 86400000).toISOString(), repeat: 'once', timezone: 'UTC' } })
