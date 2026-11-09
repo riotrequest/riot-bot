@@ -6,6 +6,11 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 8, 2026 — Published on GitHub
+
+- The source is public at [github.com/riotrequest/riot-bot](https://github.com/riotrequest/riot-bot), with a project site at [bot.riotrequest.com](https://bot.riotrequest.com).
+- Report vulnerabilities privately through GitHub or to security@riotrequest.com. [SECURITY.md](SECURITY.md) explains how.
+
 ### November 8, 2026 — MIT License
 
 - Riot Bot is now released under the [MIT License](LICENSE). Contributions are accepted under the same terms.

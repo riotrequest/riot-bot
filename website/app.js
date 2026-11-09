@@ -1,9 +1,8 @@
 (() => {
   'use strict'
 
-  // Set this when the public repository exists, for example 'https://github.com/OWNER/riot-bot'.
-  // Every GitHub button and the clone command switch over automatically.
-  const REPO_URL = ''
+  // The public repository. index.html carries the same links for visitors without JavaScript.
+  const REPO_URL = 'https://github.com/riotrequest/riot-bot'
 
   const root = document.documentElement
   root.classList.add('js')

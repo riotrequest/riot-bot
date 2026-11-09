@@ -242,10 +242,7 @@ Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, chec
 
 ## Security
 
-Please don't report vulnerabilities in public issues. [SECURITY.md](SECURITY.md) explains how to report one and what to include.
-
-<!-- TODO(owner): enable GitHub private vulnerability reporting (or publish a private contact you control), test it, and update SECURITY.md before the repository is public. -->
-> **TODO (owner):** a private vulnerability-reporting route has not been set up yet. See [SECURITY.md](SECURITY.md).
+Please don't report vulnerabilities in public issues. [Report them privately on GitHub](https://github.com/riotrequest/riot-bot/security/advisories/new) or email [security@riotrequest.com](mailto:security@riotrequest.com); [SECURITY.md](SECURITY.md) explains what to include.
 
 ## License
 
