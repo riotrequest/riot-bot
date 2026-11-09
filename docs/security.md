@@ -31,7 +31,7 @@ While plink runs, other programs running as your Windows account can read its co
 
 ## Remember website access
 
-Saving a login also grants that bot access to the exact HTTPS website. For another interactive website or a generated destination, a site card offers **Remember & allow**, **This task only**, and **Deny**. Remembered permission includes sharing information with the site, filling forms and clicking controls that can send, publish, pay or delete. Give it to sites you intend the bot to operate. Page text or button labels cannot grant it. The scheme, host and port must match; a subdomain or different port needs its own access.
+Saving a login also grants that bot access to the exact HTTPS website. For another interactive website or a generated destination, a site card offers **Remember & allow**, **This task only**, and **Don’t allow**. Remembered permission includes sharing information with the site, filling forms and clicking controls that can send, publish, pay or delete. Give it to sites you intend the bot to operate. Page text or button labels cannot grant it. The scheme, host and port must match; a subdomain or different port needs its own access.
 
 Remembered access never covers uploads. Each upload names the workspace file, its size and the website, and needs its own approval; the website receives the exact bytes Riot Bot read before asking. Downloads started by a bot’s click or key press are saved into the workspace `Downloads` folder only when file editing is on, never overwrite an existing file, refuse shortcut files and carry the Windows mark of the web. Other downloads are cancelled.
 

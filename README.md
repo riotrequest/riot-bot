@@ -5,8 +5,7 @@
 > [!NOTE]
 > Riot Bot is an early preview (version 0.1.0). Today it is a Windows desktop app, built from source, with no signed installer yet. Other platforms and an always-on server are on the [roadmap](#roadmap). Read the [known limitations](#known-limitations) before giving a bot access to anything important.
 
-<!-- TODO(owner): replace this placeholder with a short GIF or screenshot. Suggested file: docs/images/hero.gif, referenced from here as an image. -->
-> **Screenshot placeholder (hero GIF):** the main window, showing the bot list on the left, a bot working through a request in Chat, and the Workspace sidebar (Tasks, Files, Memories, Schedule, Apps) on the right.
+![Riot Bot's main window: the bot list on the left, a bot named Pixel building a bakery website in Chat, and the Workspace sidebar on the right.](docs/images/hero.gif)
 
 ## Why Riot Bot
 
@@ -71,8 +70,7 @@ The left sidebar lists your bots. **New Bot** creates another assistant with its
 
 Replies use Markdown. Links open in your own browser after a public-address check, and images in model replies are never loaded. You can attach files or paste a screenshot. Each reply shows whether its run completed, failed, paused or was interrupted, and **Usage & activity** keeps the full record of every model call, including what went into its context.
 
-<!-- TODO(owner): replace with a screenshot. Suggested file: docs/images/chat.png -->
-> **Screenshot placeholder (chat):** a bot answering a request with a one-line tool status, file links with Undo, and an emoji reaction.
+![A finished reply in Chat: a croissant reaction on the request, a summary of the work, and the two files the bot wrote, each with Undo this edit.](docs/images/chat.png)
 
 Details: [user guide: bots and chats](docs/user-guide.md#bots-and-chats) and [chat](docs/user-guide.md#chat).
 
@@ -88,10 +86,9 @@ Details: [tasks, saved files and local verification](docs/jobs-and-library.md).
 
 Each bot gets a visible browser window with its own profile, separate from your personal Chrome or Edge profile. Sign-ins and cookies persist across restarts. Bots read the whole page through snapshots, including frames and shadow DOM, with each element’s state and value, and models that accept images can also take a labelled screenshot. They can click, type, choose dropdown options, press keys, hover, drag, wait for a page to change and switch tabs, but have no tool for running arbitrary page scripts. Uploads come from the bot’s workspace and ask you every time. Files a bot downloads are saved into its workspace `Downloads` folder. The number of browser steps per task is a setting for each bot.
 
-The first time a bot needs to interact with a site, a card offers **Remember & allow**, **This task only**, or **Deny**. Remembered access lets that bot click and fill forms on that site without asking each time, including actions that send, pay, publish or delete there. You can revoke it in **Bot settings**. **Take over** hands you the window for sign-in, MFA or a CAPTCHA. For the connections it handles, a local proxy refuses private and local-network destinations, including after redirects.
+The first time a bot needs to interact with a site, a card offers **Remember & allow**, **This task only**, or **Don’t allow**. Remembered access lets that bot click and fill forms on that site without asking each time, including actions that send, pay, publish or delete there. You can revoke it in **Bot settings**. **Take over** hands you the window for sign-in, MFA or a CAPTCHA. For the connections it handles, a local proxy refuses private and local-network destinations, including after redirects.
 
-<!-- TODO(owner): replace with a screenshot. Suggested file: docs/images/site-access.png -->
-> **Screenshot placeholder (site access):** the site-access card with Remember & allow, This task only and Deny, beside the bot's browser window.
+![The site-access card asking whether a bot named Scout may open a shop page on www.example.com, with Don’t allow, This task only and Remember & allow.](docs/images/site-access.png)
 
 Details: [user guide: browser](docs/user-guide.md#browser) and [saved logins and permissions](docs/security.md#remember-website-access).
 
@@ -115,8 +112,7 @@ Connect an existing Gmail or Google Workspace mailbox with your own Google Deskt
 
 A **reply rule** that you turn on for one bot can send an exact saved reply to people who were already in the conversation, within a daily limit. Anything else waits for review, including money words, exclusions, new recipients, attachments and changed originals.
 
-<!-- TODO(owner): replace with a screenshot. Suggested file: docs/images/gmail-review.png -->
-> **Screenshot placeholder (Gmail review):** the send review card showing the sender, every recipient and the full message, with Send email and Don’t send.
+<!-- TODO(owner): add a screenshot of the Gmail send review card (sender, every recipient, the full message, Send email and Don’t send) as docs/images/gmail-review.png. It needs a connected test mailbox. -->
 
 Details: [connect Gmail](docs/gmail.md).
 
@@ -124,8 +120,7 @@ Details: [connect Gmail](docs/gmail.md).
 
 The **Schedule** screen holds reminders and bot tasks that run once, daily, on weekdays or weekly. You can also ask in Chat (“Remind me to check email at 9 PM”). A reminder shows a Riot Bot popup without any AI call. A bot task runs with that bot’s current setup, approvals and budget, and its results appear in Chat and Tasks. Missed AI work waits for **Run now** and is never replayed automatically. Schedules run while Riot Bot is open or in the tray and the computer is awake.
 
-<!-- TODO(owner): replace with a screenshot. Suggested file: docs/images/schedule.png -->
-> **Screenshot placeholder (schedule):** the Schedule screen with a daily bot task and a reminder, plus a Riot Bot reminder popup in the corner of the screen.
+![The Schedule screen with two reminders and a weekday bot task, and a Riot Bot reminder popup in the corner of the desktop.](docs/images/schedule.png)
 
 Details: [reminders and scheduled bot work](docs/scheduling.md).
 
