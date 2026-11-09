@@ -6,7 +6,9 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
-- Official Windows builds can check GitHub Releases for updates, download a signed installer, and restart to apply it from **Settings → Updates**.
+### November 9, 2026 — Built-in Windows updater
+
+- In official Windows builds, Riot Bot checks GitHub Releases at startup. Open **Settings → Updates** to check again, download a signed update, and choose when to restart and install it.
 
 ### November 9, 2026 — Faster disk-space check
 
