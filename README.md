@@ -35,6 +35,8 @@ What makes it different:
 
 ### Install and run
 
+No installer has been published yet, because a public installer needs a publisher signature. Until then, run Riot Bot from source:
+
 ```powershell
 git clone https://github.com/riotrequest/riot-bot.git
 cd riot-bot
@@ -175,9 +177,13 @@ Without a configured signing identity, this writes a local unsigned development 
 
 `release\Riot-Bot-Setup-0.1.0.exe`
 
-Public installers use `npm run dist:win:release`, which requires a Windows publisher signature and builds the files for GitHub Releases. Installed copies can check for new versions under **Settings → Updates**. See [app updates and publishing](docs/updates.md) for the release steps.
+That unsigned installer is for your own computer. Don’t publish it or pass it on: nothing in it proves who built it, and a copy installed from it does not update itself. To move to newer code, pull, rebuild and run the new installer; your bots and data stay in `%APPDATA%\riot-bot\`.
 
-`playwright-core` remains unpacked for optional Chromium setup, so those files are outside the main ASAR's integrity check. The installer runs in an Electron utility process with its download helper in a worker thread, preserving installation with RunAsNode disabled. Chromium downloads into `%APPDATA%\riot-bot\playwright-browsers` only when requested. The app still uses the default Electron icon.
+Public installers use `npm run dist:win:release`, which requires a Windows publisher signature and builds the files for GitHub Releases. Copies installed from a signed release can check for new versions under **Settings → Updates**. See [app updates and publishing](docs/updates.md) for the release steps.
+
+The app and installer icon is `build/icon.ico`, drawn by `node scripts/make-icon.mjs`.
+
+`playwright-core` remains unpacked for optional Chromium setup, so those files are outside the main ASAR's integrity check. The installer runs in an Electron utility process with its download helper in a worker thread, preserving installation with RunAsNode disabled. Chromium downloads into `%APPDATA%\riot-bot\playwright-browsers` only when requested.
 
 ## Known limitations
 
@@ -201,7 +207,7 @@ Public installers use `npm run dist:win:release`, which requires a Windows publi
 - Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one, and a custom endpoint uses the context length you enter.
 - A custom model endpoint must be on this computer or at a public `https://` address. Servers elsewhere on a home or office network are refused until the owner decides how to grant them. Custom endpoint requests do not use Windows proxy settings, and Riot Bot does not list the models on that server. The custom endpoint has not yet been checked against a real Ollama, LM Studio, or vLLM server.
 - The earlier provider check’s cancellation step did not pass. These mock tests do not rerun that live check.
-- The installer is unsigned and does not yet include this version.
+- No installer has been published. A public installer needs a publisher signature, which the project does not have yet. An installer you build yourself is unsigned, is meant for your own computer, and does not update itself.
 
 The [security review](docs/security-review.md) records the remaining architectural risks in more detail.
 

@@ -6,6 +6,12 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 9, 2026 — App icon and local unsigned builds
+
+- **App icon:** the app, its taskbar button and the installer now use Riot Bot’s “R” mark instead of the default Electron icon.
+- **Local builds:** the README and [app updates](docs/updates.md) now say plainly that an installer built with `npm run dist:win` is unsigned and for your own computer, how to update a copy installed from it, and that every public installer is signed.
+- **Settings → Updates:** a copy that cannot update itself now says why and how to move to newer code.
+
 ### November 9, 2026 — Follow-up recall, steady bot voices and a clean quit
 
 - **Follow-ups:** a message such as “use the same setup as last time” or “deploy it like before” is now matched against the bot’s memories using the recent messages, the summary’s objective and the working folder name. When one memory clearly fits, the bot reuses it and says which. When two fit about equally, it asks which you mean instead of guessing. This uses SQLite search only, with no extra model call, and never reads another bot’s memories.

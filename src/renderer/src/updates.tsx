@@ -16,13 +16,13 @@ export function UpdatesPane({ update, api, unsaved }: {
   return <>
     <div className="page-intro">
       <h2>App updates</h2>
-      <p>Check for signed Windows releases and choose when to restart.</p>
+      <p>See which version is installed and how this copy gets new ones.</p>
     </div>
     <section className="settings-section">
       <h3>{update ? `Riot Bot ${update.currentVersion}` : 'Riot Bot'}</h3>
       <div className="help" role="status">
         {!update && <p>Loading update information…</p>}
-        {update?.status === 'unavailable' && <p>In-app updates are available in official Windows installs. For a source checkout, update it with Git.</p>}
+        {update?.status === 'unavailable' && <p>This copy does not update itself. In-app updates work in copies installed from a signed release. For a source checkout, update it with Git. For an installer you built yourself, build and run a new one; your bots and data stay in place.</p>}
         {update?.status === 'checking' && <p>Checking GitHub Releases…</p>}
         {update?.status === 'current' && <p>You’re up to date.</p>}
         {update?.status === 'available' && <p>Riot Bot {update.version} is available.</p>}

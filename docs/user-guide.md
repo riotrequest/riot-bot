@@ -192,7 +192,7 @@ Deleting a memory or disabling a skill removes it from later requests. The origi
 
 ## App updates
 
-Official Windows installs check GitHub Releases when Riot Bot starts. Open **Settings → Updates** to check again, download a version, or restart to install it. Finish or pause your running and queued work before restarting. For a source checkout, update with Git and run `npm ci` again.
+**Settings → Updates** shows the installed version. A copy installed from a signed Windows release checks GitHub Releases when Riot Bot starts; there you can check again, download a version, or restart to install it. Finish or pause your running and queued work before restarting. No signed release has been published yet. For a source checkout, update with Git and run `npm ci` again. An installer you built yourself does not update itself: build and run a new one. See [app updates](updates.md).
 
 ## Backups and removing the browser
 

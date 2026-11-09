@@ -49,6 +49,7 @@ Development runs use your normal app-data folder (`%APPDATA%\riot-bot\`). If you
 | `src/renderer/` | The React interface. It is presentation only, never a permission gate. |
 | `tests/` | Vitest tests, shared helpers and protocol fixtures |
 | `docs/` | Feature and security documentation |
+| `build/icon.ico`, `scripts/make-icon.mjs` | The app and installer icon, and the script that draws it |
 
 ## Commands
 
