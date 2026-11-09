@@ -4,22 +4,35 @@ import { ConfigError, StopError } from './errors'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
-/** The first Windows PowerShell start on a slow or busy PC can take several seconds. */
 export const DRIVE_LOOKUP_TIMEOUT_MS=20_000
 const STOPPED='Stopped. Disk space was not read.'
+
+/** Drive letters listed under a volume in mountvol's output. The rest of its text is localized and ignored. */
+export function volumeRoots(output:string):string[]{
+  const roots:string[]=[]
+  let inVolume=false
+  for(const line of output.split(/\r?\n/)){
+    const text=line.trim()
+    if(/^\\\\\?\\Volume\{[0-9A-Fa-f-]+\}\\$/.test(text))inVolume=true
+    else if(!text)inVolume=false
+    else if(inVolume&&/^[A-Za-z]:\\$/.test(text))roots.push(text.toUpperCase())
+  }
+  return roots
+}
+
+/**
+ * Lists the drive letters of local volumes with Windows' built-in mountvol, a small native tool that needs no
+ * administrator rights. Network drives and substituted drives are not volumes, so they never appear.
+ */
+export async function readLocalVolumes():Promise<string[]>{
+  const {stdout}=await promisify(execFile)(path.join(process.env.SystemRoot??'C:\\Windows','System32','mountvol.exe'),[],{windowsHide:true,timeout:DRIVE_LOOKUP_TIMEOUT_MS,maxBuffer:100_000})
+  return volumeRoots(stdout)
+}
 
 let volumes: {at:number;roots:Promise<string[]>}|null=null
 async function localWindowsVolumes():Promise<string[]>{
   if(volumes&&Date.now()-volumes.at<10_000)return volumes.roots
-  // Language constructs only: a cmdlet such as ConvertTo-Json makes a cold PowerShell search every installed module first.
-  const roots=promisify(execFile)(path.join(process.env.SystemRoot??'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe'),[
-    '-NoLogo','-NoProfile','-NonInteractive','-Command',
-    'foreach($drive in [IO.DriveInfo]::GetDrives()){if([int]$drive.DriveType -in 2,3,5,6){$drive.Name}}'
-  ],{windowsHide:true,timeout:DRIVE_LOOKUP_TIMEOUT_MS,maxBuffer:10000}).then(({stdout})=>{
-    const roots=stdout.split(/\r?\n/).map(line=>line.trim()).filter(Boolean)
-    if(!roots.every(root=>/^[A-Za-z]:\\$/.test(root)))throw new Error('Unexpected drive list.')
-    return roots.map(root=>root.toUpperCase())
-  }).catch(()=>{volumes=null;throw new ConfigError('Windows could not identify local drives. No filesystem query was sent to that location.')})
+  const roots=readLocalVolumes().catch(()=>{volumes=null;throw new ConfigError('Windows could not identify local drives. No filesystem query was sent to that location.')})
   volumes={at:Date.now(),roots}
   return roots
 }

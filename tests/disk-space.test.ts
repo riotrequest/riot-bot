@@ -1,11 +1,12 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { DRIVE_LOOKUP_TIMEOUT_MS,getDiskSpace,localDiskPath } from '../src/core/disk-space'
+import { DRIVE_LOOKUP_TIMEOUT_MS,getDiskSpace,localDiskPath,readLocalVolumes,volumeRoots } from '../src/core/disk-space'
 import { StopError } from '../src/core/errors'
 import { FakeTerminal, makeApp, tempDir } from './helpers'
 
-// Most of these run the real Windows drive lookup, which allows a cold PowerShell start its full time.
+// Most of these run the real Windows drive lookup; allow it its full time limit.
 describe('built-in disk-space check', { timeout: DRIVE_LOOKUP_TIMEOUT_MS + 10_000 }, () => {
   it('rejects UNC, device paths, mapped drives and remote link targets before statfs',async()=>{
     const statfs=vi.spyOn(fs,'statfs')
@@ -18,6 +19,47 @@ describe('built-in disk-space check', { timeout: DRIVE_LOOKUP_TIMEOUT_MS + 10_00
       expect(statfs).not.toHaveBeenCalled()
     }finally{statfs.mockRestore()}
   })
+
+  it('reads drive letters only from volume entries in mountvol output', () => {
+    // The help text around the volume list is localized; only volume entries count.
+    const output = [
+      'Creates, deletes, or lists a volume mount point.',
+      '    X:\\',
+      '',
+      'Possible values for VolumeName along with current mount points are:',
+      '',
+      '    \\\\?\\Volume{0364f2b6-8278-4c58-a717-443574c49c12}\\',
+      '        c:\\',
+      '        C:\\mnt\\data\\',
+      '',
+      '    \\\\?\\Volume{84fd1593-c4ac-4826-8297-4f831a8bada4}\\',
+      '        *** NO MOUNT POINTS ***',
+      '',
+      '    \\\\?\\Volume{602bf635-8db4-11f0-944f-50c2e87f015a}\\',
+      '        F:\\',
+      '        G:\\'
+    ].join('\r\n')
+    expect(volumeRoots(output)).toEqual(['C:\\', 'F:\\', 'G:\\'])
+  })
+
+  it.runIf(process.platform === 'win32')('lists only real local volumes, so a substituted drive letter is refused before statfs', async () => {
+    const subst = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'subst.exe')
+    const letter = await freeDriveLetter(), dir = tempDir()
+    execFileSync(subst, [`${letter}:`, dir], { windowsHide: true })
+    const statfs = vi.spyOn(fs, 'statfs')
+    try {
+      await expect(fs.access(`${letter}:\\`)).resolves.toBeUndefined()
+      const roots = await readLocalVolumes()
+      expect(roots).toContain(path.parse(path.resolve(dir)).root.toUpperCase())
+      expect(roots).not.toContain(`${letter}:\\`)
+      await expect(getDiskSpace(`${letter}:\\`)).rejects.toThrow(/remote or unavailable/)
+      expect(statfs).not.toHaveBeenCalled()
+    } finally {
+      statfs.mockRestore()
+      execFileSync(subst, [`${letter}:`, '/D'], { windowsHide: true })
+    }
+  })
+
   it('reads the actual filesystem capacity and labels the location and units', async () => {
     const location = tempDir(), stats = await fs.statfs(location)
     const result = await getDiskSpace(location)
@@ -85,3 +127,8 @@ describe('built-in disk-space check', { timeout: DRIVE_LOOKUP_TIMEOUT_MS + 10_00
     } finally { await app.close() }
   })
 })
+
+async function freeDriveLetter(): Promise<string> {
+  for (const letter of 'QRSTUVWXY') if (!(await fs.access(`${letter}:\\`).then(() => true, () => false))) return letter
+  throw new Error('No free drive letter for the subst test.')
+}

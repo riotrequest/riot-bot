@@ -9,14 +9,6 @@ import { localDay } from '../src/core/settings'
 import { makeApp, tempDir, waitFor } from './helpers'
 import type { ChatMessageView } from '../src/shared/types'
 
-// These tests cover the native tool path. The real Windows drive lookup is tested in disk-space.test.ts;
-// here a fixed list keeps a slow cold PowerShell start on a busy machine out of the result.
-vi.mock('../src/core/disk-space', async importOriginal => {
-  const real = await importOriginal<typeof import('../src/core/disk-space')>()
-  const { win32 } = await import('node:path')
-  return { ...real, getDiskSpace: (location: string, signal?: AbortSignal) => real.getDiskSpace(location, signal, async () => [win32.parse(win32.resolve(location)).root.toUpperCase()]) }
-})
-
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0)) await close(); vi.unstubAllEnvs() })
 

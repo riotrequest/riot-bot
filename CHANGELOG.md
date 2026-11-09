@@ -6,9 +6,10 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
-### November 9, 2026 — Disk-space check on slow PCs
+### November 9, 2026 — Faster disk-space check
 
-- The disk-space check gives Windows up to 20 seconds, up from 5, to list local drives, so the first check after a cold start no longer fails with “Windows could not identify local drives.” **Stop** ends the wait at once.
+- The disk-space check now lists local drives with Windows’ built-in `mountvol` instead of starting PowerShell. The first check after a cold start no longer fails with “Windows could not identify local drives,” and **Stop** ends a check at once.
+- A substituted drive letter (`subst`) is now refused like a network drive, because it is not a local volume. Check the folder it points to instead.
 
 ### November 8, 2026 — Published on GitHub
 
