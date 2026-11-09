@@ -787,7 +787,7 @@ describe('research authority, reading, and caps', () => {
       expect(text).not.toContain('LATE_TAVILY_SNIPPET')
       expect(JSON.stringify(app.getSnapshot().current!.messages)).not.toContain('LATE_TAVILY_SNIPPET')
     } finally { await app.close() }
-  }, 15000)
+  })
 
   it('treats an aborted provider request as a fallback and Stop as a cancellation', async () => {
     const calls: string[] = []
@@ -828,7 +828,7 @@ describe('research authority, reading, and caps', () => {
       expect(calls).toEqual(['https://api.tavily.com/search', 'https://api.firecrawl.dev/v2/search'])
       expect(JSON.stringify(app.getSnapshot().current!.messages)).not.toContain('LATE_FIRECRAWL')
     } finally { await app.close() }
-  }, 15000)
+  })
 
   it('extracts an oversized public page within bounds and does not treat a verification screen as the article', async () => {
     const calls: ResearchExchange[] = []
