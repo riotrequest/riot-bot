@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, net, protoco
 import fs from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
+import { NsisUpdater } from 'electron-updater'
 import { dismissNotice, mainWindowIsFocused, noticePopupBounds, noticesMaySurface, pushNotice, reconcileAttention, reminderNotice, seedAttention, type MainWindowPresence } from '../core/notices'
 import { RiotService } from '../core/service'
 import type { AppNotice } from '../shared/types'
@@ -12,6 +13,7 @@ import { createCustomEndpointProvider } from '../core/custom-endpoint'
 import { ElectronCredentialStore } from './credentials'
 import { registerIpc } from './ipc'
 import { contentSecurityPolicy, windowWebPreferences } from './security'
+import { AppUpdates, verifyWindowsPublisher } from './updates'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -28,6 +30,7 @@ let riot: RiotService | null = null
 let tray: Tray | null = null
 let quitting = false
 let quitReady = false
+let installAfterShutdown: (() => void) | null = null
 let windowShown = false
 let popup: BrowserWindow | null = null
 let popupReady = false
@@ -237,6 +240,29 @@ app.whenReady().then(async () => {
   fs.mkdirSync(userData, { recursive: true })
   process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(userData, 'playwright-browsers')
   const logger = fileLogger(path.join(userData, 'riot-bot.log'))
+  const updater = process.platform === 'win32' && app.isPackaged && fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'))
+    ? new NsisUpdater()
+    : null
+  const updates = new AppUpdates(app.getVersion(), updater, (update) => {
+    if (window && !window.isDestroyed()) window.webContents.send('app:event', { type: 'update-state', update })
+  }, verifyWindowsPublisher, (install) => {
+    if (quitting || !riot || riot.hasUpdateBlockingWork()) {
+      throw new ConfigError('Finish or pause pending work before restarting to update.')
+    }
+    installAfterShutdown = install
+    app.quit()
+  })
+  if (updater) {
+    updater.autoDownload = false
+    updater.autoInstallOnAppQuit = false
+    updater.allowPrerelease = false
+    updater.allowDowngrade = false
+    updater.disableWebInstaller = true
+    updater.verifyUpdateCodeSignature = async (_publisher, installer) =>
+      await verifyWindowsPublisher(installer) ? null : 'Windows could not verify the update’s publisher signature.'
+    updater.on('download-progress', ({ percent }) => updates.progress(percent))
+    updater.on('error', (error) => logger.error('Riot Bot updater error.', { name: error.name }))
+  }
   const credentials = await ElectronCredentialStore.open(userData)
   const providerFetch: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
   riot = new RiotService({
@@ -333,9 +359,11 @@ app.whenReady().then(async () => {
         publishNotices()
         return listNotices()
       }
-    }
+    },
+    updates
   )
   await createWindow()
+  void updates.check()
 }).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'Riot Bot could not start.'
   console.error(message)
@@ -354,7 +382,12 @@ app.on('before-quit', (event) => {
   popup = null
   tray?.destroy()
   tray = null
-  void riot.close().catch(() => console.error('Riot Bot could not finish shutdown cleanly. Unfinished jobs will need review on restart.')).finally(() => { quitReady = true;app.quit() })
+  void riot.close().then(() => installAfterShutdown?.()).catch(() => {
+    console.error('Riot Bot could not finish shutdown cleanly. Unfinished jobs will need review on restart.')
+  }).finally(() => {
+    quitReady = true
+    setImmediate(() => app.quit())
+  })
 })
 
 app.on('window-all-closed', () => { /* The tray owns the desktop service until explicit Quit. */ })

@@ -1,3 +1,9 @@
 extends: ./electron-builder.yml
 # Local development builds remain available. A release must have a real publisher signature.
 forceCodeSigning: true
+win:
+  verifyUpdateCodeSignature: true
+publish:
+  provider: github
+  owner: riotrequest
+  repo: riot-bot

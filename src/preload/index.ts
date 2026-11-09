@@ -3,6 +3,10 @@ import type { AppEvent, PublicSettings, RiotBridge } from '../shared/types'
 
 const api: RiotBridge = {
   getSnapshot: () => ipcRenderer.invoke('app:getSnapshot'),
+  getUpdateState: () => ipcRenderer.invoke('updates:get'),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updates:download'),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
   getGmailStatus: () => ipcRenderer.invoke('gmail:status'),
   importGmailClient: () => ipcRenderer.invoke('gmail:importClient'),
   connectGmail: () => ipcRenderer.invoke('gmail:connect'),

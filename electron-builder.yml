@@ -9,6 +9,7 @@ asar: true
 asarUnpack:
   - node_modules/playwright-core/**/*
 npmRebuild: false
+publish: null
 electronFuses:
   runAsNode: false
   enableCookieEncryption: true

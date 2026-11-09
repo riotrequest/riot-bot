@@ -175,7 +175,7 @@ Without a configured signing identity, this writes a local unsigned development 
 
 `release\Riot-Bot-Setup-0.1.0.exe`
 
-For an eventual public release, use `npm run dist:win:release`; its separate config requires a real publisher signature. No signing certificate is configured yet. See [the security report](docs/security-review.md) for artifact verification and remaining release work.
+Public installers use `npm run dist:win:release`, which requires a Windows publisher signature and builds the files for GitHub Releases. Installed copies can check for new versions under **Settings → Updates**. See [app updates and publishing](docs/updates.md) for the release steps.
 
 `playwright-core` remains unpacked for optional Chromium setup, so those files are outside the main ASAR's integrity check. The installer runs in an Electron utility process with its download helper in a worker thread, preserving installation with RunAsNode disabled. Chromium downloads into `%APPDATA%\riot-bot\playwright-browsers` only when requested. The app still uses the default Electron icon.
 

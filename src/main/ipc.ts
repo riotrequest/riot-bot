@@ -8,6 +8,7 @@ import type { SkillDraft } from '../core/skills'
 import { publicErrorMessage } from '../core/redact'
 import type { ApiProviderId, AppNotice, AppPreferences, BotDraft, BotMenuAction, GmailRuleDraftInput, ProviderId, PublicSettings } from '../shared/types'
 import type { ElectronCredentialStore } from './credentials'
+import type { AppUpdates } from './updates'
 import type { ScheduleDraft } from '../shared/types'
 
 const SETTING_KEYS: (keyof PublicSettings)[] = [
@@ -46,7 +47,7 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'allowSensitiveFiles'
 ]
 
-export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore, notices: { list: () => AppNotice[]; dismiss: (id: string) => AppNotice[] } = { list: () => [], dismiss: () => [] }): void {
+export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore, notices: { list: () => AppNotice[]; dismiss: (id: string) => AppNotice[] } = { list: () => [], dismiss: () => [] }, updates?: AppUpdates): void {
   const handle = (channel: string, fn: (app: RiotService, args: unknown[]) => unknown): void => {
     ipcMain.handle(channel, async (event, ...args) => {
       assertSender(event, getWindow())
@@ -59,6 +60,12 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   }
 
   handle('app:getSnapshot', (app) => app.getSnapshot())
+  if (updates) {
+    handle('updates:get', () => updates.getState())
+    handle('updates:check', () => updates.check())
+    handle('updates:download', () => updates.download())
+    handle('updates:install', () => updates.install())
+  }
   handle('notices:list', () => notices.list())
   handle('notices:dismiss', (_app, args) => notices.dismiss(typeof args[0] === 'string' ? args[0] : ''))
   handle('gmail:status', app => app.getGmailStatus())

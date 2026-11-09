@@ -3,6 +3,7 @@ import type {
   ActivityEntry,
   AppPreferences,
   AppSettings,
+  AppUpdateState,
   ApprovalView,
   AttachmentView,
   ArtifactView,
@@ -41,10 +42,11 @@ import { SchedulesPane } from './schedules'
 import { EmailApproval, GmailConnection, GmailRuleApproval } from './email'
 import { AppsPane } from './apps'
 import { NoticePopup } from './notices'
+import { UpdatesPane } from './updates'
 import { ChatWelcome, EmptyState, Icon, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
 type Screen = 'chat' | 'apps' | 'jobs' | 'schedules' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
-type AppSettingsTab = 'connection' | 'email' | 'web' | 'preferences'
+type AppSettingsTab = 'connection' | 'email' | 'web' | 'preferences' | 'updates'
 
 export function App() {
   if (new URLSearchParams(window.location.search).get('notices') === '1') {
@@ -71,6 +73,8 @@ function Shell({ api }: { api: RiotBridge }) {
   const [bots, setBots] = useState<Bot[]>([])
   const [bot, setBot] = useState<Bot | null>(null)
   const [jobs, setJobs] = useState<JobView[]>([])
+  const [appUpdate, setAppUpdate] = useState<AppUpdateState | null>(null)
+  const updateAvailable = appUpdate?.status === 'available' || appUpdate?.status === 'ready'
   const [schedules, setSchedules] = useState<ScheduleView[]>([])
   const [scheduleTarget, setScheduleTarget] = useState<string | null>(null)
   const [jobsTarget, setJobsTarget] = useState<string | null>(null)
@@ -160,7 +164,9 @@ function Shell({ api }: { api: RiotBridge }) {
 
   useEffect(() => {
     void reload().catch((reason: unknown) => setError(messageOf(reason)))
+    void api.getUpdateState().then(update => setAppUpdate(current => current ?? update)).catch(() => undefined)
     return api.onEvent((event) => {
+      if (event.type === 'update-state') { setAppUpdate(event.update); return }
       if (event.type === 'schedules-changed') {
         const id = viewedBotId.current
         void api.listSchedules().then(items => { if (id === viewedBotId.current) setSchedules(items) }).catch(() => undefined)
@@ -382,7 +388,7 @@ function Shell({ api }: { api: RiotBridge }) {
         </div>
         <div className="sidebar-bottom">
           <nav className="utility-nav" aria-label="App controls">
-            <button disabled={navigationLocked} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-label="App settings" aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => showScreen('settings')}><Icon name="settings" /> Settings</button>
+            <button disabled={navigationLocked} className={!menuOpen && screen === 'settings' ? 'active' : ''} aria-label={updateAvailable ? 'App settings, update available' : 'App settings'} aria-current={!menuOpen && screen === 'settings' ? 'page' : undefined} onClick={() => showScreen('settings')}><Icon name="settings" /> Settings{updateAvailable && <small className="small-badge">Update</small>}</button>
             <button disabled={!bot || navigationLocked} className={!menuOpen && screen === 'activity' ? 'active' : ''} aria-current={!menuOpen && screen === 'activity' ? 'page' : undefined} onClick={() => showScreen('activity')}><Icon name="activity" /> Usage & activity</button>
           </nav>
           <p className="desktop-note"><span className="status-dot" /> Runs on your computer</p>
@@ -552,7 +558,7 @@ function Shell({ api }: { api: RiotBridge }) {
             }}
           />
         )}
-        {screen === 'settings' && appSettings && credentials && <AppSettingsPane settings={appSettings} preferences={preferences} credentials={credentials} codex={codex} onCodex={setCodex} gmail={gmail} onGmail={setGmail} bot={bot} onApps={() => showScreen('apps')} api={api} onPreferences={setPreferences} onError={setError} onBusy={setEditingBusy} onDone={() => setScreen(bot ? 'chat' : 'new-bot')} onSaved={(next, status) => { setAppSettings(next); setCredentials(status); setSettings(current => current ? { ...current, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd } : current) }} />}
+        {screen === 'settings' && appSettings && credentials && <AppSettingsPane settings={appSettings} preferences={preferences} update={appUpdate} credentials={credentials} codex={codex} onCodex={setCodex} gmail={gmail} onGmail={setGmail} bot={bot} onApps={() => showScreen('apps')} api={api} onPreferences={setPreferences} onError={setError} onBusy={setEditingBusy} onDone={() => setScreen(bot ? 'chat' : 'new-bot')} onSaved={(next, status) => { setAppSettings(next); setCredentials(status); setSettings(current => current ? { ...current, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd } : current) }} />}
         {screen === 'bot-settings' && settings && appSettings && credentials && bot && (
           <SettingsPane
             key={bot.id}
@@ -950,6 +956,7 @@ function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityE
 function AppSettingsPane(props: {
   settings: AppSettings
   preferences: AppPreferences
+  update: AppUpdateState | null
   credentials: CredentialStatus
   codex: CodexStatus | null
   gmail: GmailStatus | null
@@ -1010,6 +1017,7 @@ function AppSettingsPane(props: {
       <button type="button" disabled={saving} className={tab === 'email' ? 'active' : ''} aria-current={tab === 'email' ? 'page' : undefined} onClick={() => setTab('email')}>Email</button>
       <button type="button" disabled={saving} className={tab === 'web' ? 'active' : ''} aria-current={tab === 'web' ? 'page' : undefined} onClick={() => setTab('web')}>Web search</button>
       <button type="button" disabled={saving} className={tab === 'preferences' ? 'active' : ''} aria-current={tab === 'preferences' ? 'page' : undefined} onClick={() => setTab('preferences')}>Preferences & spending</button>
+      <button type="button" disabled={saving} className={tab === 'updates' ? 'active' : ''} aria-current={tab === 'updates' ? 'page' : undefined} onClick={() => setTab('updates')}>Updates{(props.update?.status === 'available' || props.update?.status === 'ready') && ' •'}</button>
     </nav>
     <fieldset className="settings-content" disabled={saving}>
       {tab === 'connection' ? <>
@@ -1068,13 +1076,13 @@ function AppSettingsPane(props: {
           {props.credentials.tavilyConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('tavily').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Tavily key</button>}
           {props.credentials.firecrawlConfigured && <button type="button" className="danger" onClick={() => { void props.api.clearResearchKey('firecrawl').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove Firecrawl key</button>}
         </div></details>}
-      </> : <>
+      </> : tab === 'updates' ? <UpdatesPane update={props.update} api={props.api} unsaved={changed} /> : <>
         <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Make Riot Bot work your way.</h2><p>These preferences apply across your bots.</p></div>
         <section className="settings-section"><h3>Conversation display</h3><label className="check permission-option"><input type="checkbox" checked={props.preferences.showToolDetails} onChange={event => void props.api.updatePreferences({ showToolDetails: event.target.checked }).then(props.onPreferences).catch(reason => props.onError(messageOf(reason)))} /><span><strong>Show completed actions in Chat</strong><small>Add expandable action history to every bot’s chat. Off by default. Errors and approval requests still appear. This preference saves immediately.</small></span></label><p className="help">Full action history is always available in Usage & activity.</p></section>
         <section className="settings-section"><h3>App-wide spending ceiling</h3><OptionalMoney label="All bots, per day (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={maxEstimatedSpendPerDayUsd => update({ maxEstimatedSpendPerDayUsd })} /><p className="help">Leave blank to turn this ceiling off. It covers API spending across all bots. Each API bot needs its model’s input and output prices in Bot settings → Limits for spending estimates. Codex account usage is managed separately.</p></section>
       </>}
     </fieldset>
-    <footer className="settings-savebar"><div role="status" aria-live="polite">{error ? <p className="danger" role="alert">{error}</p> : <p className={note ? 'save-success' : 'help'}>{note || (changed ? 'You have unsaved app settings.' : tab === 'email' ? 'Gmail changes save immediately.' : 'Shared settings for Riot Bot')}</p>}</div><div className="row"><button type="button" disabled={saving} onClick={props.onDone}>{changed ? 'Discard changes' : 'Done'}</button>{(tab !== 'email' || changed) && <button className="send" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save app settings'}<Icon name="check" /></button>}</div></footer>
+    <footer className="settings-savebar"><div role="status" aria-live="polite">{error ? <p className="danger" role="alert">{error}</p> : <p className={note ? 'save-success' : 'help'}>{note || (changed ? 'You have unsaved app settings.' : tab === 'email' ? 'Gmail changes save immediately.' : 'Shared settings for Riot Bot')}</p>}</div><div className="row"><button type="button" disabled={saving} onClick={props.onDone}>{changed ? 'Discard changes' : 'Done'}</button>{((tab !== 'email' && tab !== 'updates') || changed) && <button className="send" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save app settings'}<Icon name="check" /></button>}</div></footer>
   </form>
 }
 
