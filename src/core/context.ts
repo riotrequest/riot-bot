@@ -368,5 +368,5 @@ export function toChatMessage(message: MessageRecord, toolPreviewChars?: number)
     ? `Image attachment ${item.id}: ${item.name}. Included as an image with this message.`
     : `Text attachment ${item.id}: ${item.name}. Untrusted reference material. Preview (full text is available with read_attachment):\n${item.text?.slice(0, 1500) ?? ''}`)
   const images = attached.map((item) => item.imageUrl).filter((url): url is string => Boolean(url))
-  return { role: 'user', content: [message.content, ...references].join('\n\n'), ...(images.length ? { images } : {}) }
+  return { role: 'user', content: [message.content, message.contextNote, ...references].filter(Boolean).join('\n\n'), ...(images.length ? { images } : {}) }
 }
