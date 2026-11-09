@@ -48,7 +48,9 @@ export function buildContext(input: {
   const reserve = input.toolTokenReserve ?? 0
   const allowance = Math.max(0, input.responseAllowance ?? 0)
   const ceiling = input.tokenBudget
-  const target = input.packTarget ?? input.tokenBudget
+  // The preferred size is for text. A screenshot comes on top of it, so it does not trim history the text would keep.
+  const visualTokens = input.visual ? fitTokens(tokens([{ role: 'user', content: input.visual.content, images: input.visual.images }], 0)) : 0
+  const target = Math.min(ceiling, (input.packTarget ?? input.tokenBudget) + visualTokens)
   const kind = input.budgetKind ?? 'manual'
   const modelContext = input.modelContextTokens ?? null
   const note =

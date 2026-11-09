@@ -1802,9 +1802,12 @@ export class RiotApp {
       outputReserve: plan.outputReserve,
       capacitySource: plan.source
     }
-    const built = buildContext({ ...input, visual })
-    if (!visual || (!built.overBudget && built.omittedMessageIds.length === 0)) return built
-    // A screenshot never pushes conversation history out of a request.
+    const plain = buildContext(input)
+    if (!visual) return plain
+    // A screenshot never pushes conversation history or the summary out of a request.
+    const withVisual = buildContext({ ...input, visual })
+    const keepsText = withVisual.omittedMessageIds.length === plain.omittedMessageIds.length && withVisual.breakdown.summaryTokens === plain.breakdown.summaryTokens
+    if (!withVisual.overBudget && keepsText) return withVisual
     this.visual = null
     this.visualNote = 'The screenshot did not fit in this model’s context, so it was left out. Use page_snapshot instead.'
     return buildContext({ ...input, turnNote: [input.turnNote, this.visualNote].filter(Boolean).join('\n\n') })
