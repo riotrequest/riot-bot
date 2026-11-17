@@ -59,6 +59,42 @@ describe.skipIf(!channels.length)('real browser security boundaries',()=>{
         expect(approvals).toBe(2)
         expect(await page.evaluate(()=>(window as unknown as {autosaved:string}).autosaved)).toBe('approved text')
         expect(await page.evaluate(()=>(window as unknown as {sent:boolean}).sent)).toBe(true)
+        phase='checking browser preview and diagnostics'
+        await page.route('https://fixture.invalid/health*', route => route.fulfill({status:503,body:'private-response-marker'}))
+        await page.route('https://fixture.invalid/offline*', route => route.abort('failed'))
+        const pageError = page.waitForEvent('pageerror')
+        await page.evaluate(async () => {
+          await fetch('/health?secret=private-query-marker')
+          await fetch('/offline').catch(() => undefined)
+          setTimeout(() => { throw new Error('private-error-marker') }, 0)
+        })
+        await pageError
+        const report = await service.act({...input,action:{type:'snapshot'}})
+        expect(report).toMatch(/HTTP 503/)
+        expect(report).toMatch(/failed to reach the server/)
+        expect(report).toMatch(/JavaScript error/)
+        expect(report).not.toContain('private-')
+        const monitor = await service.monitor(input.botId, true)
+        expect(monitor.preview).toMatch(/^data:image\/jpeg;base64,/)
+        expect(monitor.steps[0]?.issues).toHaveLength(3)
+        expect(monitor.frameId).toBeNull()
+        await expect(service.input(input.botId, { type: 'navigate', address: 'https://fixture.invalid/' })).rejects.toThrow(/Take control/)
+        service.takeover(input.botId)
+        await expect(service.input(input.botId, { type: 'navigate', address: 'http://127.0.0.1/' })).rejects.toThrow(/Local and private/)
+        const manual = await service.monitor(input.botId, true)
+        expect(manual.preview).toMatch(/^data:image\/jpeg;base64,/)
+        expect(manual.frameId).toBeTruthy()
+        const frameId = manual.frameId!
+        const field = (await page.locator('input').boundingBox())!
+        const size = page.viewportSize()!
+        await service.input(input.botId, { type: 'click', frameId, x: (field.x + field.width / 2) / size.width, y: (field.y + field.height / 2) / size.height })
+        await service.input(input.botId, { type: 'key', frameId, key: 'Control+a' })
+        await service.input(input.botId, { type: 'text', frameId, text: 'user typed this' })
+        expect(await page.locator('input').inputValue()).toBe('user typed this')
+        await page.goto('https://fixture.invalid/next')
+        await expect(service.input(input.botId, { type: 'text', frameId, text: 'stale' })).rejects.toThrow(/page changed/)
+        service.resume(input.botId)
+        await expect(service.input(input.botId, { type: 'text', frameId, text: 'stale' })).rejects.toThrow(/Take control/)
       }finally{await service.closeAll()}
       phase='checking WebRTC transports'
       await page.evaluate(async({udpPort,tcpPort})=>{

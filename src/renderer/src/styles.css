@@ -379,6 +379,18 @@ html.notice-host, body.notice-host, body.notice-host #root { height: 100%; backg
 .bot-menu > * { max-width: 780px; margin-left: auto; margin-right: auto; }
 .bot-menu > .page-intro { margin-bottom: 24px; }
 .bot-menu label { display: grid; gap: 7px; }
+.browser-pane .row { flex-wrap: wrap; }
+.browser-pane > .settings-section { max-width: 1200px; }
+.browser-address { display: flex; flex-wrap: wrap; gap: 8px; }
+.browser-address input { flex: 1 1 180px; min-width: 0; }
+.browser-preview { overflow: hidden; border: 1px solid #393f41; border-radius: 8px; background: #191c1e; }
+.browser-preview:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.browser-preview img { display: block; width: 100%; height: auto; }
+.browser-preview p { padding: 18px; }
+.browser-steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.browser-steps li { border-top: 1px solid #393f41; padding-top: 10px; font-size: 13px; }
+.browser-steps li > div { display: flex; gap: 12px; justify-content: space-between; }
+.browser-steps li span { color: var(--muted); text-transform: capitalize; }
 .danger { color: #ffc4b0; }
 button.danger { border-color: #8e5947; background: #462e28; color: #ffd6c4; }
 .danger-zone { border-color: #61463b; }

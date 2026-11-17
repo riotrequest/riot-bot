@@ -281,6 +281,16 @@ export class RiotService extends RiotApp {
   }
 
   override openBrowser(): Promise<string> { return this.executor(this.currentBotId()).openBrowser() }
+  override async browserMonitor(botId: string, preview: boolean) {
+    if (botId !== this.currentBotId()) throw new ConfigError('Select this bot to view its browser.')
+    const monitor = await this.executor(botId).browserMonitor(botId, preview)
+    if (botId !== this.currentBotId()) throw new ConfigError('Select this bot to view its browser.')
+    return monitor
+  }
+  override browserInput(botId: string, input: import('../shared/types').BrowserInput): Promise<void> {
+    if (botId !== this.currentBotId()) throw new ConfigError('Select this bot to use its browser.')
+    return this.executor(botId).browserInput(botId, input)
+  }
   override closeBrowser(): Promise<string> { return this.executor(this.currentBotId()).closeBrowser() }
   override takeoverBrowser(): string { return this.executor(this.currentBotId()).takeoverBrowser() }
   override resumeBrowser(): string { return this.executor(this.currentBotId()).resumeBrowser() }

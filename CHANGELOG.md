@@ -6,6 +6,11 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 17, 2026 — Built-in browser workspace
+
+- **Workspace → Browser** shows the active tab and recent browser steps. Take control to navigate, click, type, scroll, or switch tabs in the panel, then hand control back to the bot.
+- Browser diagnostics surface JavaScript errors and failed page or API requests. The live view pauses during saved sign-in and masks password fields.
+
 ### November 9, 2026 — Follow-up recall, steady bot voices and a clean quit
 
 - **Follow-ups:** a message such as “use the same setup as last time” or “deploy it like before” is now matched against the bot’s memories using the recent messages, the summary’s objective and the working folder name. When one memory clearly fits, the bot reuses it and says which. When two fit about equally, it asks which you mean instead of guessing. This uses SQLite search only, with no extra model call, and never reads another bot’s memories.

@@ -15,6 +15,7 @@ export function ChatTranscript(props: {
   onUndo: (id: string) => void
   onError: (message: string) => void
   onOpenSettings?: () => void
+  onOpenBrowser?: () => void
   onOlderPage: (page: MessagePage) => void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
@@ -87,6 +88,7 @@ export function ChatTranscript(props: {
           onUndo={props.onUndo}
           onError={props.onError}
           onOpenSettings={props.onOpenSettings}
+          onOpenBrowser={props.onOpenBrowser}
         />
       ))}
       {away && (
@@ -137,6 +139,7 @@ function TurnView(props: {
   onUndo: (id: string) => void
   onError: (message: string) => void
   onOpenSettings?: () => void
+  onOpenBrowser?: () => void
 }) {
   const prose = props.turn.rest.filter((message) => message.role === 'assistant' && message.content.trim())
   const tools = props.turn.rest.filter((message) => message.role === 'tool' && message.toolName !== 'react')
@@ -208,7 +211,7 @@ function TurnView(props: {
                     Open Settings
                   </button>
                 )}
-                {message.content.includes('Take over the browser') && <BrowserRecovery api={props.api} onError={props.onError} />}
+                {props.onOpenBrowser && /Take over the browser|Workspace → Browser/.test(message.content) && <button type="button" onClick={props.onOpenBrowser}>Go to Browser</button>}
               </div>
             ))}
             {showHistory && (
@@ -241,21 +244,6 @@ function TurnView(props: {
   )
 }
 
-function BrowserRecovery({ api, onError }: { api: RiotBridge; onError: (message: string) => void }) {
-  const [note, setNote] = useState('')
-  const act = (work: Promise<string>): void => {
-    void work.then(setNote).catch((error: unknown) => onError(messageOf(error, 'The browser could not be updated.')))
-  }
-  return (
-    <div>
-      <div className="row">
-        <button type="button" onClick={() => act(api.takeoverBrowser())}>Take over browser</button>
-        <button type="button" onClick={() => act(api.resumeBrowser())}>Resume browser</button>
-      </div>
-      {note && <p role="status">{note}</p>}
-    </div>
-  )
-}
 
 export function AttachmentList({ attachments, onRemove }: { attachments: AttachmentView[]; onRemove?: (id: string) => void }) {
   if (!attachments.length) return null

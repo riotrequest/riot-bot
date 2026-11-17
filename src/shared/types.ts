@@ -445,6 +445,35 @@ export interface BrowserView {
   downloadNote: string
 }
 
+export interface BrowserStep {
+  id: number
+  action: string
+  target: string | null
+  outcome: 'finished' | 'paused' | 'stopped' | 'failed'
+  issues: string[]
+}
+
+export interface BrowserMonitor extends BrowserView {
+  activeAction: string | null
+  steps: BrowserStep[]
+  preview: string | null
+  frameId: string | null
+  address: string
+  tabs: number
+  activeTab: number
+}
+
+export type BrowserInput =
+  | { type: 'navigate'; address: string }
+  | { type: 'back' }
+  | { type: 'tab'; index: number }
+  | ({ frameId: string } & (
+    | { type: 'click'; x: number; y: number }
+    | { type: 'scroll'; x: number; y: number; delta: number }
+    | { type: 'key'; key: string }
+    | { type: 'text'; text: string }
+  ))
+
 export interface HistoryHitView {
   messageId: string
   conversationId: string
@@ -650,6 +679,8 @@ export interface RiotBridge {
   loadOlderMessages(conversationId: string, beforeMessageId: string): Promise<MessagePage>
   searchHistory(query: string): Promise<HistoryHitView[]>
   openBrowser(): Promise<string>
+  browserMonitor(botId: string, preview: boolean): Promise<BrowserMonitor>
+  browserInput(botId: string, input: BrowserInput): Promise<void>
   closeBrowser(): Promise<string>
   takeoverBrowser(): Promise<string>
   resumeBrowser(): Promise<string>

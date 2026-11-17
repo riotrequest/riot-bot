@@ -21,7 +21,7 @@ What makes it different:
 - **Saved logins in the Windows credential store.** Website and server passwords are encrypted with Windows protection and kept out of chat, memory and the model's context. Riot Bot fills them locally, only for the bot that owns the login and only on the exact saved HTTPS site or server.
 - **Gmail with reviewed sending.** Connect your own mailbox through your own Google app. Every send shows each recipient and the full message for you to approve, unless you turn on a narrow per-bot reply rule for an exact saved reply.
 - **Schedules.** Reminders pop up without an AI call. Scheduled bot tasks run with that bot's usual tools, approvals and budget.
-- **Browser automation.** A visible Chromium, Chrome or Edge window with a separate profile for each bot. You grant site access once or for a single task, revoke it at any time, and can take over the window for sign-in or verification.
+- **Browser automation.** Watch and control your bot’s browser inside Riot Bot, with a separate Chromium, Chrome or Edge profile for each bot. Grant site access for one task or remember it, revoke it at any time, and take control for sign-in or verification.
 - **Keyless web research.** Search and page reading work out of the box, with no API key or sign-up, under a per-bot daily cap.
 
 ## Quick start
@@ -84,9 +84,9 @@ Details: [tasks, saved files and local verification](docs/jobs-and-library.md).
 
 ### Browser automation
 
-Each bot gets a visible browser window with its own profile, separate from your personal Chrome or Edge profile. Sign-ins and cookies persist across restarts. Bots read the whole page through snapshots, including frames and shadow DOM, with each element’s state and value, and models that accept images can also take a labelled screenshot. They can click, type, choose dropdown options, press keys, hover, drag, wait for a page to change and switch tabs, but have no tool for running arbitrary page scripts. Uploads come from the bot’s workspace and ask you every time. Files a bot downloads are saved into its workspace `Downloads` folder. The number of browser steps per task is a setting for each bot.
+Each bot has a browser in **Workspace → Browser**, with its own profile separate from your personal Chrome or Edge profile. Sign-ins and cookies persist across restarts. Bots read the whole page through snapshots, including frames and shadow DOM, with each element’s state and value, and models that accept images can also take a labelled screenshot. They can click, type, choose dropdown options, press keys, hover, drag, wait for a page to change and switch tabs. Uploads come from the bot’s workspace and ask you every time. Files a bot downloads are saved into its workspace `Downloads` folder. The number of browser steps per task is a setting for each bot.
 
-The first time a bot needs to interact with a site, a card offers **Remember & allow**, **This task only**, or **Don’t allow**. Remembered access lets that bot click and fill forms on that site without asking each time, including actions that send, pay, publish or delete there. You can revoke it in **Bot settings**. **Take over** hands you the window for sign-in, MFA or a CAPTCHA. For the connections it handles, a local proxy refuses private and local-network destinations, including after redirects.
+The first time a bot needs to interact with a site, a card offers **Remember & allow**, **This task only**, or **Don’t allow**. Remembered access lets that bot click and fill forms on that site without asking each time, including actions that send, pay, publish or delete there. You can revoke it in **Bot settings**. Choose **Take control** in the Browser panel to sign in or complete verification yourself, then **Let bot continue**. For the connections it handles, a local proxy refuses private and local-network destinations, including after redirects.
 
 ![The site-access card asking whether a bot named Scout may open a shop page on www.example.com, with Don’t allow, This task only and Remember & allow.](docs/images/site-access.png)
 
@@ -155,7 +155,7 @@ See [backups and removing the browser](docs/user-guide.md#backups-and-removing-t
 
 ## Architecture
 
-The Electron main process is the trusted side. It owns SQLite (`node:sqlite`), credentials, provider calls, files, processes, and the Chromium window. The React window is sandboxed: context isolation on, Node integration off, and a small typed preload bridge. Remote pages stay in Chromium. They are not loaded in the Electron renderer. Markdown is rendered with raw HTML disabled. Code is shown as text. Avatar images are local data URLs, not remote content. Page text is untrusted and cannot change your instructions, permissions, budgets, or which bot is acting.
+The Electron main process is the trusted side. It owns SQLite (`node:sqlite`), credentials, provider calls, files, processes, and the Chromium browser. The React window is sandboxed: context isolation on, Node integration off, and a small typed preload bridge. Remote pages run in Chromium and the Browser panel displays their viewport images. Markdown is rendered with raw HTML disabled. Code is shown as text. Avatar images are local data URLs, not remote content. Page text is untrusted and cannot change your instructions, permissions, budgets, or which bot is acting.
 
 Every model call goes through one gateway with a run id. A call starts only from a message you send, a bot-setup request you start by creating a bot without a name, or the provider check you start. Status lines, avatar choices, and browser installation do not call a model. The gateway reserves a conservative cost before the call and settles it afterward, including after a crash. Compaction, retries (at most two transient retries), browser follow-ups, and tool follow-ups share the same task budget. The mock provider is used by tests and is never called on launch.
 
