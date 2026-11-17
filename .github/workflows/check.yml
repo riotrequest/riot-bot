@@ -22,8 +22,23 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm audit --omit=dev
-      # Known moderate packaging advisories are documented in docs/security-review.md.
-      - run: npm audit --audit-level=high
+      - name: Audit development dependencies
+        shell: pwsh
+        run: |
+          # Keep the production audit above independent. Remove this exception when picomatch ships a fix.
+          $audit = npm audit --audit-level=high --json | ConvertFrom-Json
+          if ($LASTEXITCODE -notin @(0, 1) -or $audit.error -or $null -eq $audit.metadata.vulnerabilities) {
+            throw 'npm did not return a dependency audit.'
+          }
+          $advisories = @($audit.vulnerabilities.PSObject.Properties.Value.via | Where-Object { $_ -isnot [string] })
+          $advisories | Select-Object name, severity, title, url | Format-Table -Wrap
+          $high = @($advisories | Where-Object { $_.severity -in @('high', 'critical') })
+          $unexpected = @($high | Where-Object { $_.name -ne 'picomatch' -or $_.severity -ne 'high' -or $_.url -ne 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf' })
+          if ($audit.metadata.vulnerabilities.critical -gt 0 -or $unexpected.Count -gt 0 -or ($audit.metadata.vulnerabilities.high -gt 0 -and $high.Count -eq 0)) {
+            throw 'The development audit reported an unaccepted high or critical advisory.'
+          }
+          if ($high.Count -gt 0) { Write-Warning 'Accepted development-only advisory GHSA-fc5q-39xc-vjpf. No patched release is available.' }
+          exit 0
   secrets:
     runs-on: ubuntu-latest
     timeout-minutes: 10

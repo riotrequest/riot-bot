@@ -44,7 +44,7 @@ describe('browser policy', () => {
 
   it('keeps the Chromium sandbox on and does not enable loopback in the app', () => {
     const options = chromiumLaunchOptions('http://127.0.0.1:9')
-    expect(options.headless).toBe(false)
+    expect(options.headless).toBe(true)
     expect(options.chromiumSandbox).toBe(true)
     // Chromium accepts downloads; the page layer cancels any that a click or key press did not start.
     expect(options.acceptDownloads).toBe(true)
@@ -125,15 +125,16 @@ describe('browser sessions', () => {
 
   it('keeps profiles, references, takeover, limits, and cancellation separate', async () => {
     const launched: string[] = []
+    const pages: FakePage[] = []
     const { app, provider, dbPath } = makeApp({
       lookupHost: publicLookup,
-      browserOpener: fakeOpener(launched)
+      browserOpener: fakeOpener(launched, pages)
     })
     app.updateAppSettings({ webResearch: 'browser' })
     const botA = app.getSnapshot().bot?.id ?? ''
     const workspace = app.getSnapshot().settings.workspacePath
     const opened = await app.openBrowser()
-    expect(opened).toMatch(/window is open/)
+    expect(opened).toMatch(/browser is open in Workspace/)
     expect(launched[0]).toBe(profileDirFor(path.dirname(dbPath), botA))
     expect(launched[0]).toContain(`${path.sep}browser-profiles${path.sep}`)
     if (workspace) expect(launched[0]).not.toContain(workspace)
@@ -149,6 +150,7 @@ describe('browser sessions', () => {
     expect(search?.content).toContain('https://example.com/story')
     expect(search?.content).toContain('Untrusted web content')
     expect(search?.content).not.toContain('<script>')
+    expect((await app.browserMonitor(botA, false)).steps[0]).toMatchObject({ action: 'search', outcome: 'finished' })
 
     const created = await app.createBot({
       purpose: 'A second browser',
@@ -162,13 +164,22 @@ describe('browser sessions', () => {
       avatarBackground: '#2f6f62'
     })
     await app.openBrowser()
+    expect((await app.browserMonitor(created.bot.id, false)).steps).toEqual([])
+    expect(() => app.browserMonitor(botA, false)).toThrow(/Select this bot/)
     expect(launched.at(-1)).toContain(created.bot.id)
     expect(launched.at(-1)).not.toBe(launched[0])
     app.selectBot(botA)
     expect(app.getSnapshot().browser.open).toBe(true)
 
+    let finishPreview: (image: string) => void = () => undefined
+    pages[0]!.preview = () => new Promise(resolve => { finishPreview = resolve })
+    const inFlightPreview = app.browserMonitor(botA, true)
     const waiting = app.takeoverBrowser()
     expect(waiting).toMatch(/Browser control is with you/)
+    finishPreview('data:image/jpeg;base64,fixture')
+    expect((await inFlightPreview).preview).toBeNull()
+    pages[0]!.preview = async () => 'data:image/jpeg;base64,fixture'
+    expect(await app.browserMonitor(botA, true)).toMatchObject({ takeover: true, preview: 'data:image/jpeg;base64,fixture' })
     provider.handler = (input) => {
       if (input.messages.at(-1)?.role === 'tool') return { content: 'Paused for you.', toolCalls: [] }
       return { content: '', toolCalls: [{ id: 'read-1', name: 'read_page', arguments: '{}' }] }
@@ -269,10 +280,17 @@ describe('browser sessions', () => {
     provider.handler = () => ({ content: '', toolCalls: [{ id: 'open-2', name: 'open_url', arguments: JSON.stringify({ url: 'https://example.com/next' }) }] })
     const pending = app.sendMessage(conversationId, 'Open the next page https://example.com/next')
     await waitFor(() => pages[0]?.waiting === true)
+    const botId = app.getSnapshot().bot!.id
+    expect((await app.browserMonitor(botId, false)).activeAction).toBe('open')
+    expect(app.takeoverBrowser()).toMatch(/still settling/)
     app.stop()
-    release()
     const stopped = await pending
     expect(stopped.status).toBe('stopped')
+    expect((await app.browserMonitor(botId, false)).activeAction).toBe('settling')
+    expect(app.takeoverBrowser()).toMatch(/still settling/)
+    release()
+    await waitFor(() => !pages[0]?.waiting)
+    expect(app.takeoverBrowser()).toMatch(/Browser control is with you/)
     await app.close()
   })
 })
@@ -302,6 +320,7 @@ class FakeBrowser implements LaunchedBrowser {
 }
 
 class FakePage implements LaunchedPage {
+  preview?: () => Promise<string | null>
   goneTo: string[] = []
   presses = 0
   waiting = false

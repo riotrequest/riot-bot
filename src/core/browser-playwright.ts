@@ -2,7 +2,8 @@ import { spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { EventEmitter } from 'node:events'
-import type { Dialog, Download, ElementHandle, Frame, Page } from 'playwright-core'
+import type { Dialog, Download, ElementHandle, Frame, Page, Request } from 'playwright-core'
+import type { BrowserInput } from '../shared/types'
 import {
   BROWSER_ACTION_TIMEOUT_MS,
   BROWSER_FRAME_LIMIT,
@@ -13,17 +14,19 @@ import {
 } from './browser-policy'
 import type { ActionPolicy, ActionReport, LaunchedBrowser, LaunchedPage, PageDownload, RawControl, UploadFile, WaitCondition } from './browser'
 
+const BROWSER_VIEWPORT = { width: 1200, height: 760 }
+
 export interface ChromiumLaunchOptions {
-  headless: false
+  headless: true
   chromiumSandbox: true
   /** Downloads are accepted by the browser, then kept only when a bot action asked for them. */
   acceptDownloads: true
   proxy: { server: string }
-  viewport: null
+  viewport: typeof BROWSER_VIEWPORT
   args: string[]
 }
 
-/** Product launch options. The sandbox stays on, and the window is visible. */
+/** Product launch options for the sandboxed browser displayed in the app. */
 export function chromiumLaunchOptions(proxyUrl: string): ChromiumLaunchOptions {
   // Installed Chromium channels differ in the spelling they honor. Test the network boundary, not just these strings.
   const args = ['--webrtc-ip-handling-policy=disable_non_proxied_udp', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp']
@@ -31,11 +34,11 @@ export function chromiumLaunchOptions(proxyUrl: string): ChromiumLaunchOptions {
     throw new Error('Refusing to launch Chromium without its sandbox.')
   }
   return {
-    headless: false,
+    headless: true,
     chromiumSandbox: true,
     acceptDownloads: true,
     proxy: { server: proxyUrl },
-    viewport: null,
+    viewport: BROWSER_VIEWPORT,
     args
   }
 }
@@ -224,17 +227,63 @@ interface Entry {
 }
 
 export class PlaywrightPage implements LaunchedPage {
+  navigationVersion = 0
   private entries: Entry[] = []
   private policy: ActionPolicy | null = null
   private graceUntil = 0
   private notes: string[] = []
   private downloads: PageDownload[] = []
+  private issues = new Set<string>()
 
   constructor(private readonly page: Page) {
     page.setDefaultTimeout(BROWSER_ACTION_TIMEOUT_MS)
     page.setDefaultNavigationTimeout(BROWSER_NAV_TIMEOUT_MS)
     page.on('dialog', (dialog) => void this.answer(dialog))
     page.on('download', (download) => this.receive(download))
+    page.on('framenavigated', frame => { if (frame === page.mainFrame()) this.navigationVersion += 1 })
+    page.on('pageerror', () => this.issues.add('The page reported a JavaScript error.'))
+    page.on('requestfailed', (request) => {
+      if (this.isPageRequest(request) && request.failure()?.errorText !== 'net::ERR_ABORTED') {
+        this.issues.add('A page or API request failed to reach the server.')
+      }
+    })
+    page.on('response', (response) => {
+      const status = response.status()
+      if (status >= 400 && this.isPageRequest(response.request()) && this.issues.size < NOTE_LIMIT) {
+        this.issues.add(`A page or API request returned HTTP ${status}.`)
+      }
+    })
+  }
+
+  private isPageRequest(request: Request): boolean {
+    return ['document', 'fetch', 'xhr'].includes(request.resourceType())
+  }
+
+  takeIssues(): string[] {
+    const issues = [...this.issues]
+    this.issues.clear()
+    return issues
+  }
+
+  async preview(): Promise<string | null> {
+    const frames = this.page.frames()
+    if (frames.length > BROWSER_FRAME_LIMIT) return null
+    const image = await this.page.screenshot({
+      type: 'jpeg', quality: 48, scale: 'css', timeout: 1200,
+      mask: frames.map(frame => frame.locator('input[type=password]'))
+    })
+    return image.length <= 1024 * 1024 ? `data:image/jpeg;base64,${image.toString('base64')}` : null
+  }
+
+  async sendInput(input: Extract<BrowserInput, { frameId: string }>): Promise<void> {
+    if (input.type === 'key') return this.page.keyboard.press(input.key)
+    if (input.type === 'text') return this.page.keyboard.insertText(input.text)
+    const viewport = this.page.viewportSize() ?? BROWSER_VIEWPORT
+    const x = input.x * (viewport.width - 1)
+    const y = input.y * (viewport.height - 1)
+    if (input.type === 'click') return this.page.mouse.click(x, y)
+    await this.page.mouse.move(x, y)
+    await this.page.mouse.wheel(0, input.delta)
   }
 
   focus(): Promise<void> {

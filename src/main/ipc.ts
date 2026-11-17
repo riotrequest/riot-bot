@@ -2,6 +2,7 @@ import { app as electronApp, clipboard, dialog, ipcMain, Menu, type BrowserWindo
 import fs from 'fs/promises'
 import path from 'path'
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '../core/attachments'
+import { browserKey } from '../core/browser-policy'
 import type { RiotService } from '../core/service'
 import { isId } from '../core/ids'
 import type { SkillDraft } from '../core/skills'
@@ -9,7 +10,7 @@ import { publicErrorMessage } from '../core/redact'
 import type { ApiProviderId, AppNotice, AppPreferences, BotDraft, BotMenuAction, GmailRuleDraftInput, ProviderId, PublicSettings } from '../shared/types'
 import type { ElectronCredentialStore } from './credentials'
 import type { AppUpdates } from './updates'
-import type { ScheduleDraft } from '../shared/types'
+import type { BrowserInput, ScheduleDraft } from '../shared/types'
 
 const SETTING_KEYS: (keyof PublicSettings)[] = [
   'provider',
@@ -158,6 +159,12 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('conversations:older', (app, args) => app.loadOlderMessages(requireId(args[0]), requireId(args[1])))
   handle('history:search', (app, args) => app.searchHistory(typeof args[0] === 'string' ? args[0] : ''))
   handle('browser:open', (app) => app.openBrowser())
+  handle('browser:monitor', (app, [bot, preview]) => {
+    const botId = requireId(bot)
+    if (typeof preview !== 'boolean') throw new Error('Choose whether to show the browser preview.')
+    return app.browserMonitor(botId, preview)
+  })
+  handle('browser:input', (app, [bot, input]) => app.browserInput(requireId(bot), browserInput(input)))
   handle('browser:close', (app) => app.closeBrowser())
   handle('browser:takeover', (app) => app.takeoverBrowser())
   handle('browser:resume', (app) => app.resumeBrowser())
@@ -284,6 +291,25 @@ function assertSender(event: IpcMainInvokeEvent, window: BrowserWindow | null): 
 function requireId(value: unknown): string {
   if (!isId(value)) throw new Error('That item was not found.')
   return value
+}
+
+function browserInput(value: unknown): BrowserInput {
+  if (!value || typeof value !== 'object') throw new Error('That browser input is invalid.')
+  const { type, frameId, x, y, delta, key, text, address, index } = value as Record<string, unknown>
+  if (type === 'navigate' && typeof address === 'string' && address.trim() && address.length <= 2048) return { type, address }
+  if (type === 'back') return { type }
+  if (type === 'tab' && typeof index === 'number' && Number.isInteger(index) && index > 0) return { type, index }
+  if (!isId(frameId)) throw new Error('Wait for the browser view to refresh.')
+  if (type === 'key' && typeof key === 'string' && key.length <= 40) {
+    const parsed = browserKey(key)
+    if (parsed) return { type, frameId, key: parsed.key }
+  }
+  if (type === 'text' && typeof text === 'string' && text.length > 0 && text.length <= 512) return { type, frameId, text }
+  if (typeof x === 'number' && x >= 0 && x <= 1 && typeof y === 'number' && y >= 0 && y <= 1) {
+    if (type === 'click') return { type, frameId, x, y }
+    if (type === 'scroll' && typeof delta === 'number' && delta >= -960 && delta <= 960) return { type, frameId, x, y, delta }
+  }
+  throw new Error('That browser input is invalid.')
 }
 
 function requireAttachmentIds(value: unknown): string[] {

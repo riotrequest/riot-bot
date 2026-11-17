@@ -20,7 +20,6 @@ import type {
   MessagePage,
   ProviderCheckPlan,
   ProviderCheckResult,
-  BrowserView,
   HistoryHitView,
   JobView,
   PublicSettings,
@@ -43,9 +42,10 @@ import { EmailApproval, GmailConnection, GmailRuleApproval } from './email'
 import { AppsPane } from './apps'
 import { NoticePopup } from './notices'
 import { UpdatesPane } from './updates'
+import { BrowserPane } from './browser'
 import { ChatWelcome, EmptyState, Icon, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
-type Screen = 'chat' | 'apps' | 'jobs' | 'schedules' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
+type Screen = 'chat' | 'apps' | 'browser' | 'jobs' | 'schedules' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
 type AppSettingsTab = 'connection' | 'email' | 'web' | 'preferences' | 'updates'
 
 export function App() {
@@ -106,7 +106,6 @@ function Shell({ api }: { api: RiotBridge }) {
   const [botActionBusy, setBotActionBusy] = useState(false)
   const menuPending = useRef(false)
   const navigationLocked = editingBusy || botActionBusy || Boolean(renameTarget || deleteTarget)
-  const [browserNote, setBrowserNote] = useState('')
   const conversationId = useRef<string | null>(null)
   const viewedBotId = useRef<string | null>(null)
   const activityScopeRef = useRef(activityScope)
@@ -229,10 +228,6 @@ function Shell({ api }: { api: RiotBridge }) {
           const sent = new Set(event.message.attachments.map((item) => item.id))
           setDraftAttachments((current) => current.filter((item) => !sent.has(item.id)))
         }
-        return
-      }
-      if (event.type === 'browser-progress') {
-        setBrowserNote(event.progress)
         return
       }
       if (event.type === 'run') {
@@ -432,8 +427,7 @@ function Shell({ api }: { api: RiotBridge }) {
             bot={bot}
             running={running}
             onDelete={() => setDeleteTarget(bot)}
-            note={browserNote}
-            onNote={setBrowserNote}
+            onBrowser={() => showScreen('browser')}
             onError={setError}
             onBusy={setEditingBusy}
             onBot={(next) => {
@@ -447,6 +441,7 @@ function Shell({ api }: { api: RiotBridge }) {
           />
         ) : <>
         {!loaded && <div className="empty-state" role="status">Getting your workspace ready…</div>}
+        {screen === 'browser' && bot && <BrowserPane key={bot.id} api={api} botId={bot.id} disabled={navigationLocked} />}
         {screen === 'new-bot' && settings && appSettings && (
           <NewBotForm
             settings={{ ...settings, ...appSettings }}
@@ -486,6 +481,7 @@ function Shell({ api }: { api: RiotBridge }) {
             submitting={busy}
             queued={queued}
             onJobs={() => setScreen('jobs')}
+            onBrowser={() => showScreen('browser')}
             readOnly={viewingEarlier}
             onBack={() => {
               if (!ongoingId) return
@@ -595,7 +591,7 @@ function Shell({ api }: { api: RiotBridge }) {
         <nav className="workspace-nav" aria-label="Bot workspace">
           {([
             ['chat', 'chat', 'Chat'], ['jobs', 'tasks', 'Tasks'], ['schedules', 'calendar', 'Schedule'], ['library', 'files', 'Files'],
-            ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills'], ['apps', 'apps', 'Apps']
+            ['memory', 'memory', 'Memories'], ['skills', 'spark', 'Skills'], ['apps', 'apps', 'Apps'], ['browser', 'browser', 'Browser']
           ] as [Screen, IconName, string][]).map(([value, icon, label]) => <button key={value} disabled={!bot || navigationLocked} className={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'active' : ''} aria-current={(!menuOpen && screen === value) || (menuOpen && value === 'bot-settings') ? 'page' : undefined} onClick={() => showScreen(value)}>
             <Icon name={icon} /><span>{label}</span>{value === 'jobs' && activeTaskCount > 0 && <small className="nav-count">{activeTaskCount}</small>}
           </button>)}
@@ -636,6 +632,7 @@ function ChatPane(props: {
   submitting: boolean
   queued: number
   onJobs: () => void
+  onBrowser: () => void
   readOnly?: boolean
   onBack?: () => void
   onOpenSettings?: () => void
@@ -692,6 +689,7 @@ function ChatPane(props: {
         onUndo={props.onUndo}
         onError={props.onError}
         onOpenSettings={props.onOpenSettings}
+        onOpenBrowser={props.onBrowser}
         onOlderPage={props.onOlderPage}
       />}
       {props.readOnly && (
@@ -1715,6 +1713,7 @@ function screenTitle(screen: Screen): string {
   if (screen === 'memory') return 'Memories'
   if (screen === 'skills') return 'Skills'
   if (screen === 'apps') return 'Apps'
+  if (screen === 'browser') return 'Browser'
   if (screen === 'activity') return 'Usage & activity'
   if (screen === 'new-bot') return 'Create a bot'
   if (screen === 'bot-settings') return 'Bot settings'
@@ -1729,6 +1728,7 @@ function screenDescription(screen: Screen): string {
   if (screen === 'memory') return 'Useful things your bot remembers about you.'
   if (screen === 'skills') return 'Your favorite ways of working, ready to reuse.'
   if (screen === 'apps') return 'Connected apps and permissions for this bot.'
+  if (screen === 'browser') return 'Watch this bot’s browser or take control.'
   if (screen === 'activity') return 'Keep an eye on usage and see what happened.'
   if (screen === 'new-bot') return 'A few details now. A helpful sidekick from here on.'
   if (screen === 'earlier') return 'Pick up a saved conversation from the past.'
@@ -1741,8 +1741,7 @@ function BotMenu(props: {
   bot: Bot
   running: boolean
   onDelete: () => void
-  note: string
-  onNote: (value: string) => void
+  onBrowser: () => void
   onError: (message: string) => void
   onBot: (bot: Bot) => void
   onEarlier: () => void
@@ -1752,16 +1751,13 @@ function BotMenu(props: {
   const [name, setName] = useState(props.bot.name)
   const [purpose, setPurpose] = useState(props.bot.purpose)
   const [instructions, setInstructions] = useState(props.bot.instructions)
-  const [browser, setBrowser] = useState<BrowserView | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [browserBusy, setBrowserBusy] = useState(false)
   useEffect(() => {
     setName(props.bot.name)
     setPurpose(props.bot.purpose)
     setInstructions(props.bot.instructions)
   }, [props.bot])
-  useEffect(() => { void props.api.getSnapshot().then(snapshot => setBrowser(snapshot.browser)).catch(reason => props.onError(messageOf(reason))) }, [props.api, props.bot.id])
   async function saveProfile(): Promise<void> {
     if (saving) return
     setSaving(true)
@@ -1770,13 +1766,6 @@ function BotMenu(props: {
     try { props.onBot(await props.api.updateBot({ name, purpose, instructions })); setSaved(true) }
     catch (reason) { props.onError(messageOf(reason)) }
     finally { setSaving(false); props.onBusy(false) }
-  }
-  async function browserAction(action: () => Promise<string>): Promise<void> {
-    if (browserBusy) return
-    setBrowserBusy(true)
-    try { props.onNote(await action()); setBrowser((await props.api.getSnapshot()).browser) }
-    catch (reason) { props.onError(messageOf(reason)) }
-    finally { setBrowserBusy(false) }
   }
   return <section className="bot-menu" id="bot-settings-panel" aria-label="Bot settings panel">
     <div className="page-intro"><h2>Make {props.bot.name} feel like yours.</h2><p>Give your bot a clear purpose and a personality that works for you.</p></div>
@@ -1798,12 +1787,7 @@ function BotMenu(props: {
     </details>
     <section className="settings-section"><h3>Your bot’s space</h3><p className="folder-path">{props.bot.workspacePath || 'No folder chosen yet.'}</p><div className="row"><button type="button" onClick={() => void props.api.openWorkspace().catch(reason => props.onError(messageOf(reason)))}><Icon name="files" /> Open working folder</button><button type="button" disabled={saving} onClick={props.onSettings}>Model, files & limits</button><button type="button" disabled={saving} onClick={props.onEarlier}>Earlier conversations</button></div></section>
     <details className="settings-section advanced-details"><summary>Browser & website sign-ins</summary><p className="help">Your bot keeps a separate browser profile and signed-in sessions. Save website logins in Bot settings → Files & tools so it can sign in for you. You can also open its browser to complete a verification or sign in yourself.</p>
-      <p className="help">{browser?.installed ? `${browser.browserName || 'A browser'} is available.` : 'Install a browser to get started.'} {browser?.downloadNote}</p>
-      <div className="row">{!browser?.open ? <button type="button" disabled={browserBusy || !browser?.installed} onClick={() => void browserAction(() => props.api.openBrowser())}>Open browser</button> : <>
-        <button type="button" disabled={browserBusy} onClick={() => void browserAction(() => props.api.closeBrowser())}>Close browser</button>
-        {browser.takeover ? <button type="button" disabled={browserBusy} onClick={() => void browserAction(() => props.api.resumeBrowser())}>Let bot continue</button> : <button type="button" disabled={browserBusy} onClick={() => void browserAction(() => props.api.takeoverBrowser())}>Use browser myself</button>}
-      </>}{!browser?.installed && <button type="button" disabled={browserBusy || browser?.installing} onClick={() => void browserAction(() => props.api.installBrowser())}>{browser?.installing ? 'Installing…' : 'Install Chromium'}</button>}</div>
-      {browser?.open && <p className="help">Open websites may keep making their own requests, even when your bot is idle.</p>}{props.note && <p className="help" role="status">{props.note}</p>}
+      <div className="row"><button type="button" onClick={props.onBrowser}>Go to Browser</button></div>
     </details>
     <details className="settings-section advanced-details danger-zone"><summary>Delete this bot</summary><p className="help">Permanently remove this bot’s conversations, memories, skills, saved logins, saved file copies, and browser profile. Your working folder stays.</p><button className="danger" type="button" disabled={props.running || saving} onClick={props.onDelete}>Delete bot…</button>{props.running && <p className="help">Stop this bot’s work before deleting it.</p>}</details>
   </section>

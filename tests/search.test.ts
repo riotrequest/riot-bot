@@ -158,7 +158,7 @@ describe('free web search', () => {
       const cid = app.getSnapshot().ongoingConversationId!
       const paused = await app.sendMessage(cid, 'Search for angelicpedia.com')
       expect(paused.status).toBe('paused')
-      expect(paused.note).toContain('window was closed')
+      expect(paused.note).toContain('browser was closed')
       expect(provider.calls).toHaveLength(1)
       expect(app.getSnapshot().browser.open).toBe(false)
       expect((await app.sendMessage(cid, 'Try that search again.')).status).toBe('completed')
@@ -220,7 +220,7 @@ describe('free web search', () => {
       const run = await app.sendMessage(app.getSnapshot().ongoingConversationId!, 'Run a Google search for angelicpedia.com')
       expect(run.status).toBe('paused')
       expect(run.note).toContain('No Google position was verified')
-      expect(run.note).toContain('Take over the browser')
+      expect(run.note).toContain('Open Workspace → Browser')
       expect(provider.calls).toHaveLength(1)
       expect(page.navigations).toHaveLength(1)
       expect(app.getSnapshot().browser.takeover).toBe(true)

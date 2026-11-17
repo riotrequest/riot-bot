@@ -372,6 +372,16 @@ export class RiotApp {
     return this.browsers.openWindow(this.viewBotId())
   }
 
+  browserMonitor(botId: string, preview: boolean) {
+    if (botId !== this.viewBotId()) throw new ConfigError('Select this bot to view its browser.')
+    return this.browsers.monitor(botId, preview)
+  }
+
+  browserInput(botId: string, input: import('../shared/types').BrowserInput): Promise<void> {
+    if (botId !== this.viewBotId()) throw new ConfigError('Select this bot to use its browser.')
+    return this.browsers.input(botId, input)
+  }
+
   closeBrowser(): Promise<string> {
     return this.browsers.closeWindow(this.viewBotId())
   }
