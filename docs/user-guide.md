@@ -4,6 +4,8 @@ This guide covers everyday use of Riot Bot in detail. For an overview and instal
 
 ## Finding your way around
 
+Select **Change mood** on the empty Chat screen to cycle through the Riot Bot mascot’s six expressions. The smaller mascot in the app sidebar reacts to the selected bot’s status. Each bot has its own avatar, which you can change in **Bot settings → Profile & browser**.
+
 Start in Chat with **Let’s set up**. **Settings** at the bottom of the left sidebar manages shared connections and the default model for new bots. **Bot settings** at the bottom of the right Workspace sidebar controls the selected bot’s model, profile, working folder, tools, and limits. Save the app default, then use **Bot settings → Model → Use app default** to apply it to an existing bot. New bots start with the app default automatically. A starter idea fills your draft without sending it. Trying to send before connecting opens setup and keeps your draft.
 
 The right Workspace sidebar includes **Apps**, where you connect Gmail and choose the selected bot’s access. Account sign-in is shared across Riot Bot, while app access stays separate for each bot. Shared Gmail account management is also available in **Settings → Email**. The right sidebar uses **Tasks** for work in progress, **Files** for saved versions, and **Memories** for facts and preferences. **Usage & activity** is below Settings on the left. Empty screens explain how to get started. **New bot** offers a few starting ideas and starts with the app-wide default provider and model. Its default name avoids a naming request; connection overrides, folders, and appearance are optional disclosures.

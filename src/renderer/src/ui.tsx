@@ -1,5 +1,18 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { CodexStatus, ProviderId } from '../../shared/types'
+import happy from './mascot/happy.webp'
+import cheeky from './mascot/cheeky.webp'
+import thinking from './mascot/thinking.webp'
+import focused from './mascot/focused.webp'
+import surprised from './mascot/surprised.webp'
+import sleeping from './mascot/sleeping.webp'
+
+const mascotFaces = { happy, cheeky, thinking, focused, surprised, sleeping }
+const mascotMoods = ['happy', 'cheeky', 'thinking', 'focused', 'surprised', 'sleeping'] as const
+
+export function Mascot({ mood }: { mood: keyof typeof mascotFaces }) {
+  return <img className="mascot" src={mascotFaces[mood]} alt="" draggable={false} />
+}
 
 export type IconName = 'chat' | 'tasks' | 'files' | 'memory' | 'spark' | 'settings' | 'activity' | 'plus' | 'arrow' | 'check' | 'attach' | 'image' | 'chevron' | 'back' | 'calendar' | 'more' | 'apps' | 'mail' | 'browser'
 
@@ -58,13 +71,17 @@ const starters = [
 ] as const
 
 export function ChatWelcome({ name, purpose, configured, onConnect, onPrompt }: { name: string; purpose: string; configured: boolean; onConnect?: () => void; onPrompt: (prompt: string) => void }) {
+  const [moodIndex, setMoodIndex] = useState(0)
+  const mood = mascotMoods[moodIndex]
   return <section className="chat-welcome" aria-labelledby="welcome-title">
-    <div className="welcome-mark"><Icon name="spark" /></div>
-    <p className="eyebrow">YOUR EVERYDAY SIDEKICK</p>
+    <button type="button" className="welcome-mascot" aria-label="Change mascot mood" onClick={() => setMoodIndex((index) => (index + 1) % mascotMoods.length)}>
+      <Mascot mood={mood} />
+      <span className="mascot-toggle" aria-hidden="true">Change mood <span>↻</span></span>
+    </button>
+    <span className="mascot-mood" role="status"><span className="status-dot" aria-hidden="true" />{mood}</span>
     <h2 id="welcome-title">What can we take off your plate?</h2>
     <p className="welcome-description">{purpose || `A question, a rough idea, a task you’ve been putting off. ${name} is here to help.`}</p>
     {!configured && <div className="setup-card">
-      <span className="step-number">1</span>
       <div><strong>First, connect your AI</strong><p>Use your ChatGPT account, an API key, or a model running on your computer. We’ll walk you through it.</p></div>
       <button type="button" className="send" onClick={onConnect}>Let’s set up <Icon name="arrow" /></button>
     </div>}
