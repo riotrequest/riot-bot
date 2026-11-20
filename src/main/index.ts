@@ -15,6 +15,7 @@ import { registerIpc, type IpcGate } from './ipc'
 import { contentSecurityPolicy, windowWebPreferences } from './security'
 import { shutDown } from './shutdown'
 import { AppUpdates, verifyWindowsPublisher } from './updates'
+import { MemoryEmbeddingProcess } from './memory-process'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -266,11 +267,14 @@ app.whenReady().then(async () => {
     updater.on('error', (error) => logger.error('Riot Bot updater error.', { name: error.name }))
   }
   const credentials = await ElectronCredentialStore.open(userData)
+  const memoryEmbedding = new MemoryEmbeddingProcess()
+  app.once('will-quit', () => memoryEmbedding.close())
   const providerFetch: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
   riot = new RiotService({
     dbPath: path.join(userData, 'riot-bot.sqlite'),
     provider: new MockProvider(),
     credentials,
+    embedMemory: memoryEmbedding.embed,
     catalogFetchImpl: providerFetch,
     gmailFetchImpl: providerFetch,
     logger,

@@ -9,14 +9,16 @@
     "node": "^22.13.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
+    "predev": "node scripts/prepare-memory-model.mjs",
     "dev": "electron-vite dev",
+    "prebuild": "node scripts/prepare-memory-model.mjs",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
-    "dist:win": "electron-vite build && electron-builder --win",
-    "dist:win:release": "electron-vite build && electron-builder --win --config electron-builder.release.yml --publish never"
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:win:release": "npm run build && electron-builder --win --config electron-builder.release.yml --publish never"
   },
   "dependencies": {
     "electron-updater": "6.8.11",
@@ -27,6 +29,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@huggingface/tokenizers": "0.2.0",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -34,6 +37,7 @@
     "electron": "^45.2.1",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
+    "onnxruntime-web": "1.31.1",
     "typescript": "^5.9.3",
     "vite": "^7.1.12",
     "vitest": "^5.0.5"

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Database } from '../src/core/db'
+import { MEMORY_INDEX_KEY, type EmbedMemory } from '../src/core/semantic-memory'
 import { openDatabase } from '../src/core/sqlite'
 import { makeApp, reopen } from './helpers'
 
@@ -60,21 +61,24 @@ describe('memory', () => {
     await seed.app.close()
 
     const raw = openDatabase(seed.dbPath)
-    raw.exec('ALTER TABLE memories DROP COLUMN embedding; ALTER TABLE memories DROP COLUMN embedding_model; PRAGMA user_version = 15')
+    raw.prepare('UPDATE memories SET embedding = ?, embedding_model = ? WHERE id = ?')
+      .run(Buffer.alloc(768 * 4), 'embeddinggemma:300m/768/v1', memoryId)
     raw.prepare(`INSERT INTO memories (id, bot_id, content, kind, created_at, updated_at, provenance) VALUES (?, ?, ?, 'fact', 1, 1, 'user_explicit')`)
       .run('other-memory', other.bot.id, privateNote)
     raw.close()
 
     let online = true
     const batches: string[][] = []
-    const embed = vi.fn<typeof fetch>(async (url, init) => {
-      expect(url).toBe('http://127.0.0.1:11434/api/embed')
-      if (!online) throw new Error('Ollama unavailable')
-      const { input, dimensions } = JSON.parse(String(init?.body)) as { input: string[]; dimensions: number }
+    const embed = vi.fn<EmbedMemory>(async input => {
+      if (!online) throw new Error('Bundled model unavailable')
       batches.push(input)
-      return Response.json({ embeddings: input.map(text => Array.from({ length: dimensions }, (_, index) => index === (text.endsWith(replacement) ? 1 : 0) ? 1 : 0)) })
+      return input.map(text => {
+        const vector = new Float32Array(384)
+        vector[text === replacement ? 1 : 0] = 1
+        return vector
+      })
     })
-    const { app, provider } = makeApp({ dbPath: seed.dbPath, fetchImpl: embed })
+    const { app, provider } = makeApp({ dbPath: seed.dbPath, embedMemory: embed })
     const recalled = () => provider.calls.at(-1)?.messages.find(message => message.content.startsWith('Retrieved memories.'))?.content
     try {
       await app.sendMessage(conversationId!, query)
@@ -100,7 +104,7 @@ describe('memory', () => {
       app.deleteMemory(memoryId)
       const database = new Database(seed.dbPath)
       try {
-        expect(database.memoryEmbeddings(bot!.id, 'embeddinggemma:300m/768/v1', 10)).toEqual([])
+        expect(database.memoryEmbeddings(bot!.id, MEMORY_INDEX_KEY, 10)).toEqual([])
       } finally { database.close() }
       await app.sendMessage(conversationId!, query)
       expect(recalled()).toBeUndefined()
