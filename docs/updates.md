@@ -2,7 +2,7 @@
 
 **Settings → Updates** shows the installed version and checks the public releases in [riotrequest/riot-bot](https://github.com/riotrequest/riot-bot/releases). Official Windows installs also check once at startup. Choose **Download update** and then **Restart and install**. Riot Bot checks the installer’s Authenticode signature against the publisher of the running app. The restart closes the window, waits for the app to close its local service, and starts the installer only after a clean shutdown. It is refused while work is running or queued.
 
-Source checkouts and local development installers use the existing manual update path. For source, pull the new code, run `npm ci`, and restart the app.
+Source checkouts and local development installers update manually. For source, pull the new code, run `npm ci`, and restart the app. For a local development installer, run `npm run dist:win` and rerun the installer after closing Riot Bot. Keep unsigned installers for local use. Public GitHub Releases use the signed build below.
 
 ## Publish a Windows update
 
