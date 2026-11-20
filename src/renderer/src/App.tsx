@@ -43,7 +43,7 @@ import { AppsPane } from './apps'
 import { NoticePopup } from './notices'
 import { UpdatesPane } from './updates'
 import { BrowserPane } from './browser'
-import { ChatWelcome, EmptyState, Icon, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
+import { ChatWelcome, EmptyState, Icon, Mascot, ModelBadge, ProviderPicker, messageOf, providerName, type IconName } from './ui'
 
 type Screen = 'chat' | 'apps' | 'browser' | 'jobs' | 'schedules' | 'library' | 'memory' | 'skills' | 'activity' | 'settings' | 'bot-settings' | 'new-bot' | 'earlier'
 type AppSettingsTab = 'connection' | 'email' | 'web' | 'preferences' | 'updates'
@@ -330,11 +330,8 @@ function Shell({ api }: { api: RiotBridge }) {
     <div className="app">
       <aside className="sidebar" aria-label="Bots and app settings">
         <div className="brand">
-          <span className="mark"><Icon name="spark" /></span>
-          <div>
-            <strong>Riot Bot</strong>
-            <p>A little help, every day.</p>
-          </div>
+          <span className="brand-face"><Mascot mood={running ? 'focused' : queued ? 'thinking' : configured ? 'happy' : 'sleeping'} /></span>
+          <strong>Riot Bot</strong>
         </div>
         <button
           className="new-chat"

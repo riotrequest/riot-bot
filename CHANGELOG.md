@@ -6,6 +6,10 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 20, 2026 — Riot Bot desktop branding
+
+- The desktop workspace uses Riot Bot’s graphite and mint palette. **Change mood** on the chat welcome screen cycles through six mascot expressions, while the sidebar mascot reacts to the selected bot’s status.
+
 ### November 20, 2026 — Windows app icon
 
 - The Windows app and installer now use the Riot Bot icon.

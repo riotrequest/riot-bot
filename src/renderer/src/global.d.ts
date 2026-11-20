@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { NoticeBridge, RiotBridge } from '../../shared/types'
 
 declare global {
