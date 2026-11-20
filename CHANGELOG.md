@@ -6,6 +6,10 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 20, 2026 — Windows app icon
+
+- The Windows app and installer now use the Riot Bot icon.
+
 ### November 20, 2026 — Local semantic memory
 
 - **Semantic memory** lets each bot find saved notes by meaning as well as by keywords. Turn it on in **Bot settings → Memory & skills**. The Windows installer includes the offline CPU model. Existing notes are indexed gradually as you chat, including notes from the earlier Ollama-based preview. Keyword recall stays available during migration and if the model is unavailable.

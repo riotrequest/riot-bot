@@ -179,7 +179,7 @@ Without a configured signing identity, this writes a local unsigned development 
 
 Public installers use `npm run dist:win:release`, which requires a Windows publisher signature and builds the files for GitHub Releases. Installed copies can check for new versions under **Settings → Updates**. See [app updates and publishing](docs/updates.md) for the release steps.
 
-`playwright-core` remains unpacked for optional Chromium setup, so those files are outside the main ASAR's integrity check. The installer runs in an Electron utility process with its download helper in a worker thread, preserving installation with RunAsNode disabled. Chromium downloads into `%APPDATA%\riot-bot\playwright-browsers` only when requested. The app still uses the default Electron icon.
+`playwright-core` remains unpacked for optional Chromium setup, so those files are outside the main ASAR's integrity check. The Chromium installer runs in an Electron utility process with its download helper in a worker thread, preserving installation with RunAsNode disabled. Chromium downloads into `%APPDATA%\riot-bot\playwright-browsers` only when requested. The Windows app and installer use the Riot Bot icon.
 
 ## Known limitations
 
@@ -203,7 +203,7 @@ Public installers use `npm run dist:win:release`, which requires a Windows publi
 - Automatic mode uses a documented context length, a capacity entered in Advanced, or the labeled 32,768-token fallback. It does not discover a window for every provider. OpenAI’s model list does not supply one, and a custom endpoint uses the context length you enter.
 - A custom model endpoint must be on this computer or at a public `https://` address. Servers elsewhere on a home or office network are refused until the owner decides how to grant them. Custom endpoint requests do not use Windows proxy settings, and Riot Bot does not list the models on that server. The custom endpoint has not yet been checked against a real Ollama, LM Studio, or vLLM server.
 - The earlier provider check’s cancellation step did not pass. These mock tests do not rerun that live check.
-- The installer is unsigned and does not yet include this version.
+- Signed Windows installers are distributed through GitHub Releases. Unsigned development installers are for local use.
 
 The [security review](docs/security-review.md) records the remaining architectural risks in more detail.
 
