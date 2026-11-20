@@ -5,7 +5,7 @@
 > [!NOTE]
 > Riot Bot is an early preview (version 0.1.0). Today it is a Windows desktop app, built from source, with no signed installer yet. Other platforms and an always-on server are on the [roadmap](#roadmap). Read the [known limitations](#known-limitations) before giving a bot access to anything important.
 
-![Riot Bot's main window: the bot list on the left, a bot named Pixel building a bakery website in Chat, and the Workspace sidebar on the right.](docs/images/hero.gif)
+![Riot Bot’s graphite-and-mint workspace. The mascot cycles through six faces before Pixel builds a bakery landing page and shows the files it created.](docs/images/hero.gif)
 
 ## Why Riot Bot
 
@@ -120,7 +120,7 @@ Details: [connect Gmail](docs/gmail.md).
 
 The **Schedule** screen holds reminders and bot tasks that run once, daily, on weekdays or weekly. You can also ask in Chat (“Remind me to check email at 9 PM”). A reminder shows a Riot Bot popup without any AI call. A bot task runs with that bot’s current setup, approvals and budget, and its results appear in Chat and Tasks. Missed AI work waits for **Run now** and is never replayed automatically. Schedules run while Riot Bot is open or in the tray and the computer is awake.
 
-![The Schedule screen with two reminders and a weekday bot task, and a Riot Bot reminder popup in the corner of the desktop.](docs/images/schedule.png)
+![Fern’s Schedule screen showing a weekday morning briefing and a one-time reminder to send bakery photos.](docs/images/schedule.png)
 
 Details: [reminders and scheduled bot work](docs/scheduling.md).
 
