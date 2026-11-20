@@ -73,7 +73,8 @@ import { acceptReactionEmoji, reactionLabel } from './reactions'
 import { looksLikeSecret, publicErrorMessage, redact, RedactingStream } from './redact'
 import { explicitSkillIntent, parseSkillMarkdown, skillRejection, skillToMarkdown, type SkillDraft } from './skills'
 import { nameChangeRequest } from './bot-name'
-import { recallMemories, recallNote, summaryFocus, type Recall } from './recall'
+import { mergeSemanticRecall, recallMemories, recallNote, summaryFocus, type Recall } from './recall'
+import { findSemanticMemories } from './semantic-memory'
 import { cleanBotName, fallbackBotName, parseSetupReply, SETUP_PROMPT } from './slug'
 import { botVoice, personaCard } from './voice'
 import { allocateWorkspace, defaultWorkspaceRoot, removeEmptyFolder, useExistingWorkspace } from './workspace'
@@ -179,6 +180,7 @@ export class RiotApp {
   private skillSaveAllowed = false
   private skillUpdateAllowed = false
   private learningControlThisTurn = false
+  private semanticMemories: MemoryRecord[] = []
   private compactedThisRun = false
   /** A screenshot waiting to go to the model with the next request of its run. */
   private visual: { runId: string; dataUrl: string; caption: string } | null = null
@@ -1440,6 +1442,14 @@ export class RiotApp {
           this.turnNote += `\nThe user asked to change this bot’s display name. It is now “${saved.name}” and already saved in Riot Bot. Confirm that briefly. Do not say you cannot rename yourself or send them to Settings.`
         } else if (naming) this.turnNote += '\nThe user asked you to set this bot’s display name in Riot Bot. Call rename_bot with a short name. If they already accepted a name in this conversation, use that name. Do not say you cannot rename yourself or send them to Settings.'
       }
+      if (trigger === 'user_message' && settings.semanticMemory && !this.turnNote && !prepared.note && !prepared.notice) {
+        this.semanticMemories = await findSemanticMemories(this.db, conversation.botId, body, this.credentials.secretValues(), controller.signal, this.fetchImpl)
+          .catch(() => {
+            if (!controller.signal.aborted) this.logger.info('local semantic recall unavailable', { runId: run.id })
+            return []
+          })
+        this.assertRunning(run.id, controller.signal)
+      }
       if (settings.provider === 'codex') await this.runCodex(conversationId, run.id, task.id, controller.signal)
       else { this.db.clearCodexSession(conversationId, conversation.botId); await this.loop(conversationId, run.id, task.id, controller.signal) }
     } catch (error) {
@@ -1450,6 +1460,7 @@ export class RiotApp {
       else this.finish(conversationId, run.id, task.id, 'failed', message)
     } finally {
       this.deactivateRun(run.id)
+      this.semanticMemories = []
       this.runBotId = null
       this.turnNote = ''
       this.scheduledContext = ''
@@ -1942,12 +1953,19 @@ export class RiotApp {
   /** This bot's memories for the latest message. A follow-up such as “the same setup as last time” is resolved from the earlier messages and the active project. */
   private recall(botId: string, conversationId: string, latest: MessageRecord | undefined, earlier: MessageRecord[]): Recall {
     if (!latest) return { memories: [], reference: 'none', ids: [] }
-    const workspace = this.db.getSettings(botId).workspacePath
-    return recallMemories((match, limit) => this.db.matchMemories(match, limit, botId), {
+    const settings = this.db.getSettings(botId)
+    const workspace = settings.workspacePath
+    const keyword = recallMemories((match, limit) => this.db.matchMemories(match, limit, botId), {
       latest: latest.content,
       recent: earlier.filter(message => message.role === 'user' || message.role === 'assistant').map(message => message.content),
       project: [summaryFocus(this.db.conversationForBot(botId, conversationId)?.summary ?? ''), workspace ? path.basename(workspace) : '']
     })
+    if (!settings.semanticMemory) return keyword
+    const semantic = this.semanticMemories.flatMap(memory => {
+      const current = this.db.getMemory(memory.id, botId)
+      return current && !current.pinned && current.content === memory.content ? [current] : []
+    })
+    return mergeSemanticRecall(keyword, semantic)
   }
 
   private skillCatalog(query: string): SkillCatalogItem[] {
@@ -3298,7 +3316,7 @@ export class RiotApp {
     if (!settings.autoMemory && !autoSkillSuggestions) return
     // Never send raw files, attachments, or full tool results to this review.
     const reviewData = {
-      enabled: { memory: settings.autoMemory, skill: autoSkillSuggestions },
+      enabled: { memory: settings.autoMemory, skill: autoSkillSuggestions, ...(settings.semanticMemory && settings.autoMemory ? { episode: true } : {}) },
       currentUserMessage: user.content.slice(0, 2000),
       reply: reply.slice(0, 1600),
       earlierMessages: page.filter(message => message.runId !== runId && (message.role === 'user' || message.role === 'assistant')).slice(-4).map(message => ({ role: message.role, text: message.content.slice(0, 350) })),
@@ -3325,9 +3343,9 @@ export class RiotApp {
         ? await this.nativeLearningReview(runId, data, settings, reviewSignal)
         : await this.gateway.request({ runId, purpose: 'learning_review', messages: [{ role: 'system', content: LEARNING_PROMPT }, { role: 'user', content: redact(data, this.credentials.secretValues()) }], stream: false, maxOutputTokens: LEARNING_OUTPUT_TOKENS, singleAttempt: true, signal: reviewSignal }).then(response => response.finishReason === 'length' || response.toolCalls.length ? '' : response.content)
       if (reviewSignal.aborted || this.closing || this.db.getRun(runId)?.stopRequested) return
-      const result = parseLearningReview(content, user.content.slice(0, 2000), this.credentials.secretValues())
-      if (!result) return
       const current = this.currentSettings()
+      const result = parseLearningReview(content, user.content.slice(0, 2000), this.credentials.secretValues(), settings.semanticMemory && current.semanticMemory)
+      if (!result) return
       if (current.autoMemory && result.memory && !this.db.learningMemoryHistory(botId).some(note => sameLearningText(note.content, result.memory!.content))) {
         const memory = this.insertMemory(result.memory.content, result.memory.kind, 'automatic', conversationId, user.id)
         this.addTranscript(conversationId, runId, 'notice', `Remembered for next time: ${memory.content}`)
