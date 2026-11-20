@@ -235,6 +235,9 @@ export interface MemoryRecord {
   provenance: Memory['provenance']
 }
 
+const MEMORY_FIELDS = `memories.id, memories.bot_id, memories.content, memories.kind, memories.pinned,
+  memories.created_at, memories.updated_at, memories.source_message_id, memories.conversation_id, memories.provenance`
+
 export interface ModelRequestRow {
   id: string
   runId: string
@@ -391,7 +394,9 @@ CREATE TABLE IF NOT EXISTS memories (
   source_message_id TEXT,
   conversation_id TEXT,
   provenance TEXT NOT NULL,
-  deleted_at INTEGER
+  deleted_at INTEGER,
+  embedding BLOB,
+  embedding_model TEXT
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
   memory_id UNINDEXED,
@@ -635,6 +640,7 @@ export class Database {
       this.db.exec(GMAIL_SCHEMA)
       this.db.exec(GMAIL_AUTONOMY_SCHEMA)
       this.db.exec('PRAGMA user_version = 14')
+      this.ensureMemoryEmbeddings()
       this.ensureModelCatalog()
       this.ensureContextNotes()
       return
@@ -729,6 +735,16 @@ export class Database {
       this.db.exec('PRAGMA user_version = 15')
     })
     this.ensureContextNotes()
+    if (this.userVersion() < 16) this.transaction(() => {
+      this.ensureMemoryEmbeddings()
+      this.db.exec('PRAGMA user_version = 16')
+    })
+  }
+
+  private ensureMemoryEmbeddings(): void {
+    this.addColumn('memories', 'embedding', 'BLOB')
+    this.addColumn('memories', 'embedding_model', 'TEXT')
+    this.db.exec(`CREATE INDEX IF NOT EXISTS memories_live_by_bot ON memories (bot_id, updated_at DESC) WHERE deleted_at IS NULL`)
   }
 
   /** Model-only context beside a user message and its queued job. Runs after every step, so it also reaches tables created late. */
@@ -1602,7 +1618,7 @@ export class Database {
 
   listMemories(botId = this.activeBotId()): MemoryRecord[] {
     if (!botId || !this.tableExists('memories')) return []
-    return rows(this.db.prepare(`SELECT * FROM memories WHERE deleted_at IS NULL AND bot_id = ? ORDER BY pinned DESC, updated_at DESC`).all(botId)).map(mapMemory)
+    return rows(this.db.prepare(`SELECT ${MEMORY_FIELDS} FROM memories WHERE deleted_at IS NULL AND bot_id = ? ORDER BY pinned DESC, updated_at DESC`).all(botId)).map(mapMemory)
   }
 
   /** Memories containing every word of the query, as in the Memory screen's search. */
@@ -1614,17 +1630,38 @@ export class Database {
   matchMemories(match: string, limit: number, botId = this.activeBotId()): MemoryRecord[] {
     if (!match || !botId) return []
     try {
-      return rows(this.db.prepare(`SELECT memories.* FROM memories_fts
+      return rows(this.db.prepare(`SELECT ${MEMORY_FIELDS} FROM memories_fts
         JOIN memories ON memories.id = memories_fts.memory_id
         WHERE memories_fts MATCH ? AND memories.bot_id = ? AND memories.deleted_at IS NULL
-        ORDER BY bm25(memories_fts) LIMIT ?`).all(match, botId, Math.max(limit, 1))).map(mapMemory)
+        ORDER BY bm25(memories_fts) * CASE WHEN provenance IN ('user_explicit', 'user_edit', 'assistant_tool') THEN 1.2 ELSE 1 END
+        LIMIT ?`).all(match, botId, Math.max(limit, 1))).map(mapMemory)
     } catch {
       return []
     }
   }
 
+  unindexedMemories(botId: string, model: string, limit: number): MemoryRecord[] {
+    return rows(this.db.prepare(`SELECT ${MEMORY_FIELDS} FROM memories
+      WHERE bot_id = ? AND deleted_at IS NULL AND pinned = 0
+        AND (embedding IS NULL OR embedding_model IS NOT ?)
+      ORDER BY updated_at DESC LIMIT ?`).all(botId, model, limit)).map(mapMemory)
+  }
+
+  memoryEmbeddings(botId: string, model: string, limit: number): { memory: MemoryRecord; vector: Uint8Array }[] {
+    return rows(this.db.prepare(`SELECT ${MEMORY_FIELDS}, embedding FROM memories
+      WHERE bot_id = ? AND deleted_at IS NULL AND pinned = 0 AND embedding_model = ? AND embedding IS NOT NULL
+      ORDER BY updated_at DESC LIMIT ?`).all(botId, model, limit))
+      .flatMap(item => item.embedding instanceof Uint8Array ? [{ memory: mapMemory(item), vector: item.embedding }] : [])
+  }
+
+  saveMemoryEmbedding(memory: MemoryRecord, model: string, vector: Uint8Array): void {
+    this.db.prepare(`UPDATE memories SET embedding = ?, embedding_model = ?
+      WHERE id = ? AND bot_id = ? AND deleted_at IS NULL AND content = ?`)
+      .run(vector, model, memory.id, memory.botId, memory.content)
+  }
+
   getMemory(id: string, botId = this.activeBotId()): MemoryRecord | null {
-    const found = row(this.db.prepare(`SELECT * FROM memories WHERE id = ? AND deleted_at IS NULL`).get(id))
+    const found = row(this.db.prepare(`SELECT ${MEMORY_FIELDS} FROM memories WHERE id = ? AND deleted_at IS NULL`).get(id))
     if (!found) return null
     const memory = mapMemory(found)
     if (botId && memory.botId !== botId) return null
@@ -1664,7 +1701,7 @@ export class Database {
     return this.transaction(() => {
       const existing = this.getMemory(id, botId)
       if (!existing) return null
-      this.db.prepare(`UPDATE memories SET content = ?, updated_at = ?, provenance = ? WHERE id = ? AND bot_id = ?`).run(content, now, provenance, id, botId)
+      this.db.prepare(`UPDATE memories SET content = ?, updated_at = ?, provenance = ?, embedding = NULL, embedding_model = NULL WHERE id = ? AND bot_id = ?`).run(content, now, provenance, id, botId)
       this.db.prepare(`DELETE FROM memories_fts WHERE memory_id = ?`).run(id)
       this.db.prepare(`INSERT INTO memories_fts (memory_id, content) VALUES (?, ?)`).run(id, content)
       return this.getMemory(id, botId)
@@ -1678,8 +1715,8 @@ export class Database {
 
   deleteMemory(id: string, now: number, botId = this.activeBotId()): void {
     this.transaction(() => {
-      this.db.prepare(`UPDATE memories SET deleted_at = ? WHERE id = ? AND bot_id = ?`).run(now, id, botId)
-      this.db.prepare(`DELETE FROM memories_fts WHERE memory_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM memories_fts WHERE memory_id IN (SELECT id FROM memories WHERE id = ? AND bot_id = ?)`).run(id, botId)
+      this.db.prepare(`UPDATE memories SET deleted_at = ?, embedding = NULL, embedding_model = NULL WHERE id = ? AND bot_id = ?`).run(now, id, botId)
     })
   }
 
@@ -2345,7 +2382,7 @@ function mapMemory(record: Row): MemoryRecord {
     id: text(record, 'id'),
     botId: text(record, 'bot_id'),
     content: text(record, 'content'),
-    kind: kind === 'preference' || kind === 'project' || kind === 'decision' ? kind : 'fact',
+    kind: kind === 'preference' || kind === 'project' || kind === 'decision' || kind === 'episode' ? kind : 'fact',
     pinned: bool(record, 'pinned'),
     createdAt: num(record, 'created_at'),
     updatedAt: num(record, 'updated_at'),

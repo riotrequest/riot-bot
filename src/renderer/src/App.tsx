@@ -852,7 +852,7 @@ function MemoryCard({
   return (
     <article className="card">
       <header>
-        <span>{memory.kind}</span>
+        <span>{memory.kind === 'episode' ? 'Past work' : memory.kind}</span>
         <span>{memory.provenance === 'user_explicit' ? 'You asked to remember this' : memory.provenance === 'user_edit' ? 'Edited by you' : memory.provenance === 'automatic' ? 'Remembered automatically' : 'Saved during a chat'}</span>
         <time>{new Date(memory.updatedAt).toLocaleString()}</time>
       </header>
@@ -1089,6 +1089,7 @@ export function LearningSettings({ settings, onChange }: { settings: PublicSetti
     <div className="page-intro"><h2>A little more helpful over time.</h2><p>Let this bot notice what matters and find useful ways to help you again.</p></div>
     <section className="settings-section"><h3>Remember the important things</h3>
       <label className="check permission-option"><input type="checkbox" checked={settings.autoMemory} onChange={event => onChange({ autoMemory: event.target.checked })} /><span><strong>Automatic memory</strong><small>Quietly save lasting preferences, project facts, and confirmed decisions. Everyday chat and one-time requests don’t need a memory.</small></span></label>
+      <label className="check permission-option"><input type="checkbox" checked={settings.semanticMemory} onChange={event => onChange({ semanticMemory: event.target.checked })} /><span><strong>Semantic memory</strong><small>Find this bot’s saved notes by meaning during chat. Requires Ollama on this computer with <code>embeddinggemma:300m</code>. Keyword search still works if Ollama is unavailable.</small></span></label>
       <p className="help">Review, correct, or delete anything in Memories. You can also say “Turn off automatic memory.” Explicit “remember this” requests still work when this is off.</p>
     </section>
     <section className="settings-section"><h3>Turn good workflows into skills</h3>

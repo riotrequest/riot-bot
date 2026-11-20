@@ -41,6 +41,7 @@ export interface PublicSettings {
   streaming: boolean
   toolsEnabled: boolean
   autoMemory: boolean
+  semanticMemory: boolean
   autoSkillSuggestions: boolean
   gmailAccount: string
   gmailAccess: 'off' | 'drafts' | 'send'
@@ -185,7 +186,7 @@ export interface MessagePage {
 export interface Memory {
   id: string
   content: string
-  kind: 'preference' | 'project' | 'decision' | 'fact'
+  kind: 'preference' | 'project' | 'decision' | 'fact' | 'episode'
   pinned: boolean
   createdAt: number
   updatedAt: number

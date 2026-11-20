@@ -4,7 +4,7 @@ import type { MemoryRecord } from './db'
  * Memory recall for one bot. The latest message picks candidate memories. When it points back to
  * earlier work ("the same setup as last time"), the recent conversation and the active project
  * decide which candidate it means, or show that the reference is ambiguous. Everything here is
- * local SQLite search and counting: no model call, and the caller scopes the search to one bot.
+ * keyword search and counting. The caller scopes the search to one bot.
  */
 
 /** Words that name nothing on their own. Reference words ("same", "last", "again") are included: they say that the user means earlier work, not which work. */
@@ -117,10 +117,24 @@ export function recallNote(recall: Recall, historyTool = 'search_history'): stri
     case 'ambiguous':
       return `The user is referring back to earlier work, and memories ${recall.ids.join(', ')} fit about equally. The conversation does not settle which one they mean. Before acting, ask one short question that names the options. Do not guess.`
     case 'missing':
+      if (recall.memories.length) return `The user is referring back to earlier work. Related notes are supplied as leads. Verify their details against recent conversation or ${historyTool}. Ask if the records do not establish what the user means.`
       return `The user is referring back to earlier work, but no saved memory matches it. Use the recent conversation, or ${historyTool} for older originals. If those do not settle it, ask instead of guessing.`
     default:
       return ''
   }
+}
+
+/** Preserve explicit lexical disambiguation. Otherwise give both search methods room in the request. */
+export function mergeSemanticRecall(recall: Recall, semantic: MemoryRecord[], limit = 5): Recall {
+  if (!semantic.length || recall.reference === 'resolved' || recall.reference === 'ambiguous') return recall
+  const selected = new Map<string, MemoryRecord>()
+  for (let index = 0; selected.size < limit && index < Math.max(recall.memories.length, semantic.length); index++) {
+    const keyword = recall.memories[index]
+    if (keyword) selected.set(keyword.id, keyword)
+    const meaning = semantic[index]
+    if (meaning && selected.size < limit) selected.set(meaning.id, meaning)
+  }
+  return { ...recall, memories: [...selected.values()] }
 }
 
 /** The lines of a conversation summary that describe the active work. */

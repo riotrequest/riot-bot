@@ -6,6 +6,11 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 20, 2026 — Local semantic memory
+
+- **Semantic memory** lets each bot find saved notes by meaning as well as by keywords. Turn it on in **Bot settings → Memory & skills** with Ollama and `embeddinggemma:300m` running on the same PC. Existing notes are indexed as you chat, and keyword recall is available if Ollama is unavailable.
+- Explicitly saved and edited notes get more weight in recall. With **Automatic memory** enabled, the existing review can save milestones, completed tasks, and past decisions you confirmed as **Past work**. Edit, pin, or delete those notes in **Memories**. Recent messages and the rolling summary continue to provide working context. See [memory setup](docs/user-guide.md#memories-and-skills).
+
 ### November 17, 2026 — Built-in browser workspace
 
 - **Workspace → Browser** shows the active tab and recent browser steps. Take control to navigate, click, type, scroll, or switch tabs in the panel, then hand control back to the bot.

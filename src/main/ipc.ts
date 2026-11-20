@@ -34,6 +34,7 @@ const SETTING_KEYS: (keyof PublicSettings)[] = [
   'streaming',
   'toolsEnabled',
   'autoMemory',
+  'semanticMemory',
   'autoSkillSuggestions',
   'gmailAccount',
   'gmailAccess',
