@@ -74,7 +74,7 @@ import { looksLikeSecret, publicErrorMessage, redact, RedactingStream } from './
 import { explicitSkillIntent, parseSkillMarkdown, skillRejection, skillToMarkdown, type SkillDraft } from './skills'
 import { nameChangeRequest } from './bot-name'
 import { mergeSemanticRecall, recallMemories, recallNote, summaryFocus, type Recall } from './recall'
-import { findSemanticMemories } from './semantic-memory'
+import { findSemanticMemories, type EmbedMemory } from './semantic-memory'
 import { cleanBotName, fallbackBotName, parseSetupReply, SETUP_PROMPT } from './slug'
 import { botVoice, personaCard } from './voice'
 import { allocateWorkspace, defaultWorkspaceRoot, removeEmptyFolder, useExistingWorkspace } from './workspace'
@@ -115,6 +115,7 @@ export interface RiotAppOptions {
   now?: () => number
   terminal?: TerminalRunner
   fetchImpl?: typeof fetch
+  embedMemory?: EmbedMemory
   catalogFetchImpl?: typeof fetch
   lookupHost?: (hostname: string) => Promise<string[]>
   researchTransport?: ResearchTransport
@@ -168,6 +169,7 @@ export class RiotApp {
   private readonly createProvider?: (settings: Settings, connection: ProviderConnection) => ModelProvider
   private readonly now: () => number
   private readonly fetchImpl?: typeof fetch
+  private readonly embedMemory?: EmbedMemory
   private readonly catalogFetchImpl?: typeof fetch
   private readonly lookupHost?: (hostname: string) => Promise<string[]>
   private readonly researchTransport?: ResearchTransport
@@ -227,6 +229,7 @@ export class RiotApp {
     this.now = options.now ?? Date.now
     this.terminal = options.terminal ?? new OsTerminal()
     this.fetchImpl = options.fetchImpl
+    this.embedMemory = options.embedMemory
     this.catalogFetchImpl = options.catalogFetchImpl
     this.lookupHost = options.lookupHost
     this.researchTransport = options.researchTransport
@@ -1442,8 +1445,8 @@ export class RiotApp {
           this.turnNote += `\nThe user asked to change this bot’s display name. It is now “${saved.name}” and already saved in Riot Bot. Confirm that briefly. Do not say you cannot rename yourself or send them to Settings.`
         } else if (naming) this.turnNote += '\nThe user asked you to set this bot’s display name in Riot Bot. Call rename_bot with a short name. If they already accepted a name in this conversation, use that name. Do not say you cannot rename yourself or send them to Settings.'
       }
-      if (trigger === 'user_message' && settings.semanticMemory && !this.turnNote && !prepared.note && !prepared.notice) {
-        this.semanticMemories = await findSemanticMemories(this.db, conversation.botId, body, this.credentials.secretValues(), controller.signal, this.fetchImpl)
+      if (this.embedMemory && trigger === 'user_message' && settings.semanticMemory && !this.turnNote && !prepared.note && !prepared.notice) {
+        this.semanticMemories = await findSemanticMemories(this.db, conversation.botId, body, this.credentials.secretValues(), controller.signal, this.embedMemory)
           .catch(() => {
             if (!controller.signal.aborted) this.logger.info('local semantic recall unavailable', { runId: run.id })
             return []

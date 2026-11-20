@@ -7,7 +7,11 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: [] })],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname,'src/main/index.ts'), 'browser-installer': resolve(__dirname,'src/main/browser-installer.ts') },
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          'browser-installer': resolve(__dirname, 'src/main/browser-installer.ts'),
+          'memory-worker': resolve(__dirname, 'src/main/memory-worker.ts')
+        },
         external: ['electron', 'node:sqlite']
       }
     }

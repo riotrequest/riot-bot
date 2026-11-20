@@ -8,6 +8,17 @@ files:
 asar: true
 asarUnpack:
   - node_modules/playwright-core/**/*
+extraResources:
+  - from: memory-assets
+    to: memory-assets
+    filter:
+      - model.onnx
+      - tokenizer.json
+      - tokenizer_config.json
+      - ort-wasm-simd-threaded.wasm
+      - ort-wasm-simd-threaded.mjs
+      - '*LICENSE.txt'
+      - '*NOTICES.txt'
 npmRebuild: false
 publish: null
 electronFuses:
