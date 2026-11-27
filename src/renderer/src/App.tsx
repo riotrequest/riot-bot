@@ -263,7 +263,7 @@ function Shell({ api }: { api: RiotBridge }) {
 
   async function send(): Promise<void> {
     if (!detail || (!draft.trim() && !draftAttachments.length) || busy) return
-    if (!configured) { showScreen('bot-settings'); return }
+    if (!configured) { showScreen(settings?.model ? 'bot-settings' : 'settings'); return }
     const text = draft
     const attachmentIds = draftAttachments.map((item) => item.id)
     const sendingBotId = bot?.id
@@ -484,7 +484,7 @@ function Shell({ api }: { api: RiotBridge }) {
               if (!ongoingId) return
               void loadConversation(ongoingId).catch((reason: unknown) => setError(messageOf(reason)))
             }}
-            onOpenSettings={() => setScreen('bot-settings')}
+            onOpenSettings={() => setScreen(settings?.model ? 'bot-settings' : 'settings')}
             configured={configured}
             configurationNote={settings?.provider === 'codex' && codex?.connected && codex.models.length > 0 && !codex.models.some((model) => model.id === settings.model) ? `The saved model ${settings.model} is not listed for this Codex account. Choose an available model in Bot settings.` : undefined}
             showToolDetails={preferences.showToolDetails}
@@ -551,7 +551,11 @@ function Shell({ api }: { api: RiotBridge }) {
             }}
           />
         )}
-        {screen === 'settings' && appSettings && credentials && <AppSettingsPane settings={appSettings} preferences={preferences} update={appUpdate} credentials={credentials} codex={codex} onCodex={setCodex} gmail={gmail} onGmail={setGmail} bot={bot} onApps={() => showScreen('apps')} api={api} onPreferences={setPreferences} onError={setError} onBusy={setEditingBusy} onDone={() => setScreen(bot ? 'chat' : 'new-bot')} onSaved={(next, status) => { setAppSettings(next); setCredentials(status); setSettings(current => current ? { ...current, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd } : current) }} />}
+        {screen === 'settings' && appSettings && credentials && <AppSettingsPane unconfiguredBot={Boolean(bot && settings && !settings.model)} onConnected={async snapshot => {
+          await reload(snapshot)
+          setScreen('chat')
+          if (snapshot.settings.provider === 'custom' && snapshot.credentials.customKeySessionOnly) setError('Your endpoint key is available for this session only. Enter it again after restarting Riot Bot.')
+        }} settings={appSettings} preferences={preferences} update={appUpdate} credentials={credentials} codex={codex} onCodex={setCodex} gmail={gmail} onGmail={setGmail} bot={bot} onApps={() => showScreen('apps')} api={api} onPreferences={setPreferences} onError={setError} onBusy={setEditingBusy} onDone={() => setScreen(bot ? 'chat' : 'new-bot')} onSaved={(next, status) => { setAppSettings(next); setCredentials(status); setSettings(current => current ? { ...current, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd } : current) }} />}
         {screen === 'bot-settings' && settings && appSettings && credentials && bot && (
           <SettingsPane
             key={bot.id}
@@ -594,7 +598,7 @@ function Shell({ api }: { api: RiotBridge }) {
           </button>)}
         </nav>
         <div className="workspace-footer">
-          {bot && !configured && <button className="connection-nudge" disabled={navigationLocked} onClick={() => showScreen('bot-settings')}><span className="status-dot pending" /><span><strong>Connect your AI</strong><small>One step to your first chat</small></span><Icon name="chevron" /></button>}
+          {bot && !configured && <button className="connection-nudge" disabled={navigationLocked} onClick={() => showScreen(settings?.model ? 'bot-settings' : 'settings')}><span className="status-dot pending" /><span><strong>Connect your AI</strong><small>One step to your first chat</small></span><Icon name="chevron" /></button>}
           <nav className="workspace-nav" aria-label="Bot controls"><button disabled={!bot || navigationLocked} className={menuOpen || screen === 'bot-settings' ? 'active' : ''} aria-current={menuOpen || screen === 'bot-settings' ? 'page' : undefined} onClick={() => showScreen('bot-settings')}><Icon name="settings" /><span>Bot settings</span></button></nav>
           <p>Model, profile, files & tools<br />for this bot.</p>
         </div>
@@ -949,6 +953,8 @@ function ActivityPane({ activity, usage, scope, onScope }: { activity: ActivityE
 }
 
 function AppSettingsPane(props: {
+  unconfiguredBot: boolean
+  onConnected: (snapshot: Snapshot) => Promise<void>
   settings: AppSettings
   preferences: AppPreferences
   update: AppUpdateState | null
@@ -975,15 +981,23 @@ function AppSettingsPane(props: {
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
-  const keySaved = apiKeySaved(draft.provider, props.credentials)
+  const sameEndpoint = draft.customBaseUrl.trim().replace(/\/+$/, '') === props.settings.customBaseUrl
+  const keySaved = apiKeySaved(draft.provider, props.credentials) && (draft.provider !== 'custom' || sameEndpoint)
+  const canConnect = tab === 'connection' && props.unconfiguredBot && props.bot && draft.model.trim() &&
+    (draft.provider === 'custom' ? draft.customBaseUrl.trim() : draft.provider === 'codex' ? props.codex?.connected : key.trim() || keySaved)
   const changed = JSON.stringify(draft) !== JSON.stringify(props.settings) || Boolean(key.trim()) || Boolean(tavilyKey.trim()) || Boolean(firecrawlKey.trim())
-  function update(patch: Partial<AppSettings>): void { setDraft(current => ({ ...current, ...patch })); setNote(''); setError('') }
+  function update(patch: Partial<AppSettings>): void {
+    if (patch.customBaseUrl !== undefined && patch.customBaseUrl !== draft.customBaseUrl) setKey('')
+    setDraft(current => ({ ...current, ...patch }))
+    setNote('')
+    setError('')
+  }
   async function save(): Promise<void> {
     if (saving) return
     setSaving(true); props.onBusy(true); setNote(''); setError('')
     try {
       let credentials = props.credentials
-      if (key.trim() && draft.provider !== 'codex') {
+      if (key.trim() && draft.provider !== 'codex' && draft.provider !== 'custom') {
         credentials = (await props.api.setCredential(draft.provider, key.trim())).status
         setKey('')
         props.onSaved(props.settings, credentials)
@@ -998,11 +1012,14 @@ function AppSettingsPane(props: {
         setFirecrawlKey('')
         props.onSaved(props.settings, credentials)
       }
-      const next = await props.api.updateAppSettings(draft)
+      const botId = canConnect ? props.bot?.id : undefined
+      const next = await props.api.updateAppSettings(draft, draft.provider === 'custom' && key.trim() ? key.trim() : undefined, botId)
+      setKey('')
       setDraft(next)
-      // The saved address is what makes the custom endpoint usable; the main process still checks it before every request.
-      props.onSaved(next, { ...credentials, customConfigured: Boolean(next.customBaseUrl) })
-      setNote('App settings saved. Existing bots keep their chosen models.')
+      const snapshot = await props.api.getSnapshot()
+      props.onSaved(next, snapshot.credentials)
+      if (botId) await props.onConnected(snapshot)
+      else setNote('App settings saved.')
     } catch (reason) { setError(messageOf(reason)) }
     finally { setSaving(false); props.onBusy(false) }
   }
@@ -1018,7 +1035,7 @@ function AppSettingsPane(props: {
       {tab === 'connection' ? <>
         <div className="page-intro"><p className="eyebrow">ACROSS YOUR WHOLE APP</p><h2>Your starting point for every new bot.</h2><p>Manage shared connections and choose the model new bots start with. Existing bots keep their own choices.</p></div>
         <section className="settings-section"><div className="section-heading"><span className="step-number">1</span><h3>Choose your default connection</h3></div><ProviderPicker value={draft.provider} onChange={provider => { setKey(''); update({ provider, model: '' }) }} /></section>
-        <section className="settings-section"><div className="section-heading"><span className="step-number">2</span><h3>{draft.provider === 'codex' ? 'Connect your ChatGPT account' : draft.provider === 'custom' ? 'Connect your model server' : 'Connect your provider'}</h3>{draft.provider === 'custom' ? props.credentials.customConfigured && <span className="small-badge"><Icon name="check" /> Address saved</span> : keySaved && <span className="small-badge"><Icon name="check" /> Key saved</span>}</div>
+        <section className="settings-section"><div className="section-heading"><span className="step-number">2</span><h3>{draft.provider === 'codex' ? 'Connect your ChatGPT account' : draft.provider === 'custom' ? 'Connect your model server' : 'Connect your provider'}</h3>{draft.provider === 'custom' ? props.credentials.customConfigured && sameEndpoint && <span className="small-badge"><Icon name="check" /> Address saved</span> : keySaved && <span className="small-badge"><Icon name="check" /> Key saved</span>}</div>
           {draft.provider === 'codex' ? <CodexConnection api={props.api} status={props.codex} onChange={props.onCodex} onError={props.onError} /> : draft.provider === 'custom' ? <>
             <p className="help">Use a model server on this computer, such as Ollama or LM Studio, or any OpenAI-compatible endpoint at a public https:// address. Plain http:// works only for localhost, 127.0.0.1 and [::1]. Servers elsewhere on your home or office network are not supported yet.</p>
             <label>Endpoint address<input inputMode="url" autoComplete="off" spellCheck={false} value={draft.customBaseUrl} placeholder="http://localhost:11434/v1" onChange={event => update({ customBaseUrl: event.target.value })} /></label>
@@ -1027,8 +1044,9 @@ function AppSettingsPane(props: {
             <label>Context length (tokens)<input type="number" min={1024} step={1} value={draft.customContextTokens ?? ''} placeholder="For example 8192" onChange={event => update({ customContextTokens: event.target.value === '' ? null : Number(event.target.value) })} /></label>
             <p className="help">Enter the context your server actually runs the model with. Riot Bot fits each request to it; a blank value uses a conservative 32,768-token fallback. A bot can set its own capacity in Bot settings → Advanced.</p>
             <label>API key (optional)<input type="password" autoComplete="off" spellCheck={false} value={key} placeholder={keySaved ? 'A key is saved. Paste here only to replace it.' : 'Leave blank if your server does not need a key'} onChange={event => { setKey(event.target.value); setNote('') }} /></label>
-            <p className="help">{props.credentials.explanation} A saved key is sent only to this endpoint address. Local servers usually need no key.</p>
-            {keySaved && <details className="subtle-details"><summary>Manage saved key</summary><p className="help">Removing this key stops sending it to your endpoint. The address stays saved.</p><button type="button" className="danger" onClick={() => { void props.api.clearCredential('custom').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove saved key</button></details>}
+            <p className="help">{keySaved && props.credentials.customKeySessionOnly ? 'Protected storage could not save this key. It stays in memory until you quit.' : props.credentials.explanation} A saved key is sent only to this endpoint address. Local servers usually need no key.</p>
+            {props.credentials.customKeyNeedsReplacement && <p className="help">Your previous key has no verified endpoint. Enter it again for this address or remove it below.</p>}
+            <details className="subtle-details"><summary>Manage endpoint keys</summary><p className="help">Remove saved custom endpoint keys, including keys from an earlier version. Your endpoint address stays saved.</p><button type="button" className="danger" onClick={() => { void props.api.clearCredential('custom').then(status => props.onSaved(props.settings, status)).catch(reason => props.onError(messageOf(reason))) }}>Remove saved key</button></details>
           </> : <>
             <p className="help">This key is shared by all bots using {providerName(draft.provider)}. API usage is billed by your provider.</p>
             <label>API key<input type="password" autoComplete="off" spellCheck={false} value={key} placeholder={keySaved ? 'A key is saved. Paste here only to replace it.' : `Paste your ${providerName(draft.provider)} API key`} onChange={event => { setKey(event.target.value); setNote('') }} /></label>
@@ -1077,7 +1095,7 @@ function AppSettingsPane(props: {
         <section className="settings-section"><h3>App-wide spending ceiling</h3><OptionalMoney label="All bots, per day (USD)" value={draft.maxEstimatedSpendPerDayUsd} onChange={maxEstimatedSpendPerDayUsd => update({ maxEstimatedSpendPerDayUsd })} /><p className="help">Leave blank to turn this ceiling off. It covers API spending across all bots. Each API bot needs its model’s input and output prices in Bot settings → Limits for spending estimates. Codex account usage is managed separately.</p></section>
       </>}
     </fieldset>
-    <footer className="settings-savebar"><div role="status" aria-live="polite">{error ? <p className="danger" role="alert">{error}</p> : <p className={note ? 'save-success' : 'help'}>{note || (changed ? 'You have unsaved app settings.' : tab === 'email' ? 'Gmail changes save immediately.' : 'Shared settings for Riot Bot')}</p>}</div><div className="row"><button type="button" disabled={saving} onClick={props.onDone}>{changed ? 'Discard changes' : 'Done'}</button>{((tab !== 'email' && tab !== 'updates') || changed) && <button className="send" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save app settings'}<Icon name="check" /></button>}</div></footer>
+    <footer className="settings-savebar"><div role="status" aria-live="polite">{error ? <p className="danger" role="alert">{error}</p> : <p className={note ? 'save-success' : 'help'}>{note || (changed ? 'You have unsaved app settings.' : tab === 'email' ? 'Gmail changes save immediately.' : 'Shared settings for Riot Bot')}</p>}</div><div className="row"><button type="button" disabled={saving} onClick={props.onDone}>{changed ? 'Discard changes' : 'Done'}</button>{((tab !== 'email' && tab !== 'updates') || changed) && <button className="send" type="submit" disabled={saving}>{saving ? 'Saving…' : canConnect ? 'Save and connect ' + props.bot?.name : 'Save app settings'}<Icon name="check" /></button>}</div></footer>
   </form>
 }
 
@@ -1086,7 +1104,7 @@ export function LearningSettings({ settings, onChange }: { settings: PublicSetti
     <div className="page-intro"><h2>A little more helpful over time.</h2><p>Let this bot notice what matters and find useful ways to help you again.</p></div>
     <section className="settings-section"><h3>Remember the important things</h3>
       <label className="check permission-option"><input type="checkbox" checked={settings.autoMemory} onChange={event => onChange({ autoMemory: event.target.checked })} /><span><strong>Automatic memory</strong><small>Quietly save lasting preferences, project facts, and confirmed decisions. Everyday chat and one-time requests don’t need a memory.</small></span></label>
-      <label className="check permission-option"><input type="checkbox" checked={settings.semanticMemory} onChange={event => onChange({ semanticMemory: event.target.checked })} /><span><strong>Semantic memory</strong><small>Find this bot’s saved notes by meaning during chat. Riot Bot’s built-in memory model works offline and is independent of your chat model.</small></span></label>
+      <label className="check permission-option"><input type="checkbox" checked={settings.semanticMemory} onChange={event => onChange({ semanticMemory: event.target.checked })} /><span><strong>Semantic memory</strong><small>Find this bot’s saved notes by meaning during chat. Source installs download the 34 MB model on first use. Installed releases include it. Recall runs locally.</small></span></label>
       <p className="help">Review, correct, or delete anything in Memories. You can also say “Turn off automatic memory.” Explicit “remember this” requests still work when this is off.</p>
     </section>
     <section className="settings-section"><h3>Turn good workflows into skills</h3>

@@ -41,7 +41,7 @@ export const BROWSER_ACTION_TIMEOUT_MS = 8_000
 export const BROWSER_TEXT_LIMIT = 4_000
 /** Local page text kept for read_tool_result. The model request gets a shorter preview. */
 export const BROWSER_STORED_TEXT_LIMIT = 20_000
-/** Elements a snapshot examines across the page and its frames. */
+/** Maximum matching control handles retained per snapshot, after filtering and viewport ordering. */
 export const BROWSER_SCAN_LIMIT = 400
 /** Elements a snapshot lists. On-screen elements come first; a query reaches the rest. */
 export const BROWSER_SNAPSHOT_LIMIT = 80

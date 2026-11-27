@@ -31,6 +31,7 @@ export class ElectronCredentialStore implements CredentialStore {
       explanation: available
         ? 'API keys are protected by Windows and are not shown again.'
         : 'Windows credential protection is not available. A key stays in memory only and is forgotten when you quit Riot Bot.',
+      sessionOnly: key => this.session.has(key),
       has: (provider) => Boolean(this.get(provider))
     }
   }

@@ -54,7 +54,7 @@ export interface IpcGate {
   close(): void
 }
 
-export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore, notices: { list: () => AppNotice[]; dismiss: (id: string) => AppNotice[] } = { list: () => [], dismiss: () => [] }, updates?: AppUpdates): IpcGate {
+export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserWindow | null, credentials: ElectronCredentialStore, notices: { list: () => AppNotice[]; dismiss: (id: string) => AppNotice[] } = { list: () => [], dismiss: () => [] }, updates?: AppUpdates, prepareMemory?: () => Promise<void>): IpcGate {
   let open = true
   const handle = (channel: string, fn: (app: RiotService, args: unknown[]) => unknown): void => {
     ipcMain.handle(channel, async (event, ...args) => {
@@ -242,10 +242,18 @@ export function registerIpc(getApp: () => RiotService, getWindow: () => BrowserW
   handle('provider:runCheck', (app) => app.runProviderCheck())
   handle('activity:list', (app, args) => app.listActivity(args[0] === 'app' ? 'app' : 'bot'))
   handle('usage:get', (app) => app.getUsage())
-  handle('settings:update', (app, args) => app.updateSettings(pickSettings(args[0])))
+  handle('settings:update', async (app, args) => {
+    const patch = pickSettings(args[0])
+    if (patch.semanticMemory && prepareMemory) {
+      const botId = app.getSnapshot().bot?.id
+      await prepareMemory()
+      if (!open || !botId || app.getSnapshot().bot?.id !== botId) throw new Error('Select the original bot to save its memory settings.')
+    }
+    return app.updateSettings(patch)
+  })
   handle('settings:updateApp', (app, args) => {
     const patch = pickSettings(args[0])
-    return app.updateAppSettings({ ...(patch.provider !== undefined ? { provider: requireProvider(patch.provider) } : {}), ...(patch.model !== undefined ? { model: patch.model } : {}), ...(patch.maxEstimatedSpendPerDayUsd !== undefined ? { maxEstimatedSpendPerDayUsd: patch.maxEstimatedSpendPerDayUsd } : {}), ...customEndpointPatch(args[0]), ...researchSettingsPatch(args[0]) })
+    return app.updateAppSettings({ ...(patch.provider !== undefined ? { provider: requireProvider(patch.provider) } : {}), ...(patch.model !== undefined ? { model: patch.model } : {}), ...(patch.maxEstimatedSpendPerDayUsd !== undefined ? { maxEstimatedSpendPerDayUsd: patch.maxEstimatedSpendPerDayUsd } : {}), ...customEndpointPatch(args[0]), ...researchSettingsPatch(args[0]) }, args[1] === undefined ? undefined : requireSecret(args[1]), args[2] === undefined ? undefined : requireId(args[2]))
   })
   handle('codex:status', (app) => app.getCodexStatus())
   handle('codex:connect', (app) => app.connectCodex())

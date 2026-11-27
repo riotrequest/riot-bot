@@ -21,6 +21,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run memory:prepare
       - run: npm audit --omit=dev
       - name: Audit development dependencies
         shell: pwsh

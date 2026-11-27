@@ -420,6 +420,8 @@ export interface CredentialStatus {
   openrouterConfigured: boolean
   /** True when a custom endpoint address is saved. Its API key is optional. */
   customConfigured: boolean
+  customKeyNeedsReplacement?: boolean
+  customKeySessionOnly?: boolean
   customKeyConfigured: boolean
   tavilyConfigured: boolean
   firecrawlConfigured: boolean
@@ -723,7 +725,7 @@ export interface RiotBridge {
   listActivity(scope?: 'bot' | 'app'): Promise<ActivityEntry[]>
   getUsage(): Promise<UsageSummary>
   updateSettings(patch: Partial<PublicSettings>): Promise<PublicSettings>
-  updateAppSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  updateAppSettings(patch: Partial<AppSettings>, customKey?: string, connectBotId?: string): Promise<AppSettings>
   setCredential(provider: ApiProviderId, secret: string): Promise<CredentialSaveResult>
   clearCredential(provider: ApiProviderId): Promise<CredentialStatus>
   setResearchKey(provider: 'tavily' | 'firecrawl', secret: string): Promise<CredentialSaveResult>

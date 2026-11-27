@@ -384,39 +384,46 @@ export class PlaywrightPage implements LaunchedPage {
   }
 
   /**
-   * Lists interactive elements across the page, its open shadow roots and its visible frames.
-   * Each frame takes two round trips however many elements it has.
+   * Search before retaining handles. A large navigation menu must not hide the visible page or a later frame.
    */
-  async observe(limit: number): Promise<RawControl[]> {
+  async observe(limit: number, terms: string[] = []): Promise<RawControl[]> {
     this.release()
     const top = this.page.mainFrame()
     const topOrigin = frameOrigin(top)
-    const viewport = await top.evaluate(() => ({ width: innerWidth, height: innerHeight })).catch(() => null)
-    const controls: RawControl[] = []
+    const viewport = await top.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+    type Match = { entry: Entry; control: RawControl }
+    const visible: Match[] = [], elsewhere: Match[] = []
     for (const frame of this.page.frames().slice(0, BROWSER_FRAME_LIMIT)) {
-      if (controls.length >= limit) break
+      if (visible.length >= limit) break
       const offset = frame === top ? { x: 0, y: 0 } : await frameBox(frame)
       if (!offset) continue
       const origin = frameOrigin(frame)
-      for (const { handle, described } of await this.scan(frame, limit - controls.length).catch(() => [])) {
-        const { box: inner, ...control } = described
-        const box = inner && { ...inner, x: inner.x + offset.x, y: inner.y + offset.y }
-        // Sites usually hide the real file chooser behind a styled button, so it counts as on screen.
-        const onScreen = box ? Boolean(viewport && box.x + box.width > 0 && box.y + box.height > 0 && box.x < viewport.width && box.y < viewport.height) : control.inputType === 'file'
-        this.entries.push({ handle, frame, box })
-        controls.push({ ...control, onScreen, ...(origin !== topOrigin ? { frame: origin } : {}) })
+      const frameLabel = origin === topOrigin ? '' : origin
+      const options = { limit: limit - visible.length, terms, frameLabel, offset, viewport }
+      const matches = await this.scan(frame, options).catch(() => [])
+      for (const { handle, description, onScreen } of matches) {
+        const { box, ...control } = description
+        const entry = { handle, frame, box }
+        const match = { entry, control: { ...control, onScreen, ...(frameLabel ? { frame: frameLabel } : {}) } }
+        if (onScreen) visible.push(match)
+        else if (elsewhere.length < limit) elsewhere.push(match)
+        else void handle.dispose().catch(() => undefined)
       }
     }
-    return controls
+    const ordered = [...visible, ...elsewhere]
+    for (const { entry } of ordered.slice(limit)) void entry.handle.dispose().catch(() => undefined)
+    const retained = ordered.slice(0, limit)
+    this.entries = retained.map(match => match.entry)
+    return retained.map(match => match.control)
   }
 
   async controlAt(index: number): Promise<RawControl | null> {
     const entry = this.entries[index]
     if (!entry || entry.frame.isDetached()) return null
     try {
-      const [described] = await entry.frame.evaluate(describeControls, [entry.handle])
-      if (!described) return null
-      const { box: _box, ...control } = described
+      const [match] = await entry.frame.evaluate(describeControls, { elements: [entry.handle], limit: 1 })
+      if (!match) return null
+      const { box: _box, ...control } = match.description
       const origin = frameOrigin(entry.frame)
       return { ...control, ...(origin !== frameOrigin(this.page.mainFrame()) ? { frame: origin } : {}) }
     } catch {
@@ -574,18 +581,20 @@ export class PlaywrightPage implements LaunchedPage {
     return entry
   }
 
-  private async scan(frame: Frame, max: number): Promise<{ handle: ElementHandle<Element>; described: Described }[]> {
-    const list = await frame.evaluateHandle(collectControls, max)
+  private async scan(frame: Frame, options: ScanOptions) {
+    const candidates = await frame.evaluateHandle(collectControls)
     try {
-      const described = await frame.evaluate(describeControls, list)
-      const properties = await list.getProperties()
-      return described.flatMap((item, index) => {
-        const handle = properties.get(String(index))?.asElement() as ElementHandle<Element> | null | undefined
-        return item && handle ? [{ handle, described: item }] : []
-      })
-    } finally {
-      await list.dispose().catch(() => undefined)
-    }
+      const matches = await frame.evaluate(describeControls, { elements: candidates, ...options })
+      const selected = await frame.evaluateHandle(({ elements, indices }) => indices.map(index => elements[index]),
+        { elements: candidates, indices: matches.map(match => match.index) })
+      try {
+        const handles = await selected.getProperties()
+        return matches.flatMap((match, index) => {
+          const handle = handles.get(String(index))?.asElement() as ElementHandle<Element> | null
+          return handle ? [{ ...match, handle }] : []
+        })
+      } finally { await selected.dispose().catch(() => undefined) }
+    } finally { await candidates.dispose().catch(() => undefined) }
   }
 
   private release(): void {
@@ -638,7 +647,7 @@ function stripPasswordLines(value: string): string {
 // The functions below run inside the page. They must not use anything from this module's scope.
 
 /** Interactive elements in one frame, in document order, including open shadow roots. */
-function collectControls(max: number): Element[] {
+function collectControls(): Element[] {
   const selector = [
     'a[href]', 'button', 'input:not([type="hidden"])', 'textarea', 'select', 'summary', '[contenteditable=""]', '[contenteditable="true"]',
     ...['button', 'link', 'textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'treeitem'].map((role) => `[role="${role}"]`)
@@ -661,7 +670,7 @@ function collectControls(max: number): Element[] {
   }
   const visit = (root: Document | ShadowRoot): void => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
-    for (let node = walker.nextNode(); node && found.length < max; node = walker.nextNode()) {
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const element = node as Element
       if ((element.matches(selector) || clickable(element)) && visible(element)) found.push(element)
       if (element.shadowRoot) visit(element.shadowRoot)
@@ -671,16 +680,31 @@ function collectControls(max: number): Element[] {
   return found
 }
 
-/** Role, name, state and position of each element. Returns null for an element that left the page. */
-function describeControls(elements: Element[]): (Described | null)[] {
+interface ScanOptions {
+  limit: number
+  terms?: string[]
+  frameLabel?: string
+  offset?: { x: number; y: number }
+  viewport?: { width: number; height: number }
+}
+
+/** Rank matching controls in the page before creating handles for the retained results. */
+function describeControls({ elements, limit, terms = [], frameLabel = '', offset, viewport }: ScanOptions & { elements: Element[] }) {
   const clean = (text: string | null | undefined, max = 80): string => (text ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
   const buttonTypes = ['button', 'submit', 'reset', 'image']
   const inputRoles: Record<string, string> = { button: 'button', submit: 'button', reset: 'button', image: 'button', checkbox: 'checkbox', radio: 'radio', range: 'slider', number: 'spinbutton', search: 'searchbox', file: 'upload' }
   const valueTypes = ['text', 'search', 'email', 'url', 'tel', 'number', 'date', 'datetime-local', 'month', 'week', 'time', 'color', 'range']
   let focused = document.activeElement
   while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement
-  return elements.map((element) => {
-    if (!element.isConnected) return null
+  interface Match { index: number; description: Described; onScreen: boolean }
+  const visible: Match[] = [], elsewhere: Match[] = []
+  for (let index = 0; index < elements.length && visible.length < limit; index++) {
+    const element = elements[index]
+    if (!element.isConnected) continue
+    const rect = element.getBoundingClientRect()
+    const box = rect.width > 0 && rect.height > 0 ? { x: rect.x + (offset?.x ?? 0), y: rect.y + (offset?.y ?? 0), width: rect.width, height: rect.height } : null
+    const onScreen = box ? !viewport || (box.x + box.width > 0 && box.y + box.height > 0 && box.x < viewport.width && box.y < viewport.height) : element instanceof HTMLInputElement && element.type === 'file'
+    if (!onScreen && elsewhere.length >= limit) continue
     const html = element as HTMLElement
     const tag = element.tagName.toLowerCase()
     const input = element instanceof HTMLInputElement ? element : null
@@ -741,10 +765,15 @@ function describeControls(elements: Element[]): (Described | null)[] {
       selected: [...select.selectedOptions].map((option) => clean(option.label || option.text, 60)),
       total: select.options.length
     } : undefined
-    const rect = element.getBoundingClientRect()
-    const box = rect.width > 0 && rect.height > 0 ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null
-    return { role, name, inputType: type, href, states, ...(value ? { value } : {}), ...(options ? { options } : {}), box }
-  })
+    if (terms.length) {
+      const text = [role, name, href, value, frameLabel, ...states, ...(options?.labels ?? [])].join(' ').toLowerCase()
+      if (!terms.every(term => text.includes(term))) continue
+    }
+    const description = { role, name, inputType: type, href, states, ...(value ? { value } : {}), ...(options ? { options } : {}), box }
+    const group = onScreen ? visible : elsewhere
+    group.push({ index, description, onScreen })
+  }
+  return visible.concat(elsewhere.slice(0, limit - visible.length))
 }
 
 /** The best option for a requested label or value: exact label, exact value, then partial label. */

@@ -5,7 +5,9 @@
 > [!NOTE]
 > Riot Bot is an early preview (version 0.1.0). Today it is a Windows desktop app, built from source, with no signed installer yet. Other platforms and an always-on server are on the [roadmap](#roadmap). Read the [known limitations](#known-limitations) before giving a bot access to anything important.
 
-![Riot Bot’s graphite-and-mint workspace. The mascot cycles through six faces before Pixel builds a bakery landing page and shows the files it created.](docs/images/hero.gif)
+![Riot Bot’s charcoal welcome screen with the starter bot and connection setup.](docs/images/welcome.png)
+
+[Watch Pixel build a bakery landing page in an earlier preview.](docs/images/hero.gif)
 
 ## Why Riot Bot
 
@@ -51,7 +53,7 @@ Riot Bot makes no model call until you send a message.
    - **OpenAI API** or **OpenRouter:** paste your API key, then copy the exact model ID from that provider’s catalog. Riot Bot never picks or substitutes a model for you.
    - **ChatGPT account (preview):** install the official Codex CLI, restart Riot Bot, choose **Sign in with ChatGPT**, then pick a model. See [Codex in Riot Bot](docs/codex.md).
    - **Local or custom model:** start your model server, then enter its address (for example `http://localhost:11434/v1` for Ollama or `http://localhost:1234/v1` for LM Studio), the context length it runs the model with, and the model name it uses. A key is optional. See [local and custom model endpoints](docs/custom-endpoints.md).
-3. Choose **Save app settings**, then send your bot a message.
+3. Choose **Save and connect Riot** to start chatting with the starter bot. For a bot with its own model, **Save app settings** updates the default for future bots.
 
 API-key connections are billed by your provider. Call and time limits are on by default. Dollar limits apply once you enter a cap and the model's prices. See [Model connections and limits](#model-connections-and-limits).
 
@@ -128,7 +130,7 @@ Details: [reminders and scheduled bot work](docs/scheduling.md).
 
 Say `remember this: …` to save a fact or preference. A short, optional review after a successful reply can save one well-supported memory and suggest a reusable skill, but a skill is never saved until you choose **Save skill**. Skills are procedures written as text. They cannot grant permissions, raise a budget or override the app’s rules.
 
-**Semantic memory** helps a bot find notes even when you phrase a question differently. “What is blocking distribution of our desktop app?” can retrieve a note about a Windows installer signing certificate. Turn on **Bot settings → Memory & skills → Semantic memory** for that bot. Riot Bot includes the embedding model, runs it offline on your CPU, and saves the vectors in SQLite. It works with any chat connection and keeps keyword recall available.
+**Semantic memory** helps a bot find notes even when you phrase a question differently. “What is blocking distribution of our desktop app?” can retrieve a note about a Windows installer signing certificate. Turn on **Bot settings → Memory & skills → Semantic memory** for that bot. The Windows installer includes the model. A source checkout downloads and verifies it the first time you enable semantic memory. Recall runs on your CPU and saves the vectors in SQLite. It works with any chat connection and keeps keyword recall available.
 
 Explicitly saved notes get more weight in recall, and pinned notes are always included. With **Automatic memory** enabled, the existing review can save important completed tasks, milestones, and decisions you confirm as **Past work**. Recent messages and the rolling summary keep the bot focused on the current conversation. [Memory setup and controls](docs/user-guide.md#memories-and-skills) · [Quiet memory and skill reviews](docs/quiet-learning.md)
 

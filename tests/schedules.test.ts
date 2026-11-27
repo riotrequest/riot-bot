@@ -152,6 +152,36 @@ describe('native reminder and routine service', () => {
     } finally { await second.app.close() }
   })
 
+  it('retains the trigger of an older failed occurrence after another occurrence finishes', async () => {
+    const { app, provider, dir } = setup()
+    try {
+      await Promise.resolve()
+      const schedule = app.saveSchedule({ ...reminder, kind: 'task', repeat: 'daily' })
+      provider.handler = () => { throw new Error('Fixture unavailable') }
+      app.runScheduleNow(schedule.id)
+      const first = app.listSchedules()[0].lastJobId!
+      await waitFor(() => app.listJobs().find(job => job.id === first)?.status === 'failed')
+      provider.handler = () => ({ content: 'Done.', toolCalls: [] })
+      app.runScheduleNow(schedule.id)
+      const second = app.listSchedules()[0].lastJobId!
+      await waitFor(() => app.listJobs().find(job => job.id === second)?.status === 'completed')
+      app.manageSchedule(schedule.id, 'resume')
+      provider.handler = () => { throw new Error('Old occurrence still unavailable') }
+      app.resumeJob(first)
+      await waitFor(() => app.listJobs().find(job => job.id === first)?.status === 'failed' && app.listSchedules()[0].state === 'active')
+      provider.handler = () => ({ content: 'Done.', toolCalls: [] })
+      app.resumeJob(first)
+      await waitFor(() => app.listJobs().find(job => job.id === first)?.status === 'completed')
+      const db = openDatabase(path.join(dir, 'schedules.sqlite'))
+      try {
+        const runs = db.prepare('SELECT r.trigger FROM runs r JOIN job_runs j ON r.id=j.run_id WHERE j.job_id=?').all(first)
+        expect(runs).toHaveLength(3)
+        expect(runs.every(run => (run as { trigger: string }).trigger === 'scheduled_task')).toBe(true)
+        expect(db.prepare('SELECT schedule_id FROM jobs WHERE id=?').get(first)).toMatchObject({ schedule_id: schedule.id })
+      } finally { db.close() }
+    } finally { await app.close() }
+  })
+
   it('pauses a recurring schedule after failure instead of repeatedly retrying it', async () => {
     const { app, provider, clock } = setup()
     try {

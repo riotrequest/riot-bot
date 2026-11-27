@@ -70,6 +70,14 @@ describe.skipIf(!channel && !fs.existsSync(chromium.executablePath()))('browser 
   }
   const value = <T,>(script: string): Promise<T> => page.evaluate(script) as Promise<T>
 
+  it('reports a failed link navigation and returns to the last readable page', async () => {
+    await load('<h1>Catalog</h1><a href="/unreachable">Supplier</a>')
+    const ref = refFor(await act({ type: 'snapshot', query: 'Supplier' }), /link Supplier/)
+    const click = await act({ type: 'click', ref })
+    expect(click).toContain('could not load the destination')
+    expect(await act({ type: 'read' })).toContain('Catalog')
+  })
+
   it('lists the whole page with on-screen elements first and finds the rest by query, including shadow DOM', async () => {
     const items = Array.from({ length: 120 }, (_, index) => `<button onclick="window.clicked=this.textContent">Item ${index + 1}</button>`).join('')
     await load(`<button>Top button</button><div style="height:3000px"></div>${items}<div id="host"></div>
@@ -84,6 +92,21 @@ describe.skipIf(!channel && !fs.existsSync(chromium.executablePath()))('browser 
     await act({ type: 'click', ref: refFor(deep, /button Item 120$/) })
     expect(await value('window.clicked')).toBe('Item 120')
     expect(await act({ type: 'snapshot', query: 'shadow' })).toMatch(/button Shadow action/)
+  })
+
+  it('finds a late catalog button before and after scrolling, follows it, and verifies the new page', async () => {
+    const catalog = Array.from({ length: 450 }, (_, i) => '<div><button>Product ' + i + '</button></div>').join('')
+    routes[SITE + '/next'] = { contentType: 'text/html', body: '<h1>Catalog page two</h1><button>Previous page</button>' }
+    await load(catalog + '<a href="/next">Next page</a>')
+    const deep = await act({ type: 'snapshot', query: 'next page' })
+    expect(deep).toMatch(/Elsewhere on the page[\s\S]*link Next page/)
+    await page.getByRole('link', { name: 'Next page' }).scrollIntoViewIfNeeded()
+    const snapshot = await act({ type: 'snapshot' })
+    const next = refFor(snapshot, /link Next page/)
+    expect(snapshot.split('Elsewhere on the page')[0]).toContain(next + ' link Next page')
+    await act({ type: 'click', ref: next })
+    expect(await act({ type: 'read' })).toContain('Catalog page two')
+    expect(await act({ type: 'click', ref: next })).toMatch(/stale|snapshot/i)
   })
 
   it('reads states and text values but never secret field values', async () => {

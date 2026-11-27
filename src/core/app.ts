@@ -49,7 +49,7 @@ import { assignBuiltin, avatarFile, cleanAvatarChoice, readAvatarFile, thumbnail
 import { MAX_ATTACHMENTS, prepareAttachment } from './attachments'
 import { CodexService, type CodexUsage } from './codex'
 import { buildContext, type BuiltContext, type SkillCatalogItem } from './context'
-import type { CredentialStore } from './credentials'
+import { endpointApiKey, type CustomKeySlot, type CredentialStore } from './credentials'
 import { Database, type BotRecord, type GmailDraftRecord, type MemoryRecord, type MessageRecord, type RunRecord, type SkillRecord, type TaskRecord } from './db'
 import { AppError, ConfigError, LimitError, PauseError, ProviderError, StopError, ToolArgumentsError } from './errors'
 import { editTextFile, formatBytes, listFiles, readTextFile, readUploadFile, saveDownloadedFile, searchFiles, undoFileEdit, writeTextFile } from './files'
@@ -88,8 +88,16 @@ import { findPlink, plinkArgs, plinkHint, serverLoginFromMessage, serverTarget }
 import { normalizedWebUrl, publicLinks } from './web-access'
 import type { LoginDraft, SavedLogin } from '../shared/types'
 
+function validatedApiKey(secret: string): string {
+  const key = secret.trim()
+  if (key.length < 8 || key.length > 500 || /[\r\n]/.test(key)) throw new ConfigError('Paste a single-line API key from your provider.')
+  return key
+}
+
 /** App-wide connection details that are not secrets. API keys stay in the credential store. */
 export interface ProviderConnection {
+  customKeySlot?: CustomKeySlot
+  customKeyId?: string
   customBaseUrl: string
 }
 
@@ -1100,9 +1108,9 @@ export class RiotApp {
     }
   }
 
-  updateAppSettings(patch: Partial<AppSettings>): AppSettings {
-    const next = sanitizeSettings({ ...DEFAULT_SETTINGS, ...this.getAppSettings(), ...patch })
+  updateAppSettings(patch: Partial<AppSettings>, customKey?: string, connectBotId?: string): AppSettings {
     const current = this.getAppSettings()
+    const next = sanitizeSettings({ ...DEFAULT_SETTINGS, ...current, ...patch })
     const webResearch = patch.webResearch === 'browser' || patch.webResearch === 'connection' || patch.webResearch === 'automatic' ? patch.webResearch : current.webResearch
     const researchDailyCap = patch.researchDailyCap === undefined ? current.researchDailyCap : patch.researchDailyCap
     if (!Number.isInteger(researchDailyCap) || researchDailyCap < 1 || researchDailyCap > 200) throw new ConfigError('Use a daily request cap from 1 to 200.')
@@ -1111,32 +1119,62 @@ export class RiotApp {
     if (patch.customContextTokens !== undefined) {
       try { customContextTokens = optionalTokens(patch.customContextTokens) } catch { throw new ConfigError('Enter the context length as a number from 1024 to 2000000, or leave it blank.') }
     }
-    this.db.saveAppConfig({
-      ...this.db.appConfig(),
-      defaultProvider: next.provider,
-      defaultModel: next.model,
-      customBaseUrl,
-      customContextTokens,
-      maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd,
-      webResearch,
-      researchDailyCap,
-      researchTavily: patch.researchTavily === undefined ? current.researchTavily : patch.researchTavily === true,
-      researchFirecrawl: patch.researchFirecrawl === undefined ? current.researchFirecrawl : patch.researchFirecrawl === true
+    const config = this.db.appConfig()
+    const currentSlot = config.customKeySlot
+    let slot = customBaseUrl === current.customBaseUrl ? currentSlot : undefined
+    let keyId = slot ? config.customKeyId : undefined
+    const bot = connectBotId ? this.db.getSettings(connectBotId) : null
+    if (bot && (connectBotId !== this.viewBotId() || bot.model || !next.model)) {
+      throw new ConfigError('Select an unconfigured bot and choose a model to connect it.')
+    }
+    if (customKey !== undefined) {
+      if (patch.customBaseUrl === undefined || !customBaseUrl || patch.provider !== 'custom') throw new ConfigError('Choose a custom endpoint address before saving its API key.')
+      customKey = validatedApiKey(customKey)
+      keyId = newId()
+      slot = currentSlot === 'custom-key-a' ? 'custom-key-b' : 'custom-key-a'
+    }
+    if (customKey !== undefined || customBaseUrl !== current.customBaseUrl) this.beforeCustomConnectionChange()
+    this.db.transaction(() => {
+      this.db.saveAppConfig({
+        ...config,
+        customKeySlot: slot,
+        customKeyId: keyId,
+        defaultProvider: next.provider,
+        defaultModel: next.model,
+        customBaseUrl,
+        customContextTokens,
+        maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd,
+        webResearch,
+        researchDailyCap,
+        researchTavily: patch.researchTavily === undefined ? current.researchTavily : patch.researchTavily === true,
+        researchFirecrawl: patch.researchFirecrawl === undefined ? current.researchFirecrawl : patch.researchFirecrawl === true
+      })
+      if (bot) this.db.saveSettings({ ...bot, provider: next.provider, model: next.model, modelContextTokens: null, inputUsdPerMillion: null, outputUsdPerMillion: null, maxEstimatedSpendPerDayUsd: next.maxEstimatedSpendPerDayUsd })
+      // Stage in the inactive slot. Only the SQLite commit makes this exact endpoint/key pair active.
+      if (customKey !== undefined && slot) {
+        this.credentials.set(slot, JSON.stringify({ id: keyId, baseUrl: customBaseUrl, apiKey: customKey }))
+      }
     })
+    // Retired slots are never selected again without being overwritten.
+    if (currentSlot && currentSlot !== slot) this.credentials.clear(currentSlot)
+    if (customKey !== undefined && this.credentials.get('custom')) this.credentials.clear('custom')
     return this.getAppSettings()
   }
 
+  protected beforeCustomConnectionChange(): void {}
+
   setCredential(provider: ApiProviderId, secret: string): CredentialSaveResult {
-    const clean = secret.trim()
-    if (clean.length < 8 || clean.length > 500 || /[\r\n]/.test(clean)) {
-      throw new ConfigError('Paste the API key from your provider. It should be one line, without spaces added by a line break.')
-    }
-    const saved = this.credentials.set(provider, clean)
+    if (provider === 'custom') throw new ConfigError('Save the custom API key together with its endpoint address.')
+    const saved = this.credentials.set(provider, validatedApiKey(secret))
     this.logger.info('credential saved', { provider, persistent: saved.persistent })
     return { status: this.credentialStatus(), persistent: saved.persistent, message: saved.message }
   }
 
   clearCredential(provider: ApiProviderId): CredentialStatus {
+    if (provider === 'custom') {
+      this.credentials.clear('custom-key-a')
+      this.credentials.clear('custom-key-b')
+    }
     this.credentials.clear(provider)
     return this.credentialStatus()
   }
@@ -1219,7 +1257,8 @@ export class RiotApp {
 
   /** The app-wide connection details a provider needs besides its saved key. */
   protected providerConnection(): ProviderConnection {
-    return { customBaseUrl: this.db.appConfig().customBaseUrl ?? '' }
+    const config = this.db.appConfig()
+    return { customBaseUrl: config.customBaseUrl ?? '', customKeySlot: config.customKeySlot, customKeyId: config.customKeyId }
   }
 
   /** Whether a saved connection exists. A custom endpoint needs an address; its key is optional. */
@@ -3297,8 +3336,10 @@ export class RiotApp {
   }
 
   private async completeTurn(conversationId: string, runId: string, taskId: string, signal: AbortSignal): Promise<void> {
-    await this.reviewLearning(conversationId, runId, signal)
     this.assertRunning(runId, signal)
+    await this.reviewLearning(conversationId, runId, signal)
+    // The reply is already delivered. A deadline during optional learning only ends that review.
+    if (!(signal.reason instanceof LimitError)) this.assertRunning(runId, signal)
     this.finish(conversationId, runId, taskId, 'completed', '')
   }
 
@@ -3458,14 +3499,18 @@ export class RiotApp {
 
   private credentialStatus(): CredentialStatus {
     const source = this.credentials.status()
+    const connection = this.providerConnection()
+    const hasKey = Boolean(endpointApiKey(this.credentials, connection))
     return {
       storage: source.storage,
       encryptionAvailable: source.encryptionAvailable,
       explanation: source.explanation,
       openaiConfigured: source.has('openai'),
       openrouterConfigured: source.has('openrouter'),
-      customConfigured: Boolean(this.db.appConfig().customBaseUrl),
-      customKeyConfigured: source.has('custom'),
+      customConfigured: Boolean(connection.customBaseUrl),
+      customKeyConfigured: hasKey,
+      customKeySessionOnly: Boolean(hasKey && connection.customKeySlot && source.sessionOnly?.(connection.customKeySlot)),
+      customKeyNeedsReplacement: source.has('custom'),
       tavilyConfigured: Boolean(this.credentials.get('research-tavily')),
       firecrawlConfigured: Boolean(this.credentials.get('research-firecrawl'))
     }
