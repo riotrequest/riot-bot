@@ -1,7 +1,7 @@
 import path from 'path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ProviderError } from '../src/core/errors'
 import { directLearningPreferences, LEARNING_PROMPT, parseLearningReview } from '../src/core/learning'
 import { estimateMessagesTokens, fitTokens, sanitizeSettings } from '../src/core/settings'
@@ -210,6 +210,27 @@ describe('quiet memory and skill checks', () => {
       expect(app.getSnapshot().settings.autoSkillSuggestions).toBe(false)
       expect(directLearningPreferences('Explain a document that says turn off automatic memory.')).toBeNull()
     } finally { await app.close() }
+  })
+
+  it('keeps a delivered answer completed when the task deadline interrupts its optional review', async () => {
+    const { app, provider } = makeApp({ learning: true })
+    app.updateSettings({ maxTaskDurationMs: 10000 })
+    const id = app.getSnapshot().current!.conversation.id
+    let reviewing!: () => void
+    const started = new Promise<void>(resolve => { reviewing = resolve })
+    provider.handler = input => {
+      if (!review(input)) return { content: 'Here is your answer.', toolCalls: [] }
+      reviewing()
+      return new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(input.signal.reason), { once: true }))
+    }
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const sending = app.sendMessage(id, userFact)
+      await started
+      await vi.advanceTimersByTimeAsync(10001)
+      expect((await sending).status).toBe('completed')
+      expect(app.listMemories()).toHaveLength(0)
+    } finally { vi.useRealTimers(); await app.close() }
   })
 
   it('cancels an in-flight review on close and applies no late results', async () => {

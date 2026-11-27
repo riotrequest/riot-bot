@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
@@ -13,39 +13,43 @@ const modelAssets = [
   ['tokenizer_config.json', 'tokenizer_config.json', 366, '9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3']
 ]
 
-await mkdir(output, { recursive: true })
-await Promise.all(modelAssets.map(async ([remoteName, localName, size, digest]) => {
-  const target = join(output, localName)
-  const matches = bytes => bytes.length === size && createHash('sha256').update(bytes).digest('hex') === digest
-  const cached = await readFile(target).catch(error => {
-    if (error.code !== 'ENOENT') throw error
-    return Buffer.alloc(0)
-  })
-  if (matches(cached)) return
+export async function prepareMemoryModel(fetchAsset = fetch) {
+  await mkdir(output, { recursive: true })
+  await Promise.all(modelAssets.map(async ([remoteName, localName, size, digest]) => {
+    const target = join(output, localName)
+    const matches = bytes => bytes.length === size && createHash('sha256').update(bytes).digest('hex') === digest
+    const cached = await readFile(target).catch(error => {
+      if (error.code !== 'ENOENT') throw error
+      return Buffer.alloc(0)
+    })
+    if (matches(cached)) return
 
-  const response = await fetch(new URL(remoteName, model), { signal: AbortSignal.timeout(120_000) })
-  if (!response.ok) throw new Error(`Model asset ${localName} returned HTTP ${response.status}.`)
-  const chunks = []
-  let length = 0
-  for await (const chunk of response.body) {
-    length += chunk.length
-    if (length > size) throw new Error(`Model asset ${localName} exceeded its expected size.`)
-    chunks.push(chunk)
-  }
-  const bytes = Buffer.concat(chunks, length)
-  if (!matches(bytes)) throw new Error(`Model asset ${localName} failed its integrity check.`)
-  const pending = `${target}.${randomUUID()}.tmp`
-  try {
-    await writeFile(pending, bytes, { flag: 'wx' })
-    await rename(pending, target)
-  } finally {
-    await rm(pending, { force: true })
-  }
-}))
+    const response = await fetchAsset(new URL(remoteName, model), { credentials: 'omit', signal: AbortSignal.timeout(120_000) })
+    if (!response.ok) throw new Error(`Model asset ${localName} returned HTTP ${response.status}.`)
+    const chunks = []
+    let length = 0
+    for await (const chunk of response.body) {
+      length += chunk.length
+      if (length > size) throw new Error(`Model asset ${localName} exceeded its expected size.`)
+      chunks.push(chunk)
+    }
+    const bytes = Buffer.concat(chunks, length)
+    if (!matches(bytes)) throw new Error(`Model asset ${localName} failed its integrity check.`)
+    const pending = `${target}.${randomUUID()}.tmp`
+    try {
+      await writeFile(pending, bytes, { flag: 'wx' })
+      await rename(pending, target)
+    } finally {
+      await rm(pending, { force: true })
+    }
+  }))
 
-const runtime = dirname(require.resolve('onnxruntime-web'))
-for (const filename of ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.mjs']) {
-  await copyFile(join(runtime, filename), join(output, filename))
+  const runtime = dirname(require.resolve('onnxruntime-web'))
+  for (const filename of ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.mjs']) {
+    await copyFile(join(runtime, filename), join(output, filename))
+  }
+  await copyFile(join(dirname(require.resolve('@huggingface/tokenizers')), '..', 'LICENSE'), join(output, 'TOKENIZERS-LICENSE.txt'))
+  await writeFile(join(output, 'THIRD-PARTY-NOTICES.txt'), await readFile(new URL('../docs/semantic-memory-notices.txt', import.meta.url)))
 }
-await copyFile(join(dirname(require.resolve('@huggingface/tokenizers')), '..', 'LICENSE'), join(output, 'TOKENIZERS-LICENSE.txt'))
-await writeFile(join(output, 'THIRD-PARTY-NOTICES.txt'), await readFile(new URL('../docs/semantic-memory-notices.txt', import.meta.url)))
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await prepareMemoryModel()

@@ -2,8 +2,8 @@ import fs from 'fs'
 import http from 'http'
 import type { AddressInfo } from 'net'
 import path from 'path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { MemoryCredentialStore } from '../src/core/credentials'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { endpointApiKey, MemoryCredentialStore } from '../src/core/credentials'
 import { createCustomEndpointFetch, createCustomEndpointProvider, normalizeCustomBaseUrl, pinnedEndpointTransport, type CustomEndpointRequest } from '../src/core/custom-endpoint'
 import { ConfigError, ProviderError } from '../src/core/errors'
 import type { ModelCompleteInput } from '../src/core/model'
@@ -145,7 +145,7 @@ describe('custom endpoint in the app', () => {
     const createProvider = (settings: Settings, connection: ProviderConnection) => {
       built.push({ provider: settings.provider, connection })
       if (settings.provider !== 'custom') throw new Error(`Unexpected ${settings.provider} connection`)
-      return createCustomEndpointProvider({ baseUrl: connection.customBaseUrl, apiKey: credentials.get('custom'), lookupHost: PUBLIC, transport: wire.transport })
+      return createCustomEndpointProvider({ baseUrl: connection.customBaseUrl, apiKey: endpointApiKey(credentials, connection), lookupHost: PUBLIC, transport: wire.transport })
     }
     const setup = makeApp({ credentials, createProvider })
     closers.push(() => setup.app.close())
@@ -161,8 +161,8 @@ describe('custom endpoint in the app', () => {
     expect(app.getAppSettings()).toMatchObject({ provider: 'openai', customBaseUrl: '', customContextTokens: null })
     const saved = app.updateAppSettings({ provider: 'custom', model: 'llama3.2', customBaseUrl: 'http://localhost:11434/v1/', customContextTokens: 8192 })
     expect(saved).toMatchObject({ provider: 'custom', model: 'llama3.2', customBaseUrl: 'http://localhost:11434/v1', customContextTokens: 8192 })
-    app.setCredential('custom', KEY)
-    expect(credentials.get('custom')).toBe(KEY)
+    app.updateAppSettings({ provider: 'custom', customBaseUrl: app.getAppSettings().customBaseUrl }, KEY)
+    expect(credentials.secretValues()).toContain(KEY)
     expect(app.getSnapshot().credentials).toMatchObject({ customConfigured: true, customKeyConfigured: true })
     expect(JSON.stringify(app.getSnapshot())).not.toContain(KEY)
     await app.close()
@@ -199,7 +199,7 @@ describe('custom endpoint in the app', () => {
   it('keeps dollar limits blocked without prices and redacts a key the endpoint echoes back', async () => {
     const { app, wire } = customApp(() => new Response(JSON.stringify({ error: { message: `invalid request for key ${KEY}` } }), { status: 400 }))
     app.updateAppSettings({ customBaseUrl: 'http://localhost:11434/v1' })
-    app.setCredential('custom', KEY)
+    app.updateAppSettings({ provider: 'custom', customBaseUrl: app.getAppSettings().customBaseUrl }, KEY)
     app.updateSettings({ provider: 'custom', model: 'llama3.2', toolsEnabled: false, botSpendPerDayUsd: 1 })
     expect(app.planProviderCheck().blockedReason).toMatch(/no price/)
     const conversation = app.getSnapshot().conversations[0].id
@@ -262,6 +262,48 @@ describe('pinned endpoint transport against local sentinels', () => {
       response.end('data: [DONE]\n\n')
     })
   }
+
+  it('binds a saved key to its reviewed endpoint across failed saves, address changes and restart', async () => {
+    const first = await sentinel(streaming)
+    const second = await sentinel(streaming)
+    const firstUrl = 'http://127.0.0.1:' + first.port + '/v1'
+    const secondUrl = 'http://127.0.0.1:' + second.port + '/v1'
+    const credentials = new MemoryCredentialStore({ encryptionAvailable: true })
+    credentials.set('custom', 'legacy-fixture-key')
+    const createProvider = (_settings: Settings, connection: ProviderConnection) =>
+      createCustomEndpointProvider({ baseUrl: connection.customBaseUrl, apiKey: endpointApiKey(credentials, connection) })
+    const { app, dbPath } = makeApp({ credentials, createProvider })
+    try {
+      const bot = app.getSnapshot().bot!
+      app.updateSettings({ model: '' })
+      app.updateAppSettings({ provider: 'custom', model: 'fixture', customBaseUrl: firstUrl }, undefined, bot.id)
+      const chat = app.getSnapshot().current!.conversation.id
+      expect(app.getSnapshot().credentials.customKeyNeedsReplacement).toBe(true)
+      await app.sendMessage(chat, 'Hello')
+      app.updateAppSettings({ provider: 'custom', customBaseUrl: firstUrl }, KEY)
+      expect(() => app.updateAppSettings({ provider: 'custom', customBaseUrl: secondUrl, customContextTokens: 1 }, 'second-fixture-key')).toThrow()
+      expect(() => app.updateAppSettings({ provider: 'custom', customBaseUrl: secondUrl }, 'short')).toThrow()
+      const staged = vi.spyOn(credentials, 'set').mockImplementationOnce(() => { throw new Error('fixture storage failure') })
+      try {
+        expect(() => app.updateAppSettings({ provider: 'custom', customBaseUrl: secondUrl }, 'second-fixture-key')).toThrow('fixture storage failure')
+      } finally { staged.mockRestore() }
+      await app.sendMessage(chat, 'Hello')
+      expect(first.seen.map(request => request.headers.authorization)).toEqual([undefined, 'Bearer ' + KEY])
+      app.updateAppSettings({ customBaseUrl: secondUrl })
+      await app.sendMessage(chat, 'Hello')
+      expect(second.seen[0].headers.authorization).toBeUndefined()
+      app.updateAppSettings({ provider: 'custom', customBaseUrl: secondUrl }, 'second-fixture-key')
+    } finally { await app.close() }
+    const restarted = new RiotService({ dbPath, credentials, provider: new MockProvider(), createProvider })
+    restarted.boot()
+    try {
+      const chat = restarted.getSnapshot().current!.conversation.id
+      await restarted.sendMessage(chat, 'Hello')
+      restarted.updateAppSettings({ customBaseUrl: secondUrl + '/other' })
+      await restarted.sendMessage(chat, 'Hello')
+      expect(second.seen.map(request => request.headers.authorization)).toEqual([undefined, 'Bearer second-fixture-key', undefined])
+    } finally { await restarted.close() }
+  })
 
   it('streams a reply from a loopback server and sends the key only there', async () => {
     const local = await sentinel(streaming)

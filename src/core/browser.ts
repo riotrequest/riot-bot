@@ -105,7 +105,7 @@ export interface LaunchedPage {
   text(limit: number): Promise<string>
   links(limit: number): Promise<{ text: string; href: string }[]>
   html(limit: number): Promise<string>
-  observe(limit: number): Promise<RawControl[]>
+  observe(limit: number, terms?: string[]): Promise<RawControl[]>
   press(index: number, timeoutMs: number): Promise<void>
   typeInto(index: number, value: string, timeoutMs: number): Promise<void>
   scroll(direction: 'up' | 'down'): Promise<void>
@@ -606,6 +606,9 @@ export class BrowserService {
         await this.assertPublic(finalUrl)
       } catch (error) {
         await page.back(BROWSER_ACTION_TIMEOUT_MS).catch(() => undefined)
+        if (/^(?:chrome|edge)-error:\/\//.test(finalUrl)) {
+          return { blocked: true, text: 'The browser could not load the destination. Check the current page before continuing.' }
+        }
         const message = error instanceof Error ? error.message : 'The destination was blocked.'
         return { blocked: true, text: `The page ended on a blocked address. ${message}` }
       }
@@ -648,9 +651,9 @@ export class BrowserService {
   private async snapshot(session: Session, query = ''): Promise<string> {
     const page = await this.page(session, false)
     const url = page.url()
-    const raw = await page.observe(BROWSER_SCAN_LIMIT)
-    if (page !== session.launched.current() || page.url() !== url) return STALE
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+    const raw = await page.observe(BROWSER_SCAN_LIMIT, terms)
+    if (page !== session.launched.current() || page.url() !== url) return STALE
     const matching = raw.map((control, index) => ({ ...control, index })).filter((control) => terms.every((term) => searchableText(control).includes(term)))
     // On-screen elements come first, so the part of a long page the user is looking at is never cut off.
     const listed = [...matching.filter((control) => control.onScreen !== false), ...matching.filter((control) => control.onScreen === false)].slice(0, BROWSER_SNAPSHOT_LIMIT)
@@ -666,7 +669,7 @@ export class BrowserService {
     if (elsewhere.length) lines.push('Elsewhere on the page (references work without scrolling):', ...elsewhere.map(describeControl))
     if (!listed.length) lines.push(terms.length ? 'Nothing matched. Try other words, or take a snapshot without a query.' : 'No interactive elements were found. The page may still be loading; wait_for can wait for it.')
     if (matching.length > listed.length) lines.push(`${matching.length - listed.length} more elements were not listed. Pass a query to page_snapshot to find a specific one.`)
-    if (raw.length >= BROWSER_SCAN_LIMIT) lines.push(`Only the first ${BROWSER_SCAN_LIMIT} elements of this page were examined.`)
+    if (raw.length >= BROWSER_SCAN_LIMIT) lines.push(`The snapshot retained up to ${BROWSER_SCAN_LIMIT} matching controls. Narrow the query to see more.`)
     return `${UNTRUSTED}\n${lines.join('\n').slice(0, BROWSER_STORED_TEXT_LIMIT)}`
   }
 
@@ -974,8 +977,8 @@ export class BrowserService {
     const reuse = pending?.query === words && new URL(pending.template).hostname === target.hostname && current.hostname === target.hostname
       && (current.searchParams.get('q') === words || /\/(?:sorry|captcha|challenge)(?:\/|$)/i.test(current.pathname))
     if (!reuse) await this.watch(signal, page.goto(target.toString(), BROWSER_NAV_TIMEOUT_MS), session)
-    const landed = await this.afterNavigation(session, page, 'Searching')
-    if (landed.startsWith('The page ended on a blocked')) return landed
+    const landed = await this.landing(session, page, 'Searching')
+    if (landed.blocked) return landed.text
     return this.searchResults(session, page, words, template, runId, signal)
   }
 

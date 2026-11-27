@@ -1,5 +1,6 @@
 import fs from 'fs'
 import { COST_DISCLAIMER, type ArtifactView, type AttachmentView, type Conversation, type EmailPreview, type JobView, type Memory, type RunState } from '../shared/types'
+import type { CustomKeySlot } from './credentials'
 import type { PreparedAttachment } from './attachments'
 import type { MessageAttachment } from './model'
 import { DEFAULT_SEARCH_TEMPLATE, DUCKDUCKGO_SEARCH_TEMPLATE } from './browser-policy'
@@ -81,6 +82,9 @@ const GMAIL_SCHEMA = `CREATE TABLE IF NOT EXISTS gmail_drafts (
 );`
 
 export interface JobRecord extends JobView {
+  trigger: 'user_message' | 'scheduled_task'
+  scheduleId: string | null
+  scheduleContext: string
   attachmentIds: string[]
   binding: string
   resume: boolean
@@ -606,6 +610,8 @@ export interface ReactionRecord {
 }
 
 interface AppConfig {
+  customKeyId?: string
+  customKeySlot?: CustomKeySlot
   maxEstimatedSpendPerDayUsd: number | null
   showToolDetails: boolean
   activeBotId: string
@@ -639,10 +645,11 @@ export class Database {
       this.db.exec(SCHEDULE_SCHEMA)
       this.db.exec(GMAIL_SCHEMA)
       this.db.exec(GMAIL_AUTONOMY_SCHEMA)
-      this.db.exec('PRAGMA user_version = 14')
+      this.ensureResearchUsage()
       this.ensureMemoryEmbeddings()
       this.ensureModelCatalog()
       this.ensureContextNotes()
+      this.migrateJobOrigins()
       return
     }
     if (version < 2) {
@@ -738,6 +745,27 @@ export class Database {
     if (this.userVersion() < 16) this.transaction(() => {
       this.ensureMemoryEmbeddings()
       this.db.exec('PRAGMA user_version = 16')
+    })
+    if (this.userVersion() < 17) this.migrateJobOrigins()
+  }
+
+  private migrateJobOrigins(): void {
+    this.transaction(() => {
+      this.addColumn('jobs', 'trigger', "TEXT NOT NULL DEFAULT 'user_message'")
+      this.addColumn('jobs', 'schedule_id', 'TEXT')
+      this.addColumn('jobs', 'schedule_context', "TEXT NOT NULL DEFAULT ''")
+      this.db.exec(`UPDATE jobs SET trigger = 'scheduled_task', schedule_id = s.id, schedule_context = s.context
+        FROM schedules s WHERE s.last_job_id = jobs.id AND s.bot_id = jobs.bot_id`)
+      // Older replaced occurrences have no schedule ID. Keep their restricted trigger on resume.
+      if (this.tableExists('runs')) {
+        this.db.exec(`UPDATE jobs SET trigger = 'scheduled_task' WHERE EXISTS (
+          SELECT 1 FROM job_runs jr JOIN runs r ON r.id = jr.run_id
+          WHERE jr.job_id = jobs.id AND r.bot_id = jobs.bot_id AND r.trigger = 'scheduled_task'
+        )`)
+      }
+      this.db.exec(`UPDATE jobs SET trigger = 'scheduled_task' WHERE run_id IS NULL
+        AND text LIKE 'Scheduled task: %' AND instr(text, char(10) || char(10)) > 0`)
+      this.db.exec('PRAGMA user_version = 17')
     })
   }
 
@@ -856,7 +884,7 @@ export class Database {
   }
 
   scheduleForJob(jobId: string): ScheduleView | null {
-    const found = row(this.db.prepare('SELECT * FROM schedules WHERE last_job_id = ?').get(jobId))
+    const found = row(this.db.prepare('SELECT s.* FROM schedules s JOIN jobs j ON j.schedule_id = s.id AND j.bot_id = s.bot_id WHERE j.id = ? AND s.last_job_id = j.id').get(jobId))
     return found ? mapSchedule(found) : null
   }
 
@@ -939,9 +967,10 @@ export class Database {
     return Boolean(this.db.prepare(`SELECT 1 FROM jobs, json_each(jobs.attachment_ids_json) WHERE json_each.value = ? AND jobs.status IN ('queued','running','paused','interrupted') LIMIT 1`).get(id))
   }
 
-  createJob(input: { botId: string; conversationId: string; text: string; attachmentIds: string[]; binding: string; now: number; contextNote?: string; notice?: string }): JobRecord {
+  createJob(input: { botId: string; conversationId: string; text: string; attachmentIds: string[]; binding: string; now: number; contextNote?: string; notice?: string; schedule?: ScheduleView }): JobRecord {
     const id = newId()
-    this.db.prepare(`INSERT INTO jobs (id,bot_id,conversation_id,text,attachment_ids_json,binding,created_at,context_note,notice) VALUES (?,?,?,?,?,?,?,?,?)`).run(id,input.botId,input.conversationId,input.text,JSON.stringify(input.attachmentIds),input.binding,input.now,input.contextNote ?? '',input.notice ?? '')
+    this.db.prepare(`INSERT INTO jobs (id,bot_id,conversation_id,text,attachment_ids_json,binding,created_at,context_note,notice,trigger,schedule_id,schedule_context) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,input.botId,input.conversationId,input.text,JSON.stringify(input.attachmentIds),input.binding,input.now,input.contextNote ?? '',input.notice ?? '',
+      input.schedule ? 'scheduled_task' : 'user_message', input.schedule?.id ?? null, input.schedule?.context ?? '')
     return this.getJob(id)!
   }
 
@@ -1193,6 +1222,8 @@ export class Database {
         showToolDetails: Boolean(parsed.showToolDetails),
         activeBotId: typeof parsed.activeBotId === 'string' ? parsed.activeBotId : '',
         defaultProvider: parsed.defaultProvider === 'codex' || parsed.defaultProvider === 'openrouter' || parsed.defaultProvider === 'openai' || parsed.defaultProvider === 'custom' ? parsed.defaultProvider : undefined,
+        customKeyId: typeof parsed.customKeyId === 'string' ? parsed.customKeyId : undefined,
+        customKeySlot: parsed.customKeySlot === 'custom-key-a' || parsed.customKeySlot === 'custom-key-b' ? parsed.customKeySlot : undefined,
         customBaseUrl: storedCustomBaseUrl(parsed.customBaseUrl),
         customContextTokens: storedContextTokens(parsed.customContextTokens),
         defaultModel: typeof parsed.defaultModel === 'string' ? parsed.defaultModel.replace(/[\r\n]/g, '').trim().slice(0, 200) : undefined,
@@ -2438,6 +2469,8 @@ function mapJob(record: Row): JobRecord {
   const attachmentIds = JSON.parse(text(record,'attachment_ids_json') || '[]') as string[]
   return {
     id:text(record,'id'),botId:text(record,'bot_id'),conversationId:text(record,'conversation_id'),
+    trigger: record.trigger === 'scheduled_task' ? 'scheduled_task' : 'user_message',
+    scheduleId: record.schedule_id == null ? null : text(record,'schedule_id'), scheduleContext: text(record,'schedule_context'),
     text:text(record,'text'),attachmentIds,attachmentCount:attachmentIds.length,binding:text(record,'binding'),
     status:text(record,'status') as JobRecord['status'],runId:record.run_id == null ? null : text(record,'run_id'),
     createdAt:num(record,'created_at'),startedAt:nullableNum(record,'started_at'),endedAt:nullableNum(record,'ended_at'),

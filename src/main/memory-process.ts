@@ -1,5 +1,6 @@
 import path from 'node:path'
-import { app, utilityProcess, type UtilityProcess } from 'electron'
+import { pathToFileURL } from 'node:url'
+import { app, net, utilityProcess, type UtilityProcess } from 'electron'
 import type { EmbedMemory } from '../core/semantic-memory'
 
 const IDLE_MS = 30_000
@@ -8,10 +9,30 @@ export class MemoryEmbeddingProcess {
   private child: UtilityProcess | undefined
   private idle: ReturnType<typeof setTimeout> | undefined
   private queue = Promise.resolve()
+  private preparing?: Promise<void>
+
+  prepare(): Promise<void> {
+    if (app.isPackaged) return Promise.resolve()
+    if (!this.preparing) {
+      // Source builds have the installer script and development dependencies. Releases bundle verified assets.
+      const script = pathToFileURL(path.join(app.getAppPath(), 'scripts', 'prepare-memory-model.mjs')).href
+      this.preparing = import(script).then(module => module.prepareMemoryModel(
+        (url: URL, init: RequestInit) => net.fetch(url.href, init)
+      )).catch(() => {
+        this.preparing = undefined
+        throw new Error('Could not prepare semantic memory. Check your connection and retry, or run npm run memory:prepare in the source checkout.')
+      })
+    }
+    return this.preparing!
+  }
 
   readonly embed: EmbedMemory = (input, signal) => {
     // One CPU session shared by the active bots. The child retains weights only.
-    const work = this.queue.then(() => this.run(input, signal))
+    const work = this.queue.then(async () => {
+      signal.throwIfAborted()
+      await this.prepare()
+      return this.run(input, signal)
+    })
     this.queue = work.then(() => undefined, () => undefined)
     return new Promise((resolve, reject) => {
       const abort = () => reject(signal.reason)

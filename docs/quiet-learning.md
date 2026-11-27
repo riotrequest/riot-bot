@@ -19,7 +19,7 @@ API reviews have no tools, no streaming, no continuations, and one attempt. The 
 
 Native Codex reviews use a fresh ephemeral thread with shell/search/dynamic tools disabled, read-only/network-disabled policy, project instruction-file loading disabled, low reasoning effort, and a JSON output schema. The main native conversation/session mapping is preserved. This consumes one additional native turn and the account's Codex allowance. Codex manages its own tokens; Riot Bot's API dollar/token caps do not apply. The native review has no approved commands, file edits, permission escalation, or API fallback. Protocol fields follow the [official Codex App Server documentation](https://learn.chatgpt.com/docs/app-server).
 
-Reviews have a 20-second timeout and share the parent's cancellation signal. Stop and shutdown prevent late results from being saved. A review failure is recorded when a request was sent, but does not turn an otherwise successful reply into an error. The worker remains occupied briefly while the review finishes, so it cannot race the same bot's next queued task.
+Reviews have a 20-second timeout and share the parent's cancellation signal. Stop and shutdown prevent late results from being saved. A review failure appears in activity when a request was sent. If the task deadline expires during review, the delivered reply stays completed and queued follow-ups can run. The worker remains occupied briefly while the review finishes, so it cannot race the same bot's next queued task.
 
 ## Chat controls
 

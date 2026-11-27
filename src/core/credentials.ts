@@ -1,9 +1,21 @@
 import type { ApiProviderId } from '../shared/types'
 
-export type CredentialKey = ApiProviderId | 'gmail-client' | 'gmail' | 'research-tavily' | 'research-firecrawl' | `logins:${string}` | `server-logins:${string}`
+export type CustomKeySlot = 'custom-key-a' | 'custom-key-b'
+
+export function endpointApiKey(store: CredentialStore, connection: { customBaseUrl: string; customKeySlot?: CustomKeySlot; customKeyId?: string }): string | null {
+  if (!connection.customBaseUrl || !connection.customKeySlot || !connection.customKeyId) return null
+  const value = store.get(connection.customKeySlot)
+  if (!value) return null
+  try {
+    const saved = JSON.parse(value)
+    return saved.id === connection.customKeyId && saved.baseUrl === connection.customBaseUrl && typeof saved.apiKey === 'string' ? saved.apiKey : null
+  } catch { return null }
+}
+
+export type CredentialKey = CustomKeySlot | ApiProviderId | 'gmail-client' | 'gmail' | 'research-tavily' | 'research-firecrawl' | `logins:${string}` | `server-logins:${string}`
 
 export function credentialSecrets(values: string[]): string[] {
-  const fields = new Set(['clientSecret','accessToken','refreshToken','password'])
+  const fields = new Set(['apiKey','clientSecret','accessToken','refreshToken','password'])
   const collect = (value: unknown): string[] => !value || typeof value!=='object' ? [] : Object.entries(value).flatMap(([key,item])=>fields.has(key)&&typeof item==='string' ? [item] : collect(item))
   return values.flatMap(value => {
     try {
@@ -17,6 +29,7 @@ export interface CredentialStatusSource {
   storage: 'os' | 'session'
   encryptionAvailable: boolean
   explanation: string
+  sessionOnly?(key: CredentialKey): boolean
   has(provider: ApiProviderId): boolean
 }
 
@@ -45,6 +58,7 @@ export class MemoryCredentialStore implements CredentialStore {
       explanation: this.encryptionAvailable
         ? 'API keys are encrypted with the operating system and are not shown again.'
         : 'This session cannot use operating-system credential protection. A key stays in memory only and is forgotten when Riot Bot closes.',
+      sessionOnly: key => !this.encryptionAvailable && this.values.has(key),
       has: (provider) => this.values.has(provider) && Boolean(this.values.get(provider))
     }
   }

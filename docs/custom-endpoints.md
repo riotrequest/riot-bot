@@ -15,7 +15,7 @@ It uses Riot Bot's own agent loop and tools, like the OpenAI and OpenRouter conn
 4. Enter the **Context length** your server runs the model with. Servers often load a model with a smaller context than its maximum. Riot Bot fits every request to this number.
 5. Leave **API key** blank for a local server that needs no key. For a hosted service, paste its key.
 6. Enter the **model name** exactly as your server knows it, for example an Ollama tag such as `llama3.2`, the model identifier LM Studio shows, or vLLM's served model name.
-7. Choose **Save app settings**. New bots start with this connection. For an existing bot, open **Bot settings → Model → Use app default**, then save that bot's settings.
+7. Choose **Save and connect** for the unconfigured bot or **Save app settings** to store the default. New bots start with this connection. For an existing bot, open **Bot settings → Model → Use app default**, then save that bot's settings.
 
 To check the connection, open **Bot settings → Advanced → Test your saved connection**. The preview explains the calls before any are made.
 
@@ -35,6 +35,8 @@ The address is validated in the main process when you save it and again immediat
 - Riot Bot refuses a request addressed to any other host, port, scheme, or path, and it never follows a redirect. A redirect response stops the request with an error; nothing is sent to the redirect target.
 - A saved key is redacted from replies, streamed text, activity, errors, and logs, the same way the OpenAI and OpenRouter keys are. The window only learns whether a key is saved.
 - A server on this computer still receives your conversation. Most local servers have no authentication, so other software on this computer that can reach that port can use it too.
+
+The credential is bound to the exact saved base URL, including its port and path. Changing the address retires its key. Enter a key for the new address if needed. After upgrading from a version with an unbound custom key, re-enter it for the intended server or remove it in Settings.
 
 Removing the key in Settings stops sending it; the address stays saved. Clearing the address disconnects every bot that uses the custom endpoint.
 

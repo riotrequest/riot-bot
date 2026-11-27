@@ -30,6 +30,8 @@ npm ci
 npm run dev
 ```
 
+Source runs and ordinary builds can start without the optional semantic-memory assets. To prepare them in advance, run `npm run memory:prepare`. The installer build prepares them automatically. On a Windows network using a locally trusted certificate, Node versions that support the system CA store can use `$env:NODE_USE_SYSTEM_CA="1"` for the preparation command.
+
 Use `npm ci` rather than `npm install` in a clean checkout, so you get exactly the locked dependency versions. Starting the app makes no model call. Nothing calls a model until you send a message.
 
 Development runs use your normal app-data folder (`%APPDATA%\riot-bot\`). If you have a personal Riot Bot setup with real chats, logins or connections, keep it out of your experiments. Never use it as a test fixture.

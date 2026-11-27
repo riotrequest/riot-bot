@@ -11,6 +11,7 @@ import type { Logger } from '../core/logger'
 import { createOpenAICompatibleProvider, MockProvider } from '../core/provider'
 import { createCustomEndpointProvider } from '../core/custom-endpoint'
 import { ElectronCredentialStore } from './credentials'
+import { endpointApiKey } from '../core/credentials'
 import { registerIpc, type IpcGate } from './ipc'
 import { contentSecurityPolicy, windowWebPreferences } from './security'
 import { shutDown } from './shutdown'
@@ -207,7 +208,7 @@ async function createWindow(): Promise<void> {
     minWidth: 880,
     minHeight: 640,
     show: false,
-    backgroundColor: '#101a16',
+    backgroundColor: '#1a1b1f',
     title: 'Riot Bot',
     autoHideMenuBar: true,
     webPreferences: {
@@ -291,7 +292,7 @@ app.whenReady().then(async () => {
     createProvider: (settings, connection) => {
       if (settings.provider === 'codex') throw new ConfigError('Codex uses its native connection. It cannot use an API key.')
       // The custom endpoint never uses providerFetch: its own transport pins the checked addresses and refuses redirects.
-      if (settings.provider === 'custom') return createCustomEndpointProvider({ baseUrl: connection.customBaseUrl, apiKey: credentials.get('custom') })
+      if (settings.provider === 'custom') return createCustomEndpointProvider({ baseUrl: connection.customBaseUrl, apiKey: endpointApiKey(credentials, connection) })
       const key = credentials.get(settings.provider)
       if (!key) {
         throw new ConfigError('Add your API key in Settings. A ChatGPT or Cursor subscription does not provide this key.')
@@ -367,7 +368,8 @@ app.whenReady().then(async () => {
         return listNotices()
       }
     },
-    updates
+    updates,
+    () => memoryEmbedding.prepare()
   )
   await createWindow()
   void updates.check()

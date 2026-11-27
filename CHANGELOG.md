@@ -6,6 +6,14 @@ Entries describe the app as it was on that date, and later entries can supersede
 
 ## Unreleased
 
+### November 27, 2026 — Connection setup and browser fixes
+
+- Custom endpoint keys are tied to the exact saved address. Re-enter a key saved in an older preview once to associate it with your endpoint.
+- The desktop opens in charcoal with periwinkle controls. A new bot can connect and start chatting from a single settings save.
+- Browser snapshots can find controls beyond the first 400 on a long page and show matching controls on screen first.
+- A completed answer stays complete if optional memory review runs out of time. Retried scheduled jobs keep their original trigger and saved schedule context when available.
+- Source builds fetch the optional semantic memory model on first use. Packaged builds still include it.
+
 ### November 20, 2026 — Riot Bot desktop branding
 
 - The desktop workspace uses Riot Bot’s graphite and mint palette. **Change mood** on the chat welcome screen cycles through six mascot expressions, while the sidebar mascot reacts to the selected bot’s status.
